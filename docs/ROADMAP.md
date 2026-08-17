@@ -5,7 +5,7 @@ vertical comprobable antes de introducir infraestructura adicional. En particula
 la voz se valida primero en un único dispositivo; solo después se distribuye por
 habitaciones.
 
-## Fase 1 — Protocolo mínimo (actual)
+## Fase 1 — Protocolo mínimo (completada)
 
 - API de conversación.
 - Proveedor fake secuencial.
@@ -13,7 +13,7 @@ habitaciones.
 - Herramienta de hora, políticas iniciales, logging y tests.
 - Conversaciones en memoria.
 
-## Fase 2 — Primer modelo local (en curso)
+## Fase 2 — Primer modelo local (completada)
 
 - [x] Adaptador HTTP de Ollama detrás de `ILanguageProvider`.
 - [x] Selección y configuración explícitas desde la API, desactivado por defecto.
@@ -21,7 +21,7 @@ habitaciones.
 - [x] Smoke test de respuesta directa y tool calling con Ollama `0.32.14` y
   `qwen3:1.7b` sobre CPU.
 - [x] Validación previa y cacheada de que el modelo existe y declara `tools`.
-- Evaluación de la calidad real de tool calling por modelo.
+- [x] Evaluación reproducible de tool calling para `qwen3:1.7b`, separada de CI.
 - [x] Pruebas de contrato reutilizables entre el fake y Ollama.
 - [x] Ventana de contexto explícita y validada contra metadatos disponibles.
 - [x] Cancelación de inferencia propagada hasta la petición HTTP y probada en vuelo.
