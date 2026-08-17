@@ -96,7 +96,31 @@ public sealed class OllamaModelInspectorTests
             result.ErrorMessage);
     }
 
-    private static OllamaModelInspector CreateInspector(HttpClient httpClient)
+    [Fact]
+    public async Task ValidateAsyncRejectsContextWindowAboveModelMaximum()
+    {
+        using var handler = new RecordingHandler(_ => CreateResponse(
+            HttpStatusCode.OK,
+            """
+            {
+              "capabilities": ["completion", "tools"],
+              "model_info": { "test.context_length": 4096 }
+            }
+            """));
+        using var httpClient = new HttpClient(handler);
+        var inspector = CreateInspector(httpClient, contextWindow: 8192);
+
+        var result = await inspector.ValidateAsync(CancellationToken.None);
+
+        Assert.False(result.IsValid);
+        Assert.Equal(
+            "The configured context window 8192 exceeds the model maximum 4096.",
+            result.ErrorMessage);
+    }
+
+    private static OllamaModelInspector CreateInspector(
+        HttpClient httpClient,
+        int contextWindow = 4096)
     {
         return new OllamaModelInspector(
             httpClient,
@@ -104,6 +128,7 @@ public sealed class OllamaModelInspectorTests
             {
                 Endpoint = new Uri("http://localhost:11434"),
                 Model = "test-model",
+                ContextWindow = contextWindow,
             }),
             new OllamaModelValidationCache());
     }

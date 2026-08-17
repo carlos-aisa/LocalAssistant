@@ -42,7 +42,8 @@ public sealed class OllamaLanguageProvider : ILanguageProvider
             MapMessages(request.Messages),
             request.AvailableTools.Select(MapTool).ToArray(),
             Stream: false,
-            Think: _options.Think);
+            Think: _options.Think,
+            new OllamaRuntimeOptions(_options.ContextWindow));
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, GetChatEndpoint())
         {
@@ -152,7 +153,12 @@ public sealed class OllamaLanguageProvider : ILanguageProvider
         IReadOnlyList<OllamaMessage> Messages,
         IReadOnlyList<OllamaTool> Tools,
         bool Stream,
-        bool Think);
+        bool Think,
+        OllamaRuntimeOptions Options);
+
+    private sealed record OllamaRuntimeOptions(
+        [property: JsonPropertyName("num_ctx")]
+        int ContextWindow);
 
     private sealed record OllamaChatResponse(OllamaMessage? Message);
 

@@ -23,7 +23,8 @@ habitaciones.
 - [x] Validación previa y cacheada de que el modelo existe y declara `tools`.
 - Evaluación de la calidad real de tool calling por modelo.
 - [x] Pruebas de contrato reutilizables entre el fake y Ollama.
-- Límites de contexto y cancelación de inferencia.
+- [x] Ventana de contexto explícita y validada contra metadatos disponibles.
+- [x] Cancelación de inferencia propagada hasta la petición HTTP y probada en vuelo.
 
 ## Fase 3 — Herramientas y permisos
 

@@ -59,6 +59,11 @@ declare `tools` evita una configuración incompatible, pero no demuestra que sus
 decisiones o argumentos sean fiables; la allowlist y la validación del orquestador
 siguen siendo obligatorias.
 
+La ventana de contexto se limita a 4096 tokens por defecto para contener memoria y
+latencia, especialmente en CPU. Este límite de Ollama no sustituye futuros límites
+de longitud del cuerpo HTTP, conteo previo de tokens ni políticas de resumen y
+retención del historial.
+
 El timeout de proveedor predeterminado es de tres minutos para permitir inferencia
 local en CPU. Es un límite de disponibilidad, no una defensa suficiente ante abuso;
 antes de exponer la API deberá acompañarse de autenticación, cuotas, límites de

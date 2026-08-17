@@ -70,6 +70,7 @@ los esquemas de herramientas, las solicitudes de función y sus resultados. Para
 mantener un primer vertical slice pequeño y predecible, solicita `stream: false`.
 El modo de razonamiento se transmite mediante `think` y queda desactivado por
 defecto para reducir latencia; no se altera el texto del usuario para controlarlo.
+La ventana se transmite como `options.num_ctx`, con 4096 tokens por defecto.
 
 La API selecciona `fake` u `ollama` por turno. Ollama requiere un modelo configurado;
 si falta, la petición se rechaza como error de validación antes de entrar en el
@@ -83,7 +84,8 @@ preflight para una combinación de endpoint y modelo ya validada. Solo se cachea
 éxitos: modelo ausente, capacidad insuficiente, endpoint inválido o fallo HTTP se
 devuelven como errores claros de configuración y pueden corregirse sin reiniciar.
 La inspección ocurre antes de crear el turno, por lo que esos fallos no modifican el
-historial de conversación.
+historial de conversación. Cuando los metadatos contienen `*.context_length`, el
+inspector rechaza una ventana configurada por encima del máximo del modelo.
 
 ## Topología futura de habitaciones
 
@@ -148,6 +150,9 @@ HTTP sin exponer excepciones internas.
 
 Los tokens de cancelación se propagan a proveedor, almacenamiento y herramientas.
 Proveedor y herramientas reciben además un token con timeout configurable.
+En Ollama, cancelar durante `SendAsync` interrumpe la espera HTTP y se ha comprobado
+con un handler bloqueado que observa el token. El servidor puede necesitar tiempo
+para detener trabajo interno; la cancelación sigue siendo cooperativa.
 
 ## Evaluación de Microsoft.Extensions.AI
 
@@ -169,7 +174,7 @@ que exista un consumidor concreto de trazas o métricas.
 ## Configuración
 
 `LocalAssistant:Orchestration` contiene el máximo de iteraciones y los timeouts.
-`LocalAssistant:Ollama` contiene `Endpoint`, `Model` y `Think`; el repositorio deja
-el modelo vacío para que Ollama permanezca desactivado por defecto. El timeout de
-proveedor es global y vale tres minutos para tolerar inferencia local en CPU. No se
-guardan secretos ni configuraciones personales en el repositorio.
+`LocalAssistant:Ollama` contiene `Endpoint`, `Model`, `Think` y `ContextWindow`; el
+repositorio deja el modelo vacío para que Ollama permanezca desactivado por defecto.
+El timeout de proveedor es global y vale tres minutos para tolerar inferencia local
+en CPU. No se guardan secretos ni configuraciones personales en el repositorio.

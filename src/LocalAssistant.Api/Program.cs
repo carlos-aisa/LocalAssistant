@@ -27,7 +27,11 @@ builder.Services.AddOptions<OrchestrationOptions>()
         "Timeouts must be greater than zero.")
     .ValidateOnStart();
 builder.Services.AddOptions<OllamaOptions>()
-    .Bind(builder.Configuration.GetSection("LocalAssistant:Ollama"));
+    .Bind(builder.Configuration.GetSection("LocalAssistant:Ollama"))
+    .Validate(
+        options => options.ContextWindow > 0,
+        "Ollama ContextWindow must be greater than zero.")
+    .ValidateOnStart();
 
 var app = builder.Build();
 

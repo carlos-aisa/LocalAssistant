@@ -12,9 +12,11 @@ namespace LocalAssistant.Tests.Infrastructure;
 public sealed class OllamaLanguageProviderTests
 {
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task GetResponseAsyncMapsConversationAndToolsToNonStreamingChatRequest(bool think)
+    [InlineData(false, 2048)]
+    [InlineData(true, 8192)]
+    public async Task GetResponseAsyncMapsConversationAndToolsToNonStreamingChatRequest(
+        bool think,
+        int contextWindow)
     {
         const string responseJson = """
             {
@@ -30,7 +32,7 @@ public sealed class OllamaLanguageProviderTests
                 Content = new StringContent(responseJson, Encoding.UTF8, "application/json"),
             });
         using var httpClient = new HttpClient(handler);
-        var provider = CreateProvider(httpClient, think);
+        var provider = CreateProvider(httpClient, think, contextWindow);
         var request = new LanguageProviderRequest(
             Guid.Parse("7690e337-bd99-46bc-8ec9-4c54b80b48dc"),
             [new ConversationMessage(ConversationRole.User, "What time is it?")],
@@ -48,6 +50,9 @@ public sealed class OllamaLanguageProviderTests
         Assert.Equal("test-model", root.GetProperty("model").GetString());
         Assert.False(root.GetProperty("stream").GetBoolean());
         Assert.Equal(think, root.GetProperty("think").GetBoolean());
+        Assert.Equal(
+            contextWindow,
+            root.GetProperty("options").GetProperty("num_ctx").GetInt32());
         var message = Assert.Single(root.GetProperty("messages").EnumerateArray());
         Assert.Equal("user", message.GetProperty("role").GetString());
         Assert.Equal("What time is it?", message.GetProperty("content").GetString());
@@ -161,9 +166,30 @@ public sealed class OllamaLanguageProviderTests
         Assert.Equal(HttpStatusCode.InternalServerError, exception.StatusCode);
     }
 
+    [Fact]
+    public async Task GetResponseAsyncPropagatesCancellationDuringHttpRequest()
+    {
+        using var handler = new CancellationObservingHandler();
+        using var httpClient = new HttpClient(handler);
+        var provider = CreateProvider(httpClient);
+        using var cancellation = new CancellationTokenSource();
+        var request = new LanguageProviderRequest(
+            Guid.NewGuid(),
+            [new ConversationMessage(ConversationRole.User, "Hello")],
+            []);
+
+        var responseTask = provider.GetResponseAsync(request, cancellation.Token);
+        await handler.RequestStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => responseTask);
+        Assert.True(await handler.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
     private static OllamaLanguageProvider CreateProvider(
         HttpClient httpClient,
-        bool think = false)
+        bool think = false,
+        int contextWindow = 4096)
     {
         return new OllamaLanguageProvider(
             httpClient,
@@ -172,6 +198,7 @@ public sealed class OllamaLanguageProviderTests
                 Endpoint = new Uri("http://localhost:11434"),
                 Model = "test-model",
                 Think = think,
+                ContextWindow = contextWindow,
             }));
     }
 
@@ -226,6 +253,32 @@ public sealed class OllamaLanguageProviderTests
                 ? null
                 : await request.Content.ReadAsStringAsync(cancellationToken);
             return _response;
+        }
+    }
+
+    private sealed class CancellationObservingHandler : HttpMessageHandler
+    {
+        public TaskCompletionSource RequestStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<bool> CancellationObserved { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestStarted.SetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("The HTTP request should have been cancelled.");
+            }
+            catch (OperationCanceledException)
+            {
+                CancellationObserved.SetResult(true);
+                throw;
+            }
         }
     }
 }
