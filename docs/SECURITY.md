@@ -53,6 +53,11 @@ El adaptador no registra cuerpos HTTP, prompts, argumentos ni respuestas. Los
 errores se traducen por el orquestador sin devolver al cliente detalles internos
 del proceso de inferencia.
 
+El timeout de proveedor predeterminado es de tres minutos para permitir inferencia
+local en CPU. Es un límite de disponibilidad, no una defensa suficiente ante abuso;
+antes de exponer la API deberá acompañarse de autenticación, cuotas, límites de
+concurrencia y rate limiting.
+
 ## Privacidad y seguridad del audio futuro
 
 Los satélites de habitación convierten el audio ambiente en un dato especialmente

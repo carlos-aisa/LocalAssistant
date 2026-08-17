@@ -11,8 +11,10 @@ namespace LocalAssistant.Tests.Infrastructure;
 
 public sealed class OllamaLanguageProviderTests
 {
-    [Fact]
-    public async Task GetResponseAsyncMapsConversationAndToolsToNonStreamingChatRequest()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetResponseAsyncMapsConversationAndToolsToNonStreamingChatRequest(bool think)
     {
         const string responseJson = """
             {
@@ -28,7 +30,7 @@ public sealed class OllamaLanguageProviderTests
                 Content = new StringContent(responseJson, Encoding.UTF8, "application/json"),
             });
         using var httpClient = new HttpClient(handler);
-        var provider = CreateProvider(httpClient);
+        var provider = CreateProvider(httpClient, think);
         var request = new LanguageProviderRequest(
             Guid.Parse("7690e337-bd99-46bc-8ec9-4c54b80b48dc"),
             [new ConversationMessage(ConversationRole.User, "What time is it?")],
@@ -45,6 +47,7 @@ public sealed class OllamaLanguageProviderTests
         var root = body.RootElement;
         Assert.Equal("test-model", root.GetProperty("model").GetString());
         Assert.False(root.GetProperty("stream").GetBoolean());
+        Assert.Equal(think, root.GetProperty("think").GetBoolean());
         var message = Assert.Single(root.GetProperty("messages").EnumerateArray());
         Assert.Equal("user", message.GetProperty("role").GetString());
         Assert.Equal("What time is it?", message.GetProperty("content").GetString());
@@ -158,7 +161,9 @@ public sealed class OllamaLanguageProviderTests
         Assert.Equal(HttpStatusCode.InternalServerError, exception.StatusCode);
     }
 
-    private static OllamaLanguageProvider CreateProvider(HttpClient httpClient)
+    private static OllamaLanguageProvider CreateProvider(
+        HttpClient httpClient,
+        bool think = false)
     {
         return new OllamaLanguageProvider(
             httpClient,
@@ -166,6 +171,7 @@ public sealed class OllamaLanguageProviderTests
             {
                 Endpoint = new Uri("http://localhost:11434"),
                 Model = "test-model",
+                Think = think,
             }));
     }
 

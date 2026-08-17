@@ -41,7 +41,8 @@ public sealed class OllamaLanguageProvider : ILanguageProvider
             _options.Model,
             MapMessages(request.Messages),
             request.AvailableTools.Select(MapTool).ToArray(),
-            Stream: false);
+            Stream: false,
+            Think: _options.Think);
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, GetChatEndpoint())
         {
@@ -158,7 +159,8 @@ public sealed class OllamaLanguageProvider : ILanguageProvider
         string Model,
         IReadOnlyList<OllamaMessage> Messages,
         IReadOnlyList<OllamaTool> Tools,
-        bool Stream);
+        bool Stream,
+        bool Think);
 
     private sealed record OllamaChatResponse(OllamaMessage? Message);
 
