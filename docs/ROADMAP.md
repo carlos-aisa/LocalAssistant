@@ -18,7 +18,8 @@ habitaciones.
 - [x] Adaptador HTTP de Ollama detrás de `ILanguageProvider`.
 - [x] Selección y configuración explícitas desde la API, desactivado por defecto.
 - [x] Pruebas deterministas del contrato HTTP sin red ni GPU.
-- [ ] Smoke test con una instalación y un modelo locales reales.
+- [x] Smoke test de respuesta directa y tool calling con Ollama `0.32.14` y
+  `qwen3:1.7b` sobre CPU.
 - Detección de capacidades reales de tool calling por modelo.
 - Pruebas de contrato reutilizables entre fake y proveedores.
 - Límites de contexto y cancelación de inferencia.

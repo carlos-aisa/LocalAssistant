@@ -61,12 +61,14 @@ un paso, por lo que una prueba declara de forma visible la secuencia esperada.
 de Ollama, sin introducir sus DTOs en `LocalAssistant.Core`. Traduce el historial,
 los esquemas de herramientas, las solicitudes de función y sus resultados. Para
 mantener un primer vertical slice pequeño y predecible, solicita `stream: false`.
+El modo de razonamiento se transmite mediante `think` y queda desactivado por
+defecto para reducir latencia; no se altera el texto del usuario para controlarlo.
 
 La API selecciona `fake` u `ollama` por turno. Ollama requiere un modelo configurado;
 si falta, la petición se rechaza como error de validación antes de entrar en el
 orquestador. Los tests del adaptador sustituyen la red por un manejador HTTP
-determinista. La verificación con un proceso y modelo reales queda pendiente porque
-depende de capacidades y recursos externos.
+determinista. Un smoke test real con `qwen3:1.7b` verificó tanto respuesta directa
+como tool calling; sus tiempos dependen del modelo y del hardware.
 
 ## Topología futura de habitaciones
 
@@ -152,6 +154,7 @@ que exista un consumidor concreto de trazas o métricas.
 ## Configuración
 
 `LocalAssistant:Orchestration` contiene el máximo de iteraciones y los timeouts.
-`LocalAssistant:Ollama` contiene `Endpoint` y `Model`; el repositorio deja el modelo
-vacío para que Ollama permanezca desactivado por defecto. No se guardan secretos ni
-configuraciones personales en el repositorio.
+`LocalAssistant:Ollama` contiene `Endpoint`, `Model` y `Think`; el repositorio deja
+el modelo vacío para que Ollama permanezca desactivado por defecto. El timeout de
+proveedor es global y vale tres minutos para tolerar inferencia local en CPU. No se
+guardan secretos ni configuraciones personales en el repositorio.

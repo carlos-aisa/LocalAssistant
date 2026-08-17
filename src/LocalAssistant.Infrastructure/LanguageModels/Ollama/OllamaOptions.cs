@@ -6,5 +6,7 @@ public sealed class OllamaOptions
 
     public string Model { get; init; } = string.Empty;
 
+    public bool Think { get; init; }
+
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Model);
 }

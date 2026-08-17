@@ -112,10 +112,11 @@ fake. El campo `provider` selecciona `fake` (valor predeterminado) u `ollama`.
 
 ### Probar con Ollama
 
-Configura el nombre exacto de un modelo ya instalado y arranca la API:
+Configura el nombre exacto de un modelo ya instalado y arranca la API. En un equipo
+con unos 8 GB de RAM, `qwen3:1.7b` es un punto de partida comprobado:
 
 ```powershell
-$env:LocalAssistant__Ollama__Model = "nombre-del-modelo"
+$env:LocalAssistant__Ollama__Model = "qwen3:1.7b"
 dotnet run --project src/LocalAssistant.Api -- --urls http://localhost:5100
 ```
 
@@ -130,9 +131,26 @@ Invoke-RestMethod -Method Post `
 ```
 
 El endpoint se configura mediante `LocalAssistant:Ollama:Endpoint` (por defecto,
-`http://localhost:11434`) y `LocalAssistant:Ollama:Model`. El adaptador usa
-`POST /api/chat` sin streaming. Todavía falta validar el recorrido completo contra
-una instalación real y documentar qué modelos ofrecen tool calling fiable.
+`http://localhost:11434`) y `LocalAssistant:Ollama:Model`. La opción
+`LocalAssistant:Ollama:Think` vale `false` por defecto para priorizar latencia y
+respuestas finales; puede activarse para modelos y casos que necesiten razonamiento
+explícito. El adaptador usa `POST /api/chat` sin streaming. El timeout de proveedor
+predeterminado es de tres minutos para admitir inferencia local en CPU.
+
+### Validación local observada
+
+El 17 de agosto de 2026 se completó un smoke test real con Ollama `0.32.14`,
+`qwen3:1.7b`, `Think: false`, CPU y aproximadamente 8 GB de RAM. No se añadieron
+instrucciones de control al mensaje del usuario:
+
+- primera respuesta tras cargar el modelo, en una iteración: 13,4 segundos;
+- llamada a `get_current_time` con el modelo caliente y respuesta final en dos
+  iteraciones: 6,4 segundos;
+- herramienta ejecutada correctamente y sin errores de orquestación.
+
+Las cifras son una observación de ese equipo, no un objetivo de rendimiento. En el
+mismo entorno, `qwen3:4b` superó los dos minutos para una respuesta pequeña y no
+resultó práctico para el bucle interactivo.
 
 ## Límites importantes
 
@@ -145,6 +163,8 @@ una instalación real y documentar qué modelos ofrecen tool calling fiable.
 - El fake demuestra el protocolo, no inteligencia ni comprensión del lenguaje.
 - La compatibilidad de tool calling depende del modelo de Ollama seleccionado; esta
   versión aún no detecta sus capacidades ni limita el contexto de forma explícita.
+- `Think: false` solicita desactivar el razonamiento, pero el comportamiento final
+  depende del modelo y de su plantilla.
 - No existe todavía un `LocalAssistant.Worker`: se añadirá cuando haya una tarea de fondo
   concreta que lo justifique.
 - El proyecto se distribuye bajo la licencia MIT.
