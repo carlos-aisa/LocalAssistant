@@ -117,7 +117,9 @@ fake. No pretende ser el mecanismo futuro de selección de modelos.
 - El proyecto se distribuye bajo la licencia MIT.
 
 Consulta [la arquitectura](docs/ARCHITECTURE.md), [la visión](docs/VISION.md),
-[la seguridad](docs/SECURITY.md) y [el roadmap](docs/ROADMAP.md) para continuar.
+[la seguridad](docs/SECURITY.md), [el roadmap](docs/ROADMAP.md),
+[OpenAPI](docs/api/openapi.yaml) y [los estándares](docs/standards/README.md) para
+continuar.
 
 ## Evolución prevista, no implementada
 
