@@ -1,0 +1,30 @@
+## .NET build output
+bin/
+obj/
+artifacts/
+TestResults/
+
+## Visual Studio and VS Code
+.vs/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+*.user
+*.suo
+
+## JetBrains
+.idea/
+*.sln.iml
+
+## Local configuration and secrets
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+appsettings.*.local.json
+secrets.json
+
+## OS files
+.DS_Store
+Thumbs.db
