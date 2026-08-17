@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
 
@@ -17,14 +18,14 @@ public sealed class OllamaModelValidationCache
 {
     private readonly ConcurrentDictionary<string, byte> _validatedModels = new();
 
-    public bool Contains(Uri endpoint, string model) =>
-        _validatedModels.ContainsKey(CreateKey(endpoint, model));
+    public bool Contains(Uri endpoint, string model, int contextWindow) =>
+        _validatedModels.ContainsKey(CreateKey(endpoint, model, contextWindow));
 
-    public void Add(Uri endpoint, string model) =>
-        _validatedModels.TryAdd(CreateKey(endpoint, model), 0);
+    public void Add(Uri endpoint, string model, int contextWindow) =>
+        _validatedModels.TryAdd(CreateKey(endpoint, model, contextWindow), 0);
 
-    private static string CreateKey(Uri endpoint, string model) =>
-        $"{endpoint.AbsoluteUri.TrimEnd('/')}|{model}";
+    private static string CreateKey(Uri endpoint, string model, int contextWindow) =>
+        $"{endpoint.AbsoluteUri.TrimEnd('/')}|{model}|{contextWindow}";
 }
 
 public sealed class OllamaModelInspector
@@ -61,7 +62,7 @@ public sealed class OllamaModelInspector
             return OllamaModelValidation.Invalid(exception.Message);
         }
 
-        if (_cache.Contains(_options.Endpoint, _options.Model))
+        if (_cache.Contains(_options.Endpoint, _options.Model, _options.ContextWindow))
         {
             return OllamaModelValidation.Valid;
         }
@@ -102,17 +103,51 @@ public sealed class OllamaModelInspector
                 return OllamaModelValidation.Invalid(
                     $"The configured Ollama model '{_options.Model}' does not support tools.");
             }
+
+            var maximumContextWindow = GetMaximumContextWindow(model.ModelInfo);
+            if (maximumContextWindow is not null &&
+                _options.ContextWindow > maximumContextWindow.Value)
+            {
+                return OllamaModelValidation.Invalid(
+                    $"The configured context window {_options.ContextWindow} exceeds " +
+                    $"the model maximum {maximumContextWindow.Value}.");
+            }
         }
 
-        _cache.Add(_options.Endpoint, _options.Model);
+        _cache.Add(_options.Endpoint, _options.Model, _options.ContextWindow);
         return OllamaModelValidation.Valid;
+    }
+
+    private static int? GetMaximumContextWindow(
+        IReadOnlyDictionary<string, JsonElement>? modelInfo)
+    {
+        if (modelInfo is null)
+        {
+            return null;
+        }
+
+        int? maximum = null;
+        foreach (var item in modelInfo)
+        {
+            if (item.Key.EndsWith(".context_length", StringComparison.OrdinalIgnoreCase) &&
+                item.Value.TryGetInt32(out var value) &&
+                value > 0 &&
+                (maximum is null || value > maximum.Value))
+            {
+                maximum = value;
+            }
+        }
+
+        return maximum;
     }
 
     private sealed record OllamaShowRequest(string Model);
 
     private sealed record OllamaShowResponse(
         [property: JsonPropertyName("capabilities")]
-        IReadOnlyList<string>? Capabilities);
+        IReadOnlyList<string>? Capabilities,
+        [property: JsonPropertyName("model_info")]
+        IReadOnlyDictionary<string, JsonElement>? ModelInfo);
 }
 
 internal static class OllamaEndpoint

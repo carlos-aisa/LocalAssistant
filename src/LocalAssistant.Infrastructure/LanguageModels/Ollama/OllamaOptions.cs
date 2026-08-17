@@ -8,5 +8,7 @@ public sealed class OllamaOptions
 
     public bool Think { get; init; }
 
+    public int ContextWindow { get; init; } = 4096;
+
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Model);
 }
