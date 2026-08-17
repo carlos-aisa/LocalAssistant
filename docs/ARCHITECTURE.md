@@ -53,6 +53,53 @@ orquestador solo puede resolverla contra `IToolRegistry`.
 El fake usa una cola de funciones de respuesta. Cada llamada consume exactamente
 un paso, por lo que una prueba declara de forma visible la secuencia esperada.
 
+## Topología futura de habitaciones
+
+La evolución de voz distinguirá cuatro conceptos que hoy no necesitan tipos de
+dominio propios:
+
+- **Dispositivo de entrada:** captura audio, puede detectar localmente el wake word
+  y origina un turno.
+- **Dispositivo de salida:** puede reproducir audio, mostrar información o ambas
+  cosas.
+- **Habitación:** contexto lógico que permite asociar entradas y salidas sin
+  convertirlas en un único dispositivo.
+- **Conversación:** continuidad lógica de mensajes y turnos; puede comenzar en una
+  habitación y, en una fase posterior, transferirse explícitamente a otra.
+
+```mermaid
+flowchart LR
+    Satellite[Satélite con micrófono] -->|audio + identidad de origen| Voice[Pipeline de voz]
+    Voice --> Conversation[Conversación]
+    Conversation --> Router[Selección de salida]
+    Router --> SatelliteSpeaker[Altavoz del satélite]
+    Router --> Cast[Google Cast]
+    Cast --> Nest[Nest Hub de la habitación]
+```
+
+Entrada y salida son capacidades independientes. Un satélite puede incluir ambas,
+pero también puede usar como salida un Nest Hub de su habitación. El Nest Hub no
+se modelará como micrófono controlable: no se asume acceso a su audio, instalación
+de wake word ni sustitución de Google Assistant.
+
+El futuro registro de dispositivos describirá capacidades observables como captura
+o reproducción de audio, pantalla, botones, indicadores y detección local de wake
+word. La selección de hardware —Home Assistant Assist, ESP32-S3, Raspberry Pi,
+Android u ordenador— queda abierta hasta construir un vertical slice medible.
+
+### Revisión de los contratos actuales
+
+`ConversationTurnRequest` ya contiene `ConversationId`, suficiente para la
+identidad lógica actual, y un mensaje de texto que no presupone una interfaz web.
+La API HTTP es un canal de entrada, no una propiedad permanente de la conversación.
+
+No se añaden todavía `SourceDeviceId`, `RoomId`, canal de entrada ni capacidades de
+respuesta: ningún componente actual puede validarlos, persistirlos o usarlos para
+enrutar una salida. El pipeline de voz en un único dispositivo será el primer
+incremento que justifique introducir un contexto opcional de origen. El primer
+satélite añadirá después asociación de habitación y selección de salida con
+comportamiento y tests reales.
+
 ## Conversaciones y concurrencia
 
 `InMemoryConversationStore` conserva mensajes en un diccionario concurrente y

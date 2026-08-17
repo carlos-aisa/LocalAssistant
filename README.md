@@ -126,6 +126,7 @@ continuar.
 ```mermaid
 flowchart TB
     Channels[API, UI y voz] --> Router[Enrutador híbrido]
+    Satellites[Satélites de habitación] --> Channels
     Router --> Local[Modelos locales / Ollama]
     Router --> External[Proveedores externos opcionales]
     Router --> Tools[Herramientas y conectores]
@@ -134,6 +135,9 @@ flowchart TB
     Router --> Memory[Memoria y RAG]
     Worker[Worker de tareas largas] --> Memory
     Worker --> Tools
+    Router --> OutputRouter[Selección de salida por habitación]
+    OutputRouter --> SatelliteOutput[Altavoz o pantalla de satélite]
+    OutputRouter --> Cast[Google Cast / Nest Hub]
     Observability[Observabilidad] -.-> Router
     Observability -.-> Worker
 ```

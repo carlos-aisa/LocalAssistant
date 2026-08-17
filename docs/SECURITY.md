@@ -37,6 +37,37 @@ caducidad ni autenticación. No debe reutilizarse como autorización productiva.
 - **Memoria sensible:** las conversaciones permanecen en RAM hasta terminar el
   proceso. No hay cifrado, borrado selectivo ni política de retención.
 
+## Privacidad y seguridad del audio futuro
+
+Los satélites de habitación convierten el audio ambiente en un dato especialmente
+sensible. Antes de habilitar captura real deberán cumplirse estos límites:
+
+- El dispositivo mostrará físicamente cuándo escucha o captura mediante luz,
+  pantalla u otro indicador inequívoco que no dependa solo de una interfaz remota.
+- El micrófono podrá desactivarse mediante un control físico. El software deberá
+  poder observar y mostrar ese estado, pero no reactivar un corte físico.
+- La detección de wake word y el filtrado previo se ejecutarán localmente siempre
+  que el hardware lo permita, minimizando audio enviado al núcleo.
+- El streaming dentro de la red doméstica estará autenticado y cifrado; pertenecer
+  a la misma LAN no constituirá confianza suficiente.
+- Satélite, habitación, sesión y destino de respuesta se validarán en el servidor;
+  un dispositivo no podrá suplantar libremente otra habitación.
+- Se limitarán duración, tamaño, buffering y retención. No se conservará audio por
+  defecto ni se reutilizará para entrenamiento sin una decisión explícita.
+- Wake word falso, pulsación accidental, dispositivo comprometido y captura no
+  autorizada se tratarán como amenazas de primer nivel y deberán dejar eventos de
+  auditoría sin almacenar el audio completo.
+- La cancelación de eco y la supresión de reproducción evitarán que el asistente
+  procese su propia respuesta. La interrupción por voz requerirá distinguir audio
+  del usuario y salida TTS sin ocultar el estado de captura.
+- Un dispositivo desconectado, en error o silenciado tendrá un estado visible y no
+  se considerará disponible para enrutar respuestas.
+
+Los Google Nest Hub se tratarán como salidas Cast. No se solicitará ni diseñará
+acceso a su micrófono, audio capturado, wake word interno o reemplazo de Google
+Assistant. El contenido enviado a sus pantallas también deberá minimizar datos
+privados visibles para otras personas de la habitación.
+
 ## Política inicial de logging
 
 Se registran identificador de conversación, proveedor, iteración, nombre e id de
