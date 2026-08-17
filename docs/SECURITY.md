@@ -53,6 +53,12 @@ El adaptador no registra cuerpos HTTP, prompts, argumentos ni respuestas. Los
 errores se traducen por el orquestador sin devolver al cliente detalles internos
 del proceso de inferencia.
 
+La inspección previa envía a `/api/show` únicamente el nombre configurado del
+modelo. No envía mensajes ni resultados de herramientas. Exigir que el modelo
+declare `tools` evita una configuración incompatible, pero no demuestra que sus
+decisiones o argumentos sean fiables; la allowlist y la validación del orquestador
+siguen siendo obligatorias.
+
 El timeout de proveedor predeterminado es de tres minutos para permitir inferencia
 local en CPU. Es un límite de disponibilidad, no una defensa suficiente ante abuso;
 antes de exponer la API deberá acompañarse de autenticación, cuotas, límites de

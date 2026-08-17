@@ -76,15 +76,7 @@ public sealed class OllamaLanguageProvider : ILanguageProvider
 
     private Uri GetChatEndpoint()
     {
-        if (!_options.Endpoint.IsAbsoluteUri ||
-            (_options.Endpoint.Scheme != Uri.UriSchemeHttp &&
-             _options.Endpoint.Scheme != Uri.UriSchemeHttps))
-        {
-            throw new InvalidOperationException("The Ollama endpoint must be an absolute HTTP URL.");
-        }
-
-        var baseAddress = _options.Endpoint.AbsoluteUri.TrimEnd('/') + "/";
-        return new Uri(new Uri(baseAddress), "api/chat");
+        return OllamaEndpoint.Create(_options.Endpoint, "api/chat");
     }
 
     private static List<OllamaMessage> MapMessages(

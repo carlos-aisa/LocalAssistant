@@ -29,7 +29,10 @@ public static class ConversationEndpoints
             });
         }
 
-        var selection = providerSelector.Select(request.Provider, request.Scenario);
+        var selection = await providerSelector.SelectAsync(
+            request.Provider,
+            request.Scenario,
+            cancellationToken);
         if (!selection.IsSuccess || selection.Provider is null)
         {
             return Results.ValidationProblem(new Dictionary<string, string[]>

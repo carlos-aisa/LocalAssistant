@@ -70,6 +70,14 @@ orquestador. Los tests del adaptador sustituyen la red por un manejador HTTP
 determinista. Un smoke test real con `qwen3:1.7b` verificó tanto respuesta directa
 como tool calling; sus tiempos dependen del modelo y del hardware.
 
+Antes de seleccionar Ollama, `OllamaModelInspector` consulta `POST /api/show` y
+requiere la capacidad `tools`. Una caché compartida por proceso evita repetir el
+preflight para una combinación de endpoint y modelo ya validada. Solo se cachean
+éxitos: modelo ausente, capacidad insuficiente, endpoint inválido o fallo HTTP se
+devuelven como errores claros de configuración y pueden corregirse sin reiniciar.
+La inspección ocurre antes de crear el turno, por lo que esos fallos no modifican el
+historial de conversación.
+
 ## Topología futura de habitaciones
 
 La evolución de voz distinguirá cuatro conceptos que hoy no necesitan tipos de
