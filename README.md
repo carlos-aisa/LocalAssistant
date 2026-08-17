@@ -137,6 +137,12 @@ respuestas finales; puede activarse para modelos y casos que necesiten razonamie
 explícito. El adaptador usa `POST /api/chat` sin streaming. El timeout de proveedor
 predeterminado es de tres minutos para admitir inferencia local en CPU.
 
+Antes de la primera conversación con una combinación de endpoint y modelo, la API
+consulta `POST /api/show`. Rechaza con `400` una configuración cuyo modelo no esté
+instalado, no declare la capacidad `tools` o no pueda validarse. Las validaciones
+correctas se cachean durante la vida del proceso; los fallos se reintentan en la
+siguiente petición para permitir instalar o corregir el modelo sin reiniciar la API.
+
 ### Validación local observada
 
 El 17 de agosto de 2026 se completó un smoke test real con Ollama `0.32.14`,
@@ -162,7 +168,8 @@ resultó práctico para el bucle interactivo.
   que ignore el token podría seguir trabajando internamente.
 - El fake demuestra el protocolo, no inteligencia ni comprensión del lenguaje.
 - La compatibilidad de tool calling depende del modelo de Ollama seleccionado; esta
-  versión aún no detecta sus capacidades ni limita el contexto de forma explícita.
+  versión exige que Ollama declare `tools`, pero aún no limita el contexto de forma
+  explícita ni evalúa la calidad real de cada modelo.
 - `Think: false` solicita desactivar el razonamiento, pero el comportamiento final
   depende del modelo y de su plantilla.
 - No existe todavía un `LocalAssistant.Worker`: se añadirá cuando haya una tarea de fondo

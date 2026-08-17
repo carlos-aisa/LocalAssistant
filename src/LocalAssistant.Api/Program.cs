@@ -15,6 +15,8 @@ builder.Services.AddSingleton<IToolRegistry>(services =>
     new ToolRegistry(services.GetServices<ITool>()));
 builder.Services.AddSingleton<FakeLanguageProviderFactory>();
 builder.Services.AddHttpClient<OllamaLanguageProvider>();
+builder.Services.AddHttpClient<OllamaModelInspector>();
+builder.Services.AddSingleton<OllamaModelValidationCache>();
 builder.Services.AddScoped<LanguageProviderSelector>();
 builder.Services.AddScoped<IConversationOrchestrator, ConversationOrchestrator>();
 builder.Services.AddOptions<OrchestrationOptions>()

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using LocalAssistant.Infrastructure.LanguageModels.Ollama;
 using LocalAssistant.Tests.TestDoubles;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -11,9 +12,11 @@ namespace LocalAssistant.Tests.Api;
 public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiFactory>
 {
     private readonly HttpClient _client;
+    private readonly LocalAssistantApiFactory _factory;
 
     public ConversationEndpointTests(LocalAssistantApiFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -91,6 +94,36 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    [Fact]
+    public async Task OllamaModelWithoutToolsReturnsValidationProblem()
+    {
+        using var client = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("LocalAssistant:Ollama:Model", "test-model");
+            builder.ConfigureServices(services =>
+            {
+                services.AddHttpClient<OllamaModelInspector>()
+                    .ConfigurePrimaryHttpMessageHandler(() =>
+                        new StaticHttpMessageHandler(
+                            """{ "capabilities": ["completion"] }"""));
+            });
+        }).CreateClient();
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Hello", provider = "ollama" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var body = await JsonDocument.ParseAsync(
+            await response.Content.ReadAsStreamAsync(CancellationToken.None),
+            cancellationToken: CancellationToken.None);
+        var errors = body.RootElement.GetProperty("errors");
+        Assert.Equal(
+            "The configured Ollama model 'test-model' does not support tools.",
+            Assert.Single(errors.GetProperty("provider").EnumerateArray()).GetString());
+    }
 }
 
 public sealed class LocalAssistantApiFactory : WebApplicationFactory<Program>
@@ -101,6 +134,26 @@ public sealed class LocalAssistantApiFactory : WebApplicationFactory<Program>
         {
             services.AddSingleton<TimeProvider>(
                 new ManualTimeProvider(new DateTimeOffset(2026, 8, 17, 14, 30, 0, TimeSpan.Zero)));
+        });
+    }
+}
+
+file sealed class StaticHttpMessageHandler : HttpMessageHandler
+{
+    private readonly string _responseJson;
+
+    public StaticHttpMessageHandler(string responseJson)
+    {
+        _responseJson = responseJson;
+    }
+
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(_responseJson, System.Text.Encoding.UTF8, "application/json"),
         });
     }
 }

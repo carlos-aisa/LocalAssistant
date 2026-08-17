@@ -20,7 +20,8 @@ habitaciones.
 - [x] Pruebas deterministas del contrato HTTP sin red ni GPU.
 - [x] Smoke test de respuesta directa y tool calling con Ollama `0.32.14` y
   `qwen3:1.7b` sobre CPU.
-- Detección de capacidades reales de tool calling por modelo.
+- [x] Validación previa y cacheada de que el modelo existe y declara `tools`.
+- Evaluación de la calidad real de tool calling por modelo.
 - Pruebas de contrato reutilizables entre fake y proveedores.
 - Límites de contexto y cancelación de inferencia.
 
