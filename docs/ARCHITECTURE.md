@@ -55,6 +55,13 @@ orquestador solo puede resolverla contra `IToolRegistry`.
 El fake usa una cola de funciones de respuesta. Cada llamada consume exactamente
 un paso, por lo que una prueba declara de forma visible la secuencia esperada.
 
+Una suite abstracta de contratos se ejecuta contra `ScriptedLanguageProvider` y
+`OllamaLanguageProvider`. Verifica que cada implementación expone un nombre estable,
+distingue respuesta final de solicitud de herramienta, conserva nombre y argumentos
+estructurados y respeta una cancelación previa. Las pruebas específicas de cada
+adaptador siguen cubriendo serialización y errores propios; la suite común no intenta
+ocultar esas diferencias.
+
 ## Adaptador de Ollama
 
 `OllamaLanguageProvider` implementa `ILanguageProvider` mediante la API HTTP nativa
