@@ -22,7 +22,7 @@ habitaciones.
   `qwen3:1.7b` sobre CPU.
 - [x] Validación previa y cacheada de que el modelo existe y declara `tools`.
 - Evaluación de la calidad real de tool calling por modelo.
-- Pruebas de contrato reutilizables entre fake y proveedores.
+- [x] Pruebas de contrato reutilizables entre el fake y Ollama.
 - Límites de contexto y cancelación de inferencia.
 
 ## Fase 3 — Herramientas y permisos

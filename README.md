@@ -28,6 +28,7 @@ Implementado:
 - Conversaciones en memoria.
 - Logging estructurado sin contenido de conversación.
 - Pruebas unitarias y de integración HTTP.
+- Contratos de proveedor reutilizados por el fake y el adaptador de Ollama.
 
 No implementado: detección automática de capacidades por modelo, proveedores cloud,
 persistencia, voz, wake word, RAG, Home Assistant, MQTT, MCP, autenticación,
