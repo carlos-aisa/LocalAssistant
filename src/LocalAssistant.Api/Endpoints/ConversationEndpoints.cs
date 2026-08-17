@@ -1,5 +1,5 @@
 using LocalAssistant.Api.Contracts;
-using LocalAssistant.Api.Fakes;
+using LocalAssistant.Api.LanguageModels;
 using LocalAssistant.Core.Orchestration;
 
 namespace LocalAssistant.Api.Endpoints;
@@ -17,7 +17,7 @@ public static class ConversationEndpoints
 
     private static async Task<IResult> SendMessageAsync(
         SendMessageRequest request,
-        FakeLanguageProviderFactory providerFactory,
+        LanguageProviderSelector providerSelector,
         IConversationOrchestrator orchestrator,
         CancellationToken cancellationToken)
     {
@@ -29,11 +29,13 @@ public static class ConversationEndpoints
             });
         }
 
-        if (!providerFactory.TryCreate(request.Scenario, out var provider) || provider is null)
+        var selection = providerSelector.Select(request.Provider, request.Scenario);
+        if (!selection.IsSuccess || selection.Provider is null)
         {
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(request.Scenario)] = ["Supported fake scenarios are 'direct' and 'time'."],
+                [selection.ErrorField ?? nameof(request.Provider)] =
+                    [selection.ErrorMessage ?? "The language provider selection is invalid."],
             });
         }
 
@@ -42,7 +44,7 @@ public static class ConversationEndpoints
             : new HashSet<string>(request.ApprovedTools, StringComparer.Ordinal);
         var result = await orchestrator.ProcessAsync(
             new ConversationTurnRequest(request.Message, request.ConversationId, approvedTools),
-            provider,
+            selection.Provider,
             cancellationToken);
         var response = ConversationApiResponse.FromResult(result);
 

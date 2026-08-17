@@ -5,12 +5,13 @@ asistente de IA local: conversación, proveedores de lenguaje, herramientas,
 seguridad, memoria, conectores y observabilidad.
 
 La primera iteración es deliberadamente pequeña. Una API recibe un mensaje, un
-proveedor fake determinista decide si responde directamente o solicita una
-herramienta, el orquestador ejecuta el ciclo de tool calling y la API devuelve la
-respuesta con una traza básica.
+proveedor seleccionable decide si responde directamente o solicita una herramienta,
+el orquestador ejecuta el ciclo de tool calling y la API devuelve la respuesta con
+una traza básica. El fake permite reproducir el protocolo y el adaptador de Ollama
+permite conectarlo a un modelo local.
 
-No necesita GPU, Docker, Ollama, acceso a Internet ni claves de API durante la
-ejecución.
+El flujo fake y todos los tests funcionan sin GPU, Docker, Ollama, acceso a Internet
+ni claves de API.
 
 ## Estado actual
 
@@ -19,6 +20,7 @@ Implementado:
 - API HTTP en .NET 8.
 - Contratos de conversación independientes del proveedor.
 - Proveedor fake programado mediante secuencias explícitas.
+- Adaptador HTTP de Ollama, configurable y desacoplado del dominio.
 - Registro cerrado de herramientas.
 - Herramienta determinista de fecha y hora UTC basada en `TimeProvider`.
 - Bucle explícito de tool calling con cancelación, timeouts y límite de iteraciones.
@@ -27,8 +29,9 @@ Implementado:
 - Logging estructurado sin contenido de conversación.
 - Pruebas unitarias y de integración HTTP.
 
-No implementado: Ollama, proveedores externos, persistencia, voz, wake word, RAG,
-Home Assistant, MQTT, MCP, autenticación, interfaz gráfica ni ejecución de comandos.
+No implementado: detección automática de capacidades por modelo, proveedores cloud,
+persistencia, voz, wake word, RAG, Home Assistant, MQTT, MCP, autenticación,
+interfaz gráfica ni ejecución de comandos.
 
 ## Arquitectura actual
 
@@ -37,18 +40,22 @@ flowchart LR
     Client[Cliente HTTP] --> Api[LocalAssistant.Api]
     Api --> Orchestrator[Orquestador explícito]
     Orchestrator --> Fake[Proveedor fake]
+    Orchestrator --> Ollama[Adaptador HTTP de Ollama]
     Orchestrator --> Registry[Registro de herramientas]
     Registry --> Time[Herramienta de hora UTC]
     Orchestrator --> Memory[(Conversaciones en memoria)]
 ```
 
-`LocalAssistant.Api` compone y expone la aplicación. `LocalAssistant.Core` contiene el dominio y
-el ciclo de ejecución. `LocalAssistant.Tests` prueba ambos sin servicios externos.
+`LocalAssistant.Api` compone y expone la aplicación. `LocalAssistant.Core` contiene
+el dominio y el ciclo de ejecución. `LocalAssistant.Infrastructure` contiene el
+adaptador de Ollama. `LocalAssistant.Tests` prueba el conjunto sin servicios externos.
 
 ## Requisitos
 
 - SDK de .NET 8. El proyecto se creó con `8.0.202` y permite revisiones posteriores
   de .NET 8 mediante `global.json`.
+- Opcional para usar un modelo real: Ollama en `http://localhost:11434` y un modelo
+  instalado que admita el comportamiento que se quiera probar.
 
 Conviene utilizar la revisión de seguridad más reciente del SDK 8.x.
 
@@ -101,7 +108,31 @@ final en una segunda iteración. La respuesta incluye `conversationId`, `tools`,
 `iterations`, `timings` y `error`.
 
 El campo `scenario` solo existe para demostrar de forma reproducible el proveedor
-fake. No pretende ser el mecanismo futuro de selección de modelos.
+fake. El campo `provider` selecciona `fake` (valor predeterminado) u `ollama`.
+
+### Probar con Ollama
+
+Configura el nombre exacto de un modelo ya instalado y arranca la API:
+
+```powershell
+$env:LocalAssistant__Ollama__Model = "nombre-del-modelo"
+dotnet run --project src/LocalAssistant.Api -- --urls http://localhost:5100
+```
+
+En otra terminal:
+
+```powershell
+$body = @{ message = "Hola"; provider = "ollama" } | ConvertTo-Json
+Invoke-RestMethod -Method Post `
+  -Uri http://localhost:5100/api/conversations/messages `
+  -ContentType application/json `
+  -Body $body
+```
+
+El endpoint se configura mediante `LocalAssistant:Ollama:Endpoint` (por defecto,
+`http://localhost:11434`) y `LocalAssistant:Ollama:Model`. El adaptador usa
+`POST /api/chat` sin streaming. Todavía falta validar el recorrido completo contra
+una instalación real y documentar qué modelos ofrecen tool calling fiable.
 
 ## Límites importantes
 
@@ -112,6 +143,8 @@ fake. No pretende ser el mecanismo futuro de selección de modelos.
 - Los timeouts detienen la espera cooperativa; una implementación de herramienta
   que ignore el token podría seguir trabajando internamente.
 - El fake demuestra el protocolo, no inteligencia ni comprensión del lenguaje.
+- La compatibilidad de tool calling depende del modelo de Ollama seleccionado; esta
+  versión aún no detecta sus capacidades ni limita el contexto de forma explícita.
 - No existe todavía un `LocalAssistant.Worker`: se añadirá cuando haya una tarea de fondo
   concreta que lo justifique.
 - El proyecto se distribuye bajo la licencia MIT.

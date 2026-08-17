@@ -4,7 +4,8 @@ info:
   version: 0.1.0
   description: >-
     Educational API demonstrating an explicit language-provider and tool-calling
-    orchestration loop with deterministic fake scenarios.
+    orchestration loop with deterministic fake scenarios and an optional Ollama
+    adapter.
   license:
     name: MIT
     url: https://opensource.org/license/mit
@@ -41,7 +42,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConversationResponse"
         "400":
-          description: The request or fake scenario is invalid.
+          description: The request, provider, provider configuration, or fake scenario is invalid.
           content:
             application/problem+json:
               schema:
@@ -90,11 +91,16 @@ components:
           type: string
           format: uuid
           nullable: true
+        provider:
+          type: string
+          enum: [fake, ollama]
+          default: fake
+          description: Language provider used for this turn.
         scenario:
           type: string
           enum: [direct, time]
           default: direct
-          description: Development-only scenario for the fake language provider.
+          description: Development-only scenario, used only when provider is fake.
         approvedTools:
           type: array
           nullable: true

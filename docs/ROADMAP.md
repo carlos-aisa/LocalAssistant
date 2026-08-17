@@ -13,9 +13,12 @@ habitaciones.
 - Herramienta de hora, políticas iniciales, logging y tests.
 - Conversaciones en memoria.
 
-## Fase 2 — Primer modelo local
+## Fase 2 — Primer modelo local (en curso)
 
-- Adaptador de Ollama detrás de `ILanguageProvider`.
+- [x] Adaptador HTTP de Ollama detrás de `ILanguageProvider`.
+- [x] Selección y configuración explícitas desde la API, desactivado por defecto.
+- [x] Pruebas deterministas del contrato HTTP sin red ni GPU.
+- [ ] Smoke test con una instalación y un modelo locales reales.
 - Detección de capacidades reales de tool calling por modelo.
 - Pruebas de contrato reutilizables entre fake y proveedores.
 - Límites de contexto y cancelación de inferencia.

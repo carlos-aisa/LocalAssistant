@@ -1,10 +1,12 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <RootNamespace>LocalAssistant.Api</RootNamespace>
+    <RootNamespace>LocalAssistant.Infrastructure</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\LocalAssistant.Core\LocalAssistant.Core.csproj" />
-    <ProjectReference Include="..\LocalAssistant.Infrastructure\LocalAssistant.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

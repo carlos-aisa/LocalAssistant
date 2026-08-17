@@ -36,6 +36,22 @@ caducidad ni autenticación. No debe reutilizarse como autorización productiva.
   y esperas, pero faltan cuotas, límites de tamaño y rate limiting.
 - **Memoria sensible:** las conversaciones permanecen en RAM hasta terminar el
   proceso. No hay cifrado, borrado selectivo ni política de retención.
+- **Endpoint de inferencia:** la URL de Ollama es configuración de confianza y no
+  procede de cada petición. Apuntarla a otro host puede enviarle conversaciones y
+  resultados de herramientas.
+
+## Ollama y red local
+
+Ollama está desactivado mientras no se configure un modelo. Su endpoint local no
+debe exponerse a Internet ni asumirse seguro solo por estar en la LAN. Conviene
+limitar la escucha al equipo o a interfaces expresamente necesarias y aplicar
+firewall. Si se configura un host remoto, el operador debe proporcionar transporte,
+autenticación y confianza de red adecuados; esta versión no gestiona credenciales
+para Ollama.
+
+El adaptador no registra cuerpos HTTP, prompts, argumentos ni respuestas. Los
+errores se traducen por el orquestador sin devolver al cliente detalles internos
+del proceso de inferencia.
 
 ## Privacidad y seguridad del audio futuro
 

@@ -8,10 +8,12 @@ ensamblados con responsabilidades ejecutables y comprobables:
 - `LocalAssistant.Core`: contratos de conversación, proveedores, herramientas,
   almacenamiento en memoria y orquestación.
 - `LocalAssistant.Api`: composición, configuración, escenarios demostrativos y endpoint.
+- `LocalAssistant.Infrastructure`: adaptadores de sistemas externos; actualmente,
+  el cliente HTTP de Ollama.
 - `LocalAssistant.Tests`: pruebas unitarias e integración HTTP en proceso.
 
-No hay worker ni microservicios. Ollama, voz, Home Assistant, MQTT, bases
-vectoriales y Open WebUI siguen siendo posibles procesos externos futuros.
+No hay worker ni microservicios. Ollama sigue siendo un proceso externo opcional;
+voz, Home Assistant, MQTT, bases vectoriales y Open WebUI son evoluciones futuras.
 
 ## Flujo de una conversación
 
@@ -23,7 +25,7 @@ sequenceDiagram
     participant P as Proveedor
     participant T as Registro de herramientas
 
-    Client->>API: mensaje + escenario fake
+    Client->>API: mensaje + proveedor
     API->>O: ConversationTurnRequest
     loop hasta respuesta final o límite
         O->>P: historial + definiciones
@@ -52,6 +54,19 @@ orquestador solo puede resolverla contra `IToolRegistry`.
 
 El fake usa una cola de funciones de respuesta. Cada llamada consume exactamente
 un paso, por lo que una prueba declara de forma visible la secuencia esperada.
+
+## Adaptador de Ollama
+
+`OllamaLanguageProvider` implementa `ILanguageProvider` mediante la API HTTP nativa
+de Ollama, sin introducir sus DTOs en `LocalAssistant.Core`. Traduce el historial,
+los esquemas de herramientas, las solicitudes de función y sus resultados. Para
+mantener un primer vertical slice pequeño y predecible, solicita `stream: false`.
+
+La API selecciona `fake` u `ollama` por turno. Ollama requiere un modelo configurado;
+si falta, la petición se rechaza como error de validación antes de entrar en el
+orquestador. Los tests del adaptador sustituyen la red por un manejador HTTP
+determinista. La verificación con un proceso y modelo reales queda pendiente porque
+depende de capacidades y recursos externos.
 
 ## Topología futura de habitaciones
 
@@ -136,5 +151,7 @@ que exista un consumidor concreto de trazas o métricas.
 
 ## Configuración
 
-`LocalAssistant:Orchestration` contiene el máximo de iteraciones y los timeouts. No se
-guardan secretos ni configuraciones personales en el repositorio.
+`LocalAssistant:Orchestration` contiene el máximo de iteraciones y los timeouts.
+`LocalAssistant:Ollama` contiene `Endpoint` y `Model`; el repositorio deja el modelo
+vacío para que Ollama permanezca desactivado por defecto. No se guardan secretos ni
+configuraciones personales en el repositorio.

@@ -1,8 +1,10 @@
 using LocalAssistant.Api.Endpoints;
 using LocalAssistant.Api.Fakes;
+using LocalAssistant.Api.LanguageModels;
 using LocalAssistant.Core.Conversations;
 using LocalAssistant.Core.Orchestration;
 using LocalAssistant.Core.Tools;
+using LocalAssistant.Infrastructure.LanguageModels.Ollama;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,6 +14,8 @@ builder.Services.AddSingleton<ITool, CurrentTimeTool>();
 builder.Services.AddSingleton<IToolRegistry>(services =>
     new ToolRegistry(services.GetServices<ITool>()));
 builder.Services.AddSingleton<FakeLanguageProviderFactory>();
+builder.Services.AddHttpClient<OllamaLanguageProvider>();
+builder.Services.AddScoped<LanguageProviderSelector>();
 builder.Services.AddScoped<IConversationOrchestrator, ConversationOrchestrator>();
 builder.Services.AddOptions<OrchestrationOptions>()
     .Bind(builder.Configuration.GetSection("LocalAssistant:Orchestration"))
@@ -20,6 +24,8 @@ builder.Services.AddOptions<OrchestrationOptions>()
         options => options.ProviderTimeout > TimeSpan.Zero && options.ToolTimeout > TimeSpan.Zero,
         "Timeouts must be greater than zero.")
     .ValidateOnStart();
+builder.Services.AddOptions<OllamaOptions>()
+    .Bind(builder.Configuration.GetSection("LocalAssistant:Ollama"));
 
 var app = builder.Build();
 

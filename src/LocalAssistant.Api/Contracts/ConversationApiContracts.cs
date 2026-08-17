@@ -5,6 +5,7 @@ namespace LocalAssistant.Api.Contracts;
 public sealed record SendMessageRequest(
     string Message,
     Guid? ConversationId = null,
+    string Provider = "fake",
     string Scenario = "direct",
     IReadOnlyList<string>? ApprovedTools = null);
 

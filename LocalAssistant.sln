@@ -8,6 +8,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LocalAssistant.Core", "src\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LocalAssistant.Tests", "tests\LocalAssistant.Tests\LocalAssistant.Tests.csproj", "{4EA421F7-9178-49F3-9E81-57EBB8F26663}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LocalAssistant.Infrastructure", "src\LocalAssistant.Infrastructure\LocalAssistant.Infrastructure.csproj", "{B17AA836-03E7-47A0-AB3A-4B3E97EDFD59}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,6 +28,10 @@ Global
 		{4EA421F7-9178-49F3-9E81-57EBB8F26663}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4EA421F7-9178-49F3-9E81-57EBB8F26663}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4EA421F7-9178-49F3-9E81-57EBB8F26663}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B17AA836-03E7-47A0-AB3A-4B3E97EDFD59}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B17AA836-03E7-47A0-AB3A-4B3E97EDFD59}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B17AA836-03E7-47A0-AB3A-4B3E97EDFD59}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B17AA836-03E7-47A0-AB3A-4B3E97EDFD59}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

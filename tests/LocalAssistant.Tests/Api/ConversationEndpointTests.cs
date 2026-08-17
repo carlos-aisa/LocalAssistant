@@ -69,6 +69,28 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    [Fact]
+    public async Task UnknownProviderReturnsValidationProblem()
+    {
+        using var response = await _client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Hello", provider = "unknown" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task OllamaWithoutConfiguredModelReturnsValidationProblem()
+    {
+        using var response = await _client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Hello", provider = "ollama" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
 }
 
 public sealed class LocalAssistantApiFactory : WebApplicationFactory<Program>

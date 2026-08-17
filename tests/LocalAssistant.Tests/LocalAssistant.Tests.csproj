@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\LocalAssistant.Api\LocalAssistant.Api.csproj" />
     <ProjectReference Include="..\..\src\LocalAssistant.Core\LocalAssistant.Core.csproj" />
+    <ProjectReference Include="..\..\src\LocalAssistant.Infrastructure\LocalAssistant.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\docs\api\openapi.yaml"
