@@ -29,6 +29,7 @@ Implementado:
 - Logging estructurado sin contenido de conversación.
 - Pruebas unitarias y de integración HTTP.
 - Contratos de proveedor reutilizados por el fake y el adaptador de Ollama.
+- Evaluación local reproducible de decisiones de tool calling por modelo.
 
 No implementado: detección automática de capacidades por modelo, proveedores cloud,
 persistencia, voz, wake word, RAG, Home Assistant, MQTT, MCP, autenticación,
@@ -162,6 +163,11 @@ Las cifras son una observación de ese equipo, no un objetivo de rendimiento. En
 mismo entorno, `qwen3:4b` superó los dos minutos para una respuesta pequeña y no
 resultó práctico para el bucle interactivo.
 
+El 18 de agosto de 2026 se ejecutó además la evaluación reproducible de decisiones
+de herramienta: `qwen3:1.7b` superó 15 de 15 casos, incluidos seis en los que no
+debía invocar la herramienta. La media fue 11,9 segundos por turno y la mediana
+9,7 segundos. Consulta la [metodología, ejecución y límites](docs/evaluations/TOOL_CALLING.md).
+
 ## Límites importantes
 
 - Las conversaciones se pierden al reiniciar y no soportan coordinación entre
@@ -171,9 +177,9 @@ resultó práctico para el bucle interactivo.
 - Los timeouts detienen la espera cooperativa; una implementación de herramienta
   que ignore el token podría seguir trabajando internamente.
 - El fake demuestra el protocolo, no inteligencia ni comprensión del lenguaje.
-- La compatibilidad de tool calling depende del modelo de Ollama seleccionado; esta
-  versión exige que Ollama declare `tools`, pero aún no evalúa la calidad real de
-  cada modelo.
+- La compatibilidad de tool calling depende del modelo de Ollama seleccionado. La
+  evaluación actual cubre una sola herramienta y una muestra pequeña; no garantiza
+  la calidad general del modelo.
 - `Think: false` solicita desactivar el razonamiento, pero el comportamiento final
   depende del modelo y de su plantilla.
 - `ContextWindow` acota la ventana usada por Ollama, pero LocalAssistant todavía no
