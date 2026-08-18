@@ -1,5 +1,12 @@
 # LocalAssistant
 
+[![CI](https://github.com/carlos-aisa/LocalAssistant/actions/workflows/ci.yml/badge.svg)](https://github.com/carlos-aisa/LocalAssistant/actions/workflows/ci.yml)
+[![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![ASP.NET Core](https://img.shields.io/badge/ASP.NET_Core-8.0-512BD4?logo=dotnet&logoColor=white)](https://learn.microsoft.com/aspnet/core/)
+[![Ollama](https://img.shields.io/badge/Ollama-supported-000000?logo=ollama&logoColor=white)](https://ollama.com/)
+[![OpenAPI](https://img.shields.io/badge/OpenAPI-3.0.3-6BA539?logo=openapiinitiative&logoColor=white)](docs/api/openapi.yaml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 LocalAssistant es un proyecto personal y educativo para comprender cómo se construye un
 asistente de IA local: conversación, proveedores de lenguaje, herramientas,
 seguridad, memoria, conectores y observabilidad.
