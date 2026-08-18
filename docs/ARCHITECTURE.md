@@ -52,6 +52,13 @@ orquestador solo puede resolverla contra `IToolRegistry`.
 - `IConversationStore` aísla el orquestador del almacenamiento actual.
 - `IConversationOrchestrator` ejecuta el protocolo y produce la traza.
 
+El impacto actual de una herramienta y su indicador de confirmación son un primer
+límite implementado, no un modelo completo de autorización. Una lectura puede
+exponer presencia, calendario, correo, ubicación, cámaras, memoria o documentos. La
+política futura evaluará conjuntamente operación, sensibilidad, principal, alcance,
+egreso, confirmación, coste y otros efectos relevantes, incorporando dimensiones
+solo cuando un vertical slice las necesite.
+
 El fake usa una cola de funciones de respuesta. Cada llamada consume exactamente
 un paso, por lo que una prueba declara de forma visible la secuencia esperada.
 
@@ -87,9 +94,155 @@ La inspección ocurre antes de crear el turno, por lo que esos fallos no modific
 historial de conversación. Cuando los metadatos contienen `*.context_length`, el
 inspector rechaza una ventana configurada por encima del máximo del modelo.
 
+## Dirección futura: privacidad y frontera de egreso
+
+Esta sección describe una intención arquitectónica, no componentes implementados.
+El modelo local podrá usar contexto privado para decidir qué hacer, pero ese contexto
+no se convertirá implícitamente en una solicitud externa. La única excepción
+inicial explícita será la ubicación cuando resulte necesaria para cumplir la
+petición y su política de categoría la autorice.
+
+La política de privacidad será anterior al routing de proveedor y constituirá una
+restricción dura. Capacidad, dificultad, latencia, coste o falta de recursos locales
+no permitirán enviar categorías `DENY` a un LLM externo. El router solo comparará
+proveedores que puedan recibir el payload ya autorizado. Cuando una petición dependa
+de contexto protegido que el modelo local no pueda procesar, podrá continuar con
+capacidad reducida, usar únicamente una parte pública o saneada si sigue siendo útil,
+o comunicar la limitación; la experiencia concreta queda pospuesta.
+
+La política futura clasificará datos y payloads derivados mediante categorías
+extensibles. Una primera referencia de comportamiento es:
+
+| Categoría | Política inicial |
+| --- | --- |
+| `SOURCE_CODE`, `REPOSITORY_DATA` | `DENY` |
+| `LOCAL_FILES`, `LOCAL_DOCUMENTS`, `RAG_CONTENT` | `DENY` |
+| `MEMORY`, `CONVERSATIONS`, `DATABASE_DATA` | `DENY` |
+| `SECRETS`, `CREDENTIALS`, `ENVIRONMENT`, `PRIVATE_CONFIG` | `DENY` |
+| `LOCATION` | `ALLOW_WHEN_REQUIRED` |
+| `SEARCH_QUERY` | `ALLOW_SANITIZED` |
+| `PUBLIC_DATA` | `ALLOW` |
+
+La lista no será un enum cerrado ni una autorización global. Una categoría nueva o
+desconocida se denegará hasta disponer de política. La decisión deberá considerar
+categoría, propósito, destino, proveedor, operación y procedencia. Autorizar un
+campo `LOCATION` no autorizará otros campos del mismo turno.
+
+La validación se realizará sobre el payload final. Una transformación local no
+cambia automáticamente la categoría: nombres de clases, repositorios, hosts, URLs,
+resúmenes o consultas derivados de información protegida seguirán protegidos. Así
+se evita que un dato denegado salga indirectamente convertido en una búsqueda.
+
+### Resolución local de ubicación
+
+Una abstracción futura `LocationProvider` resolverá referencias antes de llamar a
+servicios externos:
+
+- `HomeLocation`: referencia configurada y conservada localmente para «en casa».
+- `MobileCurrentLocation`: posición aportada por un cliente identificado cuando el
+  usuario haya concedido permiso y la lectura sea suficientemente reciente.
+- `ExplicitLocation`: lugar escrito o pronunciado en la petición actual.
+
+La ubicación explícita será suficiente siempre que pueda resolver la operación, sin
+consultar hogar, móvil, perfil ni memoria. Para routing, lugares cercanos o tiempo
+meteorológico se enviará la precisión mínima aceptada por el servicio: texto,
+ubicación aproximada, dirección o coordenadas solo según necesidad.
+
+```mermaid
+flowchart LR
+    Planner[Planificador] --> Location[Resolución local de ubicación]
+    Location --> Policy[Política por categoría y propósito]
+    Policy --> Payload[Validación del payload final]
+    Payload --> Gateway[Tools Gateway / frontera de egreso]
+    Gateway --> External[Mapas, tiempo o lugares]
+```
+
+El ejemplo «¿cuánto se tarda de casa al aeropuerto?» podrá enviar únicamente origen
+y destino al proveedor de routing. No enviará historial, memoria, documentos,
+familia, perfil, código ni ningún otro contexto usado durante el razonamiento local.
+
+### Cobertura de toda comunicación saliente
+
+La frontera no se limitará a herramientas de Internet. LLM cloud, STT, TTS,
+embeddings, telemetría, analítica, crash reporting, actualizaciones y SDKs de
+terceros deberán declarar y validar sus payloads con la misma política. Siempre que
+sea técnicamente práctico, los componentes internos carecerán de salida directa y
+la topología obligará a atravesar un proxy o límite equivalente controlado. El
+mecanismo de red concreto queda pospuesto hasta elegir despliegue.
+
+### Frontera de entrada no confiable
+
+El contenido recuperado de Internet será evidencia, no instrucciones. Un lector
+web extraerá datos bajo límites de red y tamaño y los entregará a una zona lógica de
+contenido no confiable. Esa zona no podrá conceder permisos, solicitar secretos,
+leer memoria o archivos, alterar políticas ni activar herramientas por sí misma.
+
+```mermaid
+flowchart LR
+    Internet --> Reader[Web Reader]
+    Reader --> Isolation[Contenido no confiable]
+    Isolation --> Evidence[Evidencia normalizada]
+    Evidence --> Reasoning[Razonamiento local]
+```
+
+Las pruebas futuras cubrirán tanto la decisión lógica como la imposibilidad técnica
+de saltarse estas fronteras. La auditoría conservará destino, categorías, propósito
+y resultado, pero no copiará automáticamente el payload ni el contenido recuperado.
+
+## Dirección futura: búsqueda de documentos locales
+
+Una abstracción futura `LocalDocumentSource` localizará documentos exclusivamente
+dentro de fuentes configuradas y permitidas. La primera fuente será la carpeta
+Documentos real del usuario,
+resuelta mediante el sistema operativo; no se fijará un nombre de usuario ni una
+ruta absoluta. Añadir otra carpeta requerirá configuración explícita. Discos
+completos, perfil entero, `AppData`, directorios del sistema y repositorios no serán
+fuentes implícitas.
+
+El LLM no recibirá una herramienta genérica de archivos ni producirá comandos. El
+orquestador expondrá operaciones estructuradas de descubrimiento y lectura a través
+de una herramienta local, mientras un servicio documental impondrá las raíces
+permitidas independientemente de los argumentos del modelo.
+
+```mermaid
+flowchart LR
+    Local[LLM local / orquestador] --> Tool[Herramienta documental]
+    Tool --> Service[Servicio de documentos locales]
+    Service --> Sources[Fuentes configuradas]
+    Sources --> Documents[Documentos del usuario]
+```
+
+Descubrir y leer serán capacidades diferentes. El primer vertical slice recorrerá
+directamente la fuente permitida y buscará nombre, extensión, ruta relativa, fechas
+y metadatos básicos sin índice persistente. Una búsqueda podrá devolver referencias
+controladas por el servicio sin abrir el contenido completo. Leer requerirá una
+selección explícita y validará de nuevo que el destino resuelto sigue dentro de una
+raíz permitida.
+
+La extracción textual llegará después para formatos comunes seleccionados. `.txt`,
+`.md`, `.pdf` y `.docx` son candidatos, no una lista comprometida. Tipo, tamaño y
+recursos estarán acotados y un formato no soportado fallará explícitamente; no se
+eligen todavía formatos definitivos ni librerías. El texto extraído será dato no
+confiable: podrá aportar evidencia, pero no cambiar instrucciones, permisos o
+políticas ni solicitar herramientas por sí mismo.
+
+Descubrimiento, lectura, búsqueda en contenido e ingesta RAG son etapas distintas.
+Abrir un documento no lo indexará ni lo conservará como conocimiento permanente.
+Un índice local, embeddings locales y recuperación semántica solo se introducirán
+tras medir corpus, rendimiento y calidad. No se presupone base vectorial, watcher,
+OCR ni worker. Los repositorios y símbolos de código quedan fuera de esta capacidad
+y podrán requerir en el futuro una fuente separada.
+
+`LOCAL_DOCUMENTS`, `LOCAL_FILES` y `RAG_CONTENT` seguirán en `DENY` para egreso
+automático. Nombres, rutas, texto extraído e índices o embeddings tampoco se enviarán
+a proveedores externos por defecto. Si una petición combina documentos e Internet,
+todo dato derivado deberá superar la política sobre el payload final ya definida.
+Cuando existan varios principales, fuente, búsqueda, lectura e ingesta respetarán
+propiedad y alcance de acceso antes de revelar metadatos o contenido.
+
 ## Topología futura de habitaciones
 
-La evolución de voz distinguirá cuatro conceptos que hoy no necesitan tipos de
+La evolución de voz distinguirá cinco conceptos que hoy no necesitan tipos de
 dominio propios:
 
 - **Dispositivo de entrada:** captura audio, puede detectar localmente el wake word
@@ -100,6 +253,8 @@ dominio propios:
   convertirlas en un único dispositivo.
 - **Conversación:** continuidad lógica de mensajes y turnos; puede comenzar en una
   habitación y, en una fase posterior, transferirse explícitamente a otra.
+- **Usuario o principal:** sujeto propietario o autorizado para acceder a recursos
+  personales; es independiente del canal, aparato, habitación y conversación.
 
 ```mermaid
 flowchart LR
@@ -121,11 +276,22 @@ o reproducción de audio, pantalla, botones, indicadores y detección local de w
 word. La selección de hardware —Home Assistant Assist, ESP32-S3, Raspberry Pi,
 Android u ordenador— queda abierta hasta construir un vertical slice medible.
 
+`ConversationId`, `User` o `Principal`, `DeviceId` y `RoomId` representan
+identidades diferentes. Varias personas pueden compartir un dispositivo o una
+habitación, una persona puede mantener varias conversaciones y una conversación
+puede cambiar de habitación. Autenticar un satélite prueba la identidad del
+dispositivo, no la del usuario. Memoria personal, calendario y otros recursos
+privados requerirán propiedad y alcance de acceso explícitos antes de persistirse o
+exponerse. No se eligen ahora biometría de voz, identificación automática de
+hablante ni un sistema completo de autenticación.
+
 ### Revisión de los contratos actuales
 
 `ConversationTurnRequest` ya contiene `ConversationId`, suficiente para la
-identidad lógica actual, y un mensaje de texto que no presupone una interfaz web.
-La API HTTP es un canal de entrada, no una propiedad permanente de la conversación.
+continuidad lógica actual, y un mensaje de texto que no presupone una interfaz web.
+Ese identificador no representa a un usuario ni concede acceso a recursos
+personales. La API HTTP es un canal de entrada, no una propiedad permanente de la
+conversación.
 
 No se añaden todavía `SourceDeviceId`, `RoomId`, canal de entrada ni capacidades de
 respuesta: ningún componente actual puede validarlos, persistirlos o usarlos para
@@ -140,6 +306,12 @@ comportamiento y tests reales.
 copia cada historial bajo bloqueo. No existe transacción que serialice dos turnos
 simultáneos de la misma conversación. Esta limitación es aceptable para el entorno
 de aprendizaje, pero deberá resolverse al introducir persistencia.
+
+Antes de persistir información privada se definirán propiedad y alcance de acceso,
+retención, borrado selectivo, control de acceso, protección en reposo, auditoría y
+consecuencias de backup y restauración. El mecanismo concreto dependerá del
+almacenamiento y despliegue elegidos; no se presupone cifrado de aplicación, base de
+datos concreta ni que el cifrado de disco resulte suficiente por sí solo.
 
 ## Errores y timeouts
 
