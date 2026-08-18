@@ -269,6 +269,14 @@ seguirán registradas mediante allowlist.
 - Asistente de programación local limitado a workspaces aprobados.
 - Planificación, vista previa y confirmación antes de cambios.
 
+### Calidad y publicación
+
+- [x] Mostrar cobertura automatizada en CI y en la portada, inicialmente sin umbral.
+- Añadir badge de última release cuando exista la primera versión SemVer publicada.
+- Añadir badge de análisis de seguridad cuando haya un workflow estable y accionable.
+- Añadir versiones de paquete o imagen solo si el proyecto publica esos artefactos.
+- Mantener fuera de la portada métricas manuales o badges sin una fuente automatizada.
+
 ## Decisiones pospuestas
 
 - Modelo definitivo de autorización de herramientas y combinación de impacto,

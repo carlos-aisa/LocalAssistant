@@ -1,6 +1,7 @@
 # LocalAssistant
 
 [![CI](https://github.com/carlos-aisa/LocalAssistant/actions/workflows/ci.yml/badge.svg)](https://github.com/carlos-aisa/LocalAssistant/actions/workflows/ci.yml)
+[![Coverage](.github/badges/coverage.svg)](https://github.com/carlos-aisa/LocalAssistant/actions/workflows/ci.yml)
 [![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![ASP.NET Core](https://img.shields.io/badge/ASP.NET_Core-8.0-512BD4?logo=dotnet&logoColor=white)](https://learn.microsoft.com/aspnet/core/)
 [![Ollama](https://img.shields.io/badge/Ollama-supported-000000?logo=ollama&logoColor=white)](https://ollama.com/)
@@ -79,6 +80,8 @@ dotnet test LocalAssistant.sln --configuration Release --no-build
 ```
 
 Los tests no usan el reloj real, red, Docker, Ollama ni ningún proveedor externo.
+CI publica un informe de cobertura como artefacto y mantiene el badge de la portada
+actualizado desde `main`. La cobertura es informativa; todavía no existe un umbral.
 
 ## Ejecutar la API
 

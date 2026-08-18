@@ -28,5 +28,77 @@ jobs:
       - name: Build
         run: dotnet build LocalAssistant.sln --configuration Release --no-restore
 
-      - name: Test
-        run: dotnet test LocalAssistant.sln --configuration Release --no-build --logger "console;verbosity=normal"
+      - name: Test with coverage
+        run: >
+          dotnet test LocalAssistant.sln
+          --configuration Release
+          --no-build
+          --logger "console;verbosity=normal"
+          --collect:"XPlat Code Coverage"
+          --results-directory TestResults
+
+      - name: Restore local tools
+        run: dotnet tool restore
+
+      - name: Generate coverage report
+        run: >
+          dotnet reportgenerator
+          -reports:"TestResults/**/coverage.cobertura.xml"
+          -targetdir:"coverage-report"
+          -reporttypes:"HtmlInline;Cobertura;MarkdownSummaryGithub;JsonSummary;Badges"
+          -assemblyfilters:"+LocalAssistant.*;-LocalAssistant.Tests"
+
+      - name: Publish coverage summary
+        run: |
+          if [ ! -f coverage-report/SummaryGithub.md ]; then
+            echo "Coverage summary was not generated." >&2
+            exit 1
+          fi
+
+          {
+            echo "## Coverage"
+            cat coverage-report/SummaryGithub.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: coverage-report
+          if-no-files-found: error
+          retention-days: 14
+
+  update-coverage-badge:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-and-test
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Download coverage report
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-report
+          path: coverage-report
+
+      - name: Update coverage badge
+        run: |
+          cp coverage-report/badge_linecoverage.svg .github/badges/coverage.svg
+          sed -i 's/[[:space:]]\+$//' .github/badges/coverage.svg
+
+      - name: Commit coverage badge
+        run: |
+          if git diff --quiet -- .github/badges/coverage.svg; then
+            echo "Coverage badge is already up to date."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/badges/coverage.svg
+          git commit -m "ci: update coverage badge [skip ci]"
+          git push
