@@ -3,6 +3,7 @@ bin/
 obj/
 artifacts/
 TestResults/
+coverage-report/
 
 ## Visual Studio and VS Code
 .vs/
