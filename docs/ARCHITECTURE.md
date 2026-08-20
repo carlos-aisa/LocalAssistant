@@ -52,12 +52,14 @@ orquestador solo puede resolverla contra `IToolRegistry`.
 - `IConversationStore` aísla el orquestador del almacenamiento actual.
 - `IConversationOrchestrator` ejecuta el protocolo y produce la traza.
 
-El impacto actual de una herramienta y su indicador de confirmación son un primer
-límite implementado, no un modelo completo de autorización. Una lectura puede
-exponer presencia, calendario, correo, ubicación, cámaras, memoria o documentos. La
-política futura evaluará conjuntamente operación, sensibilidad, principal, alcance,
-egreso, confirmación, coste y otros efectos relevantes, incorporando dimensiones
-solo cuando un vertical slice las necesite.
+Cada herramienta declara un perfil de riesgo con impacto, sensibilidad, exposición,
+coste, confirmación explícita y scopes necesarios. Una lectura puede exponer
+presencia, calendario, correo, ubicación, cámaras, memoria o documentos y no se
+considera segura solo por no modificar estado. El orquestador filtra el catálogo que
+recibe el proveedor y vuelve a evaluar antes de ejecutar. El contexto actual es
+anónimo y sin scopes: una herramienta privada, sensible, con scope o externa queda
+denegada hasta que un vertical slice aporte un principal autenticado o una integración
+a través de la pasarela. No existe todavía un modelo completo de autorización.
 
 El fake usa una cola de funciones de respuesta. Cada llamada consume exactamente
 un paso, por lo que una prueba declara de forma visible la secuencia esperada.

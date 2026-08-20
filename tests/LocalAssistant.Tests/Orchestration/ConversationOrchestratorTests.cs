@@ -2,6 +2,7 @@ using System.Text.Json;
 using LocalAssistant.Core.Conversations;
 using LocalAssistant.Core.LanguageModels;
 using LocalAssistant.Core.Orchestration;
+using LocalAssistant.Core.Security.ToolRisk;
 using LocalAssistant.Core.Tools;
 using LocalAssistant.Tests.TestDoubles;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -237,6 +238,123 @@ public sealed class ConversationOrchestratorTests
     }
 
     [Fact]
+    public async Task DoesNotExposeSensitiveToolToAnonymousProvider()
+    {
+        var sensitiveTool = new DelegateTool(
+            "read_sensitive",
+            new ToolRiskProfile(
+                ToolOperationImpact.ReadOnly,
+                ToolDataSensitivity.Sensitive,
+                ToolExposure.Local,
+                ToolCost.None,
+                RequiresConfirmation: false,
+                []),
+            static (_, _) => ValueTask.FromResult(ToolExecutionResult.Success("secret")));
+        var provider = new ScriptedLanguageProvider([
+            request =>
+            {
+                Assert.DoesNotContain(request.AvailableTools, tool => tool.Metadata.Name == "read_sensitive");
+                return LanguageProviderResponse.Final("Safe answer");
+            },
+        ]);
+        var sut = CreateOrchestrator(tools: [sensitiveTool]);
+
+        var result = await sut.ProcessAsync(new ConversationTurnRequest("Read data"), provider, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task DeniesSensitiveToolRequestedByProviderWithoutExecutingIt()
+    {
+        var executions = 0;
+        var sensitiveTool = new DelegateTool(
+            "read_sensitive",
+            new ToolRiskProfile(
+                ToolOperationImpact.ReadOnly,
+                ToolDataSensitivity.Sensitive,
+                ToolExposure.Local,
+                ToolCost.None,
+                RequiresConfirmation: false,
+                []),
+            (_, _) =>
+            {
+                executions++;
+                return ValueTask.FromResult(ToolExecutionResult.Success("secret"));
+            });
+        var sut = CreateOrchestrator(tools: [sensitiveTool]);
+
+        var result = await sut.ProcessAsync(
+            new ConversationTurnRequest("Read data"),
+            ProviderRequesting(new ToolCall("sensitive-1", "read_sensitive", EmptyArguments())),
+            CancellationToken.None);
+
+        Assert.Equal("tool_policy_denied", result.Error?.Code);
+        Assert.Equal(0, executions);
+    }
+
+    [Fact]
+    public async Task RechecksPolicyImmediatelyBeforeExecutingTool()
+    {
+        var executions = 0;
+        var privateTool = new DelegateTool(
+            "read_private",
+            new ToolRiskProfile(
+                ToolOperationImpact.ReadOnly,
+                ToolDataSensitivity.Private,
+                ToolExposure.Local,
+                ToolCost.None,
+                RequiresConfirmation: false,
+                []),
+            (_, _) =>
+            {
+                executions++;
+                return ValueTask.FromResult(ToolExecutionResult.Success("private data"));
+            });
+        var authenticated = new ToolPolicyContext(
+            true,
+            new HashSet<string>(StringComparer.Ordinal));
+        var contextAccessor = new SequenceToolPolicyContextAccessor(
+            authenticated,
+            ToolPolicyContext.Anonymous);
+        var sut = CreateOrchestrator(
+            tools: [privateTool],
+            toolPolicyContextAccessor: contextAccessor);
+
+        var result = await sut.ProcessAsync(
+            new ConversationTurnRequest("Read data"),
+            ProviderRequesting(new ToolCall("private-1", "read_private", EmptyArguments())),
+            CancellationToken.None);
+
+        Assert.Equal("tool_policy_denied", result.Error?.Code);
+        Assert.Equal(0, executions);
+    }
+
+    [Fact]
+    public async Task RequiresConfirmationForSignificantCostReadOnlyTool()
+    {
+        var costlyTool = new DelegateTool(
+            "costly_read",
+            new ToolRiskProfile(
+                ToolOperationImpact.ReadOnly,
+                ToolDataSensitivity.Public,
+                ToolExposure.Local,
+                ToolCost.Significant,
+                RequiresConfirmation: false,
+                []),
+            static (_, _) => ValueTask.FromResult(ToolExecutionResult.Success("done")));
+        var sut = CreateOrchestrator(tools: [costlyTool]);
+
+        var result = await sut.ProcessAsync(
+            new ConversationTurnRequest("Run costly read"),
+            ProviderRequesting(new ToolCall("costly-1", "costly_read", EmptyArguments())),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(result.Confirmation);
+    }
+
+    [Fact]
     public async Task RejectionDoesNotExecuteToolAndReturnsToolResultToProvider()
     {
         var executions = 0;
@@ -348,7 +466,8 @@ public sealed class ConversationOrchestratorTests
         IEnumerable<ITool>? tools = null,
         ManualTimeProvider? timeProvider = null,
         InMemoryConversationStore? store = null,
-        OrchestrationOptions? options = null)
+        OrchestrationOptions? options = null,
+        IToolPolicyContextAccessor? toolPolicyContextAccessor = null)
     {
         timeProvider ??= new ManualTimeProvider(FixedUtcNow);
         tools ??= [new CurrentTimeTool(timeProvider)];
@@ -356,6 +475,8 @@ public sealed class ConversationOrchestratorTests
         return new ConversationOrchestrator(
             store ?? new InMemoryConversationStore(),
             new ToolRegistry(tools),
+            new DefaultToolRiskPolicy(),
+            toolPolicyContextAccessor ?? new AnonymousToolPolicyContextAccessor(),
             new InMemoryToolConfirmationStore(),
             new InMemoryConversationExecutionLock(),
             timeProvider,
@@ -397,6 +518,19 @@ public sealed class ConversationOrchestratorTests
             Task.FromResult(LanguageProviderResponse.Final("unreachable"));
     }
 
+    private sealed class SequenceToolPolicyContextAccessor(
+        params ToolPolicyContext[] contexts) : IToolPolicyContextAccessor
+    {
+        private int _index;
+
+        public ToolPolicyContext GetCurrent()
+        {
+            var index = Math.Min(_index, contexts.Length - 1);
+            _index++;
+            return contexts[index];
+        }
+    }
+
     private sealed class DelegateTool : ITool
     {
         private static readonly JsonElement Schema = JsonSerializer.SerializeToElement(new
@@ -410,13 +544,31 @@ public sealed class ConversationOrchestratorTests
             string name,
             bool requiresConfirmation,
             Func<JsonElement, CancellationToken, ValueTask<ToolExecutionResult>> execute)
+            : this(
+                name,
+                requiresConfirmation
+                    ? new ToolRiskProfile(
+                        ToolOperationImpact.ChangesState,
+                        ToolDataSensitivity.Public,
+                        ToolExposure.Local,
+                        ToolCost.None,
+                        RequiresConfirmation: true,
+                        [])
+                    : ToolRiskProfile.PublicLocalRead,
+                execute)
+        {
+        }
+
+        public DelegateTool(
+            string name,
+            ToolRiskProfile risk,
+            Func<JsonElement, CancellationToken, ValueTask<ToolExecutionResult>> execute)
         {
             Definition = new ToolDefinition(
                 new ToolMetadata(
                     name,
                     "Test tool",
-                    requiresConfirmation ? ToolImpact.ChangesState : ToolImpact.ReadOnly,
-                    requiresConfirmation),
+                    risk),
                 Schema);
             _execute = execute;
         }

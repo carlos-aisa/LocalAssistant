@@ -223,8 +223,13 @@ file sealed class ConfirmationTemperatureTool : ITool
             new ToolMetadata(
                 TemperatureConversionTool.ToolName,
                 "Converts one temperature between supported units.",
-                ToolImpact.ChangesState,
-                RequiresConfirmation: true),
+                new ToolRiskProfile(
+                    ToolOperationImpact.ChangesState,
+                    ToolDataSensitivity.Public,
+                    ToolExposure.Local,
+                    ToolCost.None,
+                    RequiresConfirmation: true,
+                    [])),
             _inner.Definition.InputSchema);
     }
 

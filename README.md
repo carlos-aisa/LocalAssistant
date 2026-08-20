@@ -33,6 +33,7 @@ Implementado:
 - Herramienta determinista de fecha y hora UTC basada en `TimeProvider`.
 - Bucle explícito de tool calling con cancelación, timeouts y límite de iteraciones.
 - Metadatos de impacto y confirmación de herramientas.
+- Perfiles multidimensionales de riesgo y filtrado de herramientas no autorizadas.
 - Política de egreso denegada por defecto y pasarela de adaptadores externos sin
   proveedores reales habilitados.
 - Conversaciones en memoria.
