@@ -360,10 +360,11 @@ documentos ni otros datos del mismo usuario.
 
 `SEARCH_QUERY` requerirá saneado y minimización; `PUBLIC_DATA` podrá salir cuando la
 política del destino lo permita. Las categorías nuevas o desconocidas se denegarán
-por defecto. La política actual evalúa solamente descriptores de campos, sin valores
-ni logs de payload, y aún no permite comunicación externa. El primer `Tools Gateway`
-deberá aplicar su resultado sobre el payload final y no aceptar una marca de saneado
-procedente del modelo o del cliente como prueba suficiente.
+por defecto. La pasarela actual evalúa descriptores y solo entrega los valores a un
+adaptador registrado cuando la política los permite. Adaptador, destino y operación
+proceden de una allowlist, no de una URL libre propuesta por el modelo. No existe aún
+un adaptador real ni comunicación externa. Una marca de saneado procedente del modelo
+o del cliente no será prueba suficiente cuando se incorpore el sanitizador.
 
 La comprobación se aplicará al payload final y no solo a sus fuentes originales.
 Consultas, resúmenes, nombres de proyecto, clases, hosts, URLs privadas,

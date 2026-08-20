@@ -85,7 +85,7 @@ confirmación y auditoría vinculadas a su solicitud.
   conversión de temperatura con argumentos validados.
 - [x] Definir clasificación de datos y políticas de egreso por categoría antes del
   primer acceso a un servicio externo.
-- Definir el primer contrato de herramienta externa y una pasarela controlada
+- [x] Definir el primer contrato de herramienta externa y una pasarela controlada
   (`Tools Gateway`) que mantenga proveedores, credenciales y acceso de red fuera
   del núcleo conversacional.
 - [x] Confirmación vinculada a una solicitud concreta, no aprobación global por
