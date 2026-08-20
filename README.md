@@ -34,6 +34,7 @@ Implementado:
 - Bucle explícito de tool calling con cancelación, timeouts y límite de iteraciones.
 - Metadatos de impacto y confirmación de herramientas.
 - Perfiles multidimensionales de riesgo y filtrado de herramientas no autorizadas.
+- Identidad local opcional mediante API key y scopes concedidos por el servidor.
 - Política de egreso denegada por defecto y pasarela de adaptadores externos sin
   proveedores reales habilitados.
 - Conversaciones en memoria.
@@ -43,8 +44,8 @@ Implementado:
 - Evaluación local reproducible de decisiones de tool calling por modelo.
 
 No implementado: detección automática de capacidades por modelo, acceso real a
-Internet, proveedores cloud, persistencia, voz, wake word, RAG, Home Assistant,
-MQTT, MCP, autenticación, interfaz gráfica ni ejecución de comandos.
+Internet, proveedores cloud, persistencia, gestión de usuarios, voz, wake word,
+RAG, Home Assistant, MQTT, MCP, interfaz gráfica ni ejecución de comandos.
 
 ## Arquitectura actual
 
@@ -93,6 +94,42 @@ dotnet run --project src/LocalAssistant.Api -- --urls http://localhost:5100
 ```
 
 La comprobación de salud queda disponible en `http://localhost:5100/health`.
+
+### Identidad local opcional
+
+La API funciona de forma anónima para las herramientas públicas. Para habilitar un
+principal local con scopes concedidos por el servidor, configura un hash SHA-256 de
+una API key fuera de los archivos versionados. Este ejemplo genera una clave efímera
+para la sesión actual de PowerShell:
+
+```powershell
+$apiKey = [Guid]::NewGuid().ToString("N")
+$apiKeyHash = [Convert]::ToHexString(
+  [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($apiKey)))
+$env:LocalAssistant__Identity__Enabled = "true"
+$env:LocalAssistant__Identity__PrincipalId = "local-owner"
+$env:LocalAssistant__Identity__ApiKeySha256 = $apiKeyHash
+$env:LocalAssistant__Identity__Scopes__0 = "example.read"
+dotnet run --project src/LocalAssistant.Api -- --urls http://localhost:5100
+```
+
+Envía la clave mediante el header `X-LocalAssistant-Api-Key`; nunca la incluyas en
+el cuerpo de la petición ni la guardes en `appsettings.json`:
+
+```powershell
+$headers = @{ "X-LocalAssistant-Api-Key" = $apiKey }
+Invoke-RestMethod -Method Post `
+  -Uri http://localhost:5100/api/conversations/messages `
+  -Headers $headers `
+  -ContentType application/json `
+  -Body (@{ message = "Hola"; scenario = "direct" } | ConvertTo-Json)
+```
+
+Una clave presentada pero inválida devuelve `401`. La ausencia de clave mantiene el
+contexto anónimo; una herramienta que exija autenticación o un scope no se expondrá
+al proveedor y se denegará antes de ejecutarse. Esta implementación admite un único
+principal configurado y no sustituye gestión de usuarios, HTTPS ni propiedad de
+conversaciones.
 
 ### Escenario 1: respuesta directa
 
@@ -201,8 +238,9 @@ debía invocar la herramienta. La media fue 11,9 segundos por turno y la mediana
 - Las conversaciones se pierden al reiniciar y no soportan coordinación entre
   varias instancias de la API.
 - Las confirmaciones de herramientas retienen en el servidor la llamada exacta,
-  caducan y se consumen una vez, pero todavía no constituyen identidad ni
-  autorización completa.
+  caducan y se consumen una vez. Cuando la llamada procede de un principal
+  autenticado, solo ese principal puede resolverla; aún no hay gestión de usuarios
+  ni propiedad de conversaciones.
 - Los timeouts detienen la espera cooperativa; una implementación de herramienta
   que ignore el token podría seguir trabajando internamente.
 - El fake demuestra el protocolo, no inteligencia ni comprensión del lenguaje.

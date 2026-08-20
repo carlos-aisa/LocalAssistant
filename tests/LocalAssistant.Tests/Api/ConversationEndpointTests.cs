@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using LocalAssistant.Api.Security;
 using LocalAssistant.Core.Tools;
 using LocalAssistant.Infrastructure.LanguageModels.Ollama;
 using LocalAssistant.Tests.TestDoubles;
@@ -13,6 +16,9 @@ namespace LocalAssistant.Tests.Api;
 
 public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiFactory>
 {
+    private const string LocalApiKey = "local-assistant-test-key";
+    private static readonly string LocalApiKeyHash = Convert.ToHexString(
+        SHA256.HashData(Encoding.UTF8.GetBytes(LocalApiKey)));
     private readonly HttpClient _client;
     private readonly LocalAssistantApiFactory _factory;
 
@@ -118,6 +124,68 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
     }
 
     [Fact]
+    public async Task ConfiguredIdentityKeepsPublicRequestsAvailableToAnonymousClients()
+    {
+        using var client = CreateIdentityClient(["time.read"]);
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Hello", scenario = "direct" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task InvalidApiKeyIsRejectedBeforeTheOrchestrator()
+    {
+        using var client = CreateIdentityClient(["time.read"]);
+        client.DefaultRequestHeaders.Add(
+            LocalApiKeyAuthenticationDefaults.HeaderName,
+            "invalid-api-key");
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Hello", scenario = "direct" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ScopedToolRequiresAConfiguredAuthenticatedPrincipal()
+    {
+        var tool = new ScopedCurrentTimeTool();
+        using var anonymousClient = CreateIdentityClient(["time.read"], tool);
+        using var anonymousResponse = await anonymousClient.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "What time is it?", scenario = "time" },
+            CancellationToken.None);
+
+        using var noScopeClient = CreateIdentityClient([], tool);
+        noScopeClient.DefaultRequestHeaders.Add(
+            LocalApiKeyAuthenticationDefaults.HeaderName,
+            LocalApiKey);
+        using var noScopeResponse = await noScopeClient.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "What time is it?", scenario = "time" },
+            CancellationToken.None);
+
+        using var authorizedClient = CreateIdentityClient(["time.read"], tool);
+        authorizedClient.DefaultRequestHeaders.Add(
+            LocalApiKeyAuthenticationDefaults.HeaderName,
+            LocalApiKey);
+        using var authorizedResponse = await authorizedClient.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "What time is it?", scenario = "time" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, noScopeResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, authorizedResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task ConfirmationEndpointExecutesOnlyThePendingToolCall()
     {
         var tool = new ConfirmationTemperatureTool();
@@ -199,6 +267,31 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
             "The configured Ollama model 'test-model' does not support tools.",
             Assert.Single(errors.GetProperty("provider").EnumerateArray()).GetString());
     }
+
+    private HttpClient CreateIdentityClient(
+        string[] scopes,
+        ITool? replacementTool = null)
+    {
+        return _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("LocalAssistant:Identity:Enabled", "true");
+            builder.UseSetting("LocalAssistant:Identity:PrincipalId", "test-owner");
+            builder.UseSetting("LocalAssistant:Identity:ApiKeySha256", LocalApiKeyHash);
+            for (var index = 0; index < scopes.Length; index++)
+            {
+                builder.UseSetting($"LocalAssistant:Identity:Scopes:{index}", scopes[index]);
+            }
+
+            if (replacementTool is not null)
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IToolRegistry>();
+                    services.AddSingleton<IToolRegistry>(_ => new ToolRegistry([replacementTool]));
+                });
+            }
+        }).CreateClient();
+    }
 }
 
 public sealed class LocalAssistantApiFactory : WebApplicationFactory<Program>
@@ -244,6 +337,33 @@ file sealed class ConfirmationTemperatureTool : ITool
         ExecutionCount++;
         return await _inner.ExecuteAsync(arguments, cancellationToken);
     }
+}
+
+file sealed class ScopedCurrentTimeTool : ITool
+{
+    private readonly CurrentTimeTool _inner = new(TimeProvider.System);
+
+    public ScopedCurrentTimeTool()
+    {
+        Definition = new ToolDefinition(
+            new ToolMetadata(
+                CurrentTimeTool.ToolName,
+                "Reads the current time for an authorized principal.",
+                new ToolRiskProfile(
+                    ToolOperationImpact.ReadOnly,
+                    ToolDataSensitivity.Private,
+                    ToolExposure.Local,
+                    ToolCost.None,
+                    RequiresConfirmation: false,
+                    ["time.read"])),
+            _inner.Definition.InputSchema);
+    }
+
+    public ToolDefinition Definition { get; }
+
+    public ValueTask<ToolExecutionResult> ExecuteAsync(
+        JsonElement arguments,
+        CancellationToken cancellationToken) => _inner.ExecuteAsync(arguments, cancellationToken);
 }
 
 file sealed class StaticHttpMessageHandler : HttpMessageHandler

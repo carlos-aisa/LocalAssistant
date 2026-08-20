@@ -2,10 +2,14 @@ using LocalAssistant.Core.Tools;
 
 namespace LocalAssistant.Core.Security.ToolRisk;
 
-public sealed record ToolPolicyContext(bool IsAuthenticated, IReadOnlySet<string> GrantedScopes)
+public sealed record ToolPolicyContext(
+    string? PrincipalId,
+    IReadOnlySet<string> GrantedScopes)
 {
+    public bool IsAuthenticated => !string.IsNullOrWhiteSpace(PrincipalId);
+
     public static ToolPolicyContext Anonymous => new(
-        false,
+        null,
         new HashSet<string>(StringComparer.Ordinal));
 }
 
@@ -37,6 +41,11 @@ public sealed class DefaultToolRiskPolicy : IToolRiskPolicy
 
         if ((metadata.Risk.Sensitivity is ToolDataSensitivity.Private or ToolDataSensitivity.Sensitive) &&
             !context.IsAuthenticated)
+        {
+            return new ToolPolicyDecision(ToolPolicyDecisionKind.Denied, "authentication_required");
+        }
+
+        if (metadata.Risk.RequiredScopes.Count > 0 && !context.IsAuthenticated)
         {
             return new ToolPolicyDecision(ToolPolicyDecisionKind.Denied, "authentication_required");
         }

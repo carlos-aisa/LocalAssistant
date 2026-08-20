@@ -7,6 +7,7 @@ public sealed record PendingToolConfirmation(
     Guid ConfirmationId,
     Guid ConversationId,
     string ProviderName,
+    string? PrincipalId,
     ToolCall ToolCall,
     IReadOnlyList<ToolCall> RemainingToolCalls,
     DateTimeOffset ExpiresAtUtc);

@@ -44,12 +44,13 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         var pending = await _confirmations.GetAsync(id, ct);
         if (pending is null || pending.ConfirmationId != confirmationId) return Result(id, null, [], 0, TimeSpan.Zero, TimeSpan.Zero, new("confirmation_not_found", "The confirmation was not found."));
         if (!StringComparer.Ordinal.Equals(pending.ProviderName, provider.Name)) return Result(id, null, [], 0, TimeSpan.Zero, TimeSpan.Zero, new("confirmation_provider_mismatch", "The confirmation must use its original provider."));
+        var policyContext = _toolPolicyContextAccessor.GetCurrent();
+        if (!StringComparer.Ordinal.Equals(pending.PrincipalId, policyContext.PrincipalId)) return Result(id, null, [], 0, TimeSpan.Zero, TimeSpan.Zero, new("confirmation_not_found", "The confirmation was not found."));
         pending = await _confirmations.TakeAsync(id, confirmationId, ct);
         if (pending is null) return Result(id, null, [], 0, TimeSpan.Zero, TimeSpan.Zero, new("confirmation_not_found", "The confirmation was not found."));
         if (pending.ExpiresAtUtc <= _clock.GetUtcNow())
         { await RejectAsync(id, pending.ToolCall, "The tool confirmation expired.", ct); return Result(id, null, [Failed(pending.ToolCall, "confirmation_expired")], 0, TimeSpan.Zero, TimeSpan.Zero, new("confirmation_expired", "The confirmation expired.")); }
         var traces = new List<ToolExecutionTrace>(); var toolsTime = TimeSpan.Zero;
-        var policyContext = _toolPolicyContextAccessor.GetCurrent();
         if (approved)
         { var error = await ExecuteAsync(id, pending.ToolCall, traces, e => toolsTime += e, ct); if (error is not null) return Result(id, null, traces, 0, TimeSpan.Zero, toolsTime, error); }
         else { await RejectAsync(id, pending.ToolCall, "The user rejected this tool call.", ct); traces.Add(Failed(pending.ToolCall, "tool_confirmation_rejected")); }
@@ -83,11 +84,11 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         var policyDecision = _toolRiskPolicy.Evaluate(tool.Definition.Metadata, policyContext);
         if (policyDecision.Kind == ToolPolicyDecisionKind.Denied)
         {
-            traces.Add(Failed(call, "tool_policy_denied"));
-            return (new("tool_policy_denied", "The requested tool is not authorized.", call.Name), null);
+            traces.Add(Failed(call, policyDecision.Code ?? "tool_policy_denied"));
+            return (ToolPolicyError(call, policyDecision), null);
         }
         if (policyDecision.Kind == ToolPolicyDecisionKind.RequiresConfirmation)
-        { var pending = new PendingToolConfirmation(Guid.NewGuid(), id, providerName, call, remaining, _clock.GetUtcNow().Add(_options.ConfirmationTimeout)); await _confirmations.CreateAsync(pending, ct); return (null, new(pending.ConfirmationId, call.Id, call.Name, call.Arguments, pending.ExpiresAtUtc)); }
+        { var pending = new PendingToolConfirmation(Guid.NewGuid(), id, providerName, policyContext.PrincipalId, call, remaining, _clock.GetUtcNow().Add(_options.ConfirmationTimeout)); await _confirmations.CreateAsync(pending, ct); return (null, new(pending.ConfirmationId, call.Id, call.Name, call.Arguments, pending.ExpiresAtUtc)); }
         return (await ExecuteAsync(id, call, traces, addTime, ct), null);
     }
 
@@ -99,8 +100,8 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
             _toolPolicyContextAccessor.GetCurrent());
         if (policyDecision.Kind == ToolPolicyDecisionKind.Denied)
         {
-            traces.Add(Failed(call, "tool_policy_denied"));
-            return new("tool_policy_denied", "The requested tool is not authorized.", call.Name);
+            traces.Add(Failed(call, policyDecision.Code ?? "tool_policy_denied"));
+            return ToolPolicyError(call, policyDecision);
         }
         var start = _clock.GetTimestamp(); ToolExecutionResult result;
         try { using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct); timeout.CancelAfter(_options.ToolTimeout); result = await tool.ExecuteAsync(call.Arguments, timeout.Token); }
@@ -114,6 +115,8 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
 
     private async Task RejectAsync(Guid id, ToolCall call, string message, CancellationToken ct) => await _store.AppendAsync(id, new(ConversationRole.Tool, ToolResult: new(call.Id, call.Name, message, true)), ct);
     private static ToolExecutionTrace Failed(ToolCall call, string code, TimeSpan elapsed = default) => new(call.Id, call.Name, false, elapsed.TotalMilliseconds, code);
+    private static OrchestrationError ToolPolicyError(ToolCall call, ToolPolicyDecision decision) =>
+        new(decision.Code ?? "tool_policy_denied", "The requested tool is not authorized.", call.Name);
     private ToolDefinition[] GetAvailableDefinitions(ToolPolicyContext context) =>
         _tools.Definitions.Where(definition =>
             _toolRiskPolicy.Evaluate(definition.Metadata, context).Kind != ToolPolicyDecisionKind.Denied).ToArray();

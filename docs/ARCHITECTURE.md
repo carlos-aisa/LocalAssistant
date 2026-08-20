@@ -56,10 +56,17 @@ Cada herramienta declara un perfil de riesgo con impacto, sensibilidad, exposici
 coste, confirmación explícita y scopes necesarios. Una lectura puede exponer
 presencia, calendario, correo, ubicación, cámaras, memoria o documentos y no se
 considera segura solo por no modificar estado. El orquestador filtra el catálogo que
-recibe el proveedor y vuelve a evaluar antes de ejecutar. El contexto actual es
-anónimo y sin scopes: una herramienta privada, sensible, con scope o externa queda
-denegada hasta que un vertical slice aporte un principal autenticado o una integración
-a través de la pasarela. No existe todavía un modelo completo de autorización.
+recibe el proveedor y vuelve a evaluar antes de ejecutar. El contexto procede del
+límite HTTP: sin API key es anónimo; con la API key local configurada, el adaptador
+crea un principal y scopes definidos exclusivamente por configuración del servidor.
+Una herramienta privada, sensible, con scope ausente o externa queda denegada. La
+API key es opcional para las herramientas públicas y no constituye un modelo completo
+de autorización.
+
+La confirmación pendiente conserva también el principal que originó la llamada. La
+resolución debe provenir del mismo principal antes de consumirla; una discrepancia se
+presenta como no encontrada. Las conversaciones en memoria siguen sin propiedad: no
+se usarán para datos privados hasta la fase de persistencia e identidad correspondiente.
 
 El fake usa una cola de funciones de respuesta. Cada llamada consume exactamente
 un paso, por lo que una prueba declara de forma visible la secuencia esperada.

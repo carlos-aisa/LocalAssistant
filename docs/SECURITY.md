@@ -13,24 +13,27 @@ calendario, correo, ubicación, cámaras, memoria, documentos o salud puede reve
 información privada sin modificar estado.
 
 La política se impone fuera del modelo al filtrar el catálogo y de nuevo antes de
-ejecutar. El contexto implementado es anónimo y sin scopes: datos privados o
-sensibles, scopes ausentes y exposición externa se deniegan por defecto. Los cambios
-de estado, la ejecución, el coste significativo o una regla explícita requieren la
-confirmación exacta ya implementada. Este contexto no es autenticación: una futura
-frontera de identidad deberá proporcionar un principal y scopes verificables, nunca
-aceptados libremente desde el cliente o el modelo.
+ejecutar. El contexto predeterminado es anónimo y sin scopes. Opcionalmente, una API
+key local autentica un único principal configurado y le asigna scopes definidos en la
+configuración del servidor; ni el cliente ni el modelo aportan scopes. Se configura
+solo el hash SHA-256 de la clave, nunca la clave en el repositorio o en
+`appsettings.json`. Datos privados o sensibles, scopes ausentes y exposición externa
+se deniegan por defecto. Los cambios de estado, la ejecución, el coste significativo
+o una regla explícita requieren la confirmación exacta ya implementada.
 
 `IToolRegistry` es una allowlist. Una respuesta del modelo no puede descubrir ni
 invocar métodos arbitrarios. No existe herramienta para comandos, scripts, archivos
 o código generado.
 
 El orquestador rechaza herramientas desconocidas y retiene en el servidor la llamada
-exacta que requiere confirmación: herramienta, argumentos, proveedor y caducidad.
-La decisión posterior solo puede aprobar o rechazar esa llamada; es de un único uso
-y no permite sustituir argumentos desde HTTP. El almacenamiento actual es en RAM:
-se pierde al reiniciar y no incorpora identidad, autorización durable ni auditoría.
-No debe tratarse como autorización productiva. La confirmación tampoco sustituye la
-autorización para leer un dato sensible.
+exacta que requiere confirmación: herramienta, argumentos, proveedor, principal y
+caducidad. La decisión posterior solo puede aprobar o rechazar esa llamada; es de un
+único uso y no permite sustituir argumentos desde HTTP. Si la llamada se originó con
+un principal autenticado, otro principal no puede consumirla. El almacenamiento actual
+es en RAM: se pierde al reiniciar y no incorpora gestión de usuarios, autorización
+durable, propiedad de conversaciones ni auditoría. No debe tratarse como autorización
+productiva. La confirmación tampoco sustituye la autorización para leer un dato
+sensible.
 
 ## Amenazas relevantes
 
@@ -79,8 +82,8 @@ retención del historial.
 
 El timeout de proveedor predeterminado es de tres minutos para permitir inferencia
 local en CPU. Es un límite de disponibilidad, no una defensa suficiente ante abuso;
-antes de exponer la API deberá acompañarse de autenticación, cuotas, límites de
-concurrencia y rate limiting.
+antes de exponer la API deberá acompañarse de identidad apta para el despliegue,
+HTTPS, cuotas, límites de concurrencia y rate limiting.
 
 ## Persistencia privada futura
 
@@ -423,9 +426,9 @@ limitada.
 
 ## Antes de exponer la API
 
-Será necesario añadir al menos autenticación, autorización, HTTPS en el entorno de
-despliegue, límites de cuerpo y tasa, validación de origen, gestión externa de
-secretos, auditoría, políticas de red y pruebas contra prompt injection.
+Será necesario añadir una identidad y autorización aptas para el despliegue, HTTPS,
+límites de cuerpo y tasa, validación de origen, gestión externa de secretos,
+auditoría, políticas de red y pruebas contra prompt injection.
 
 Los fallos HTTP actuales no devuelven excepciones internas. Los logs locales sí
 pueden contener la excepción del proveedor o herramienta para diagnóstico, por lo
