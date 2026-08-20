@@ -98,7 +98,7 @@ components:
           description: Language provider used for this turn.
         scenario:
           type: string
-          enum: [direct, time]
+          enum: [direct, time, temperature]
           default: direct
           description: Development-only scenario, used only when provider is fake.
         approvedTools:

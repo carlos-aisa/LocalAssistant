@@ -81,7 +81,8 @@ confirmación y auditoría vinculadas a su solicitud.
 
 **Capacidades incluidas:**
 
-- Ampliar el catálogo con una segunda herramienta de solo lectura útil.
+- [x] Ampliar el catálogo con una segunda herramienta local de solo lectura útil:
+  conversión de temperatura con argumentos validados.
 - Definir clasificación de datos y políticas de egreso por categoría antes del
   primer acceso a un servicio externo.
 - Definir el primer contrato de herramienta externa y una pasarela controlada

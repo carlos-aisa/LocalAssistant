@@ -63,6 +63,26 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
     }
 
     [Fact]
+    public async Task TemperatureScenarioExecutesToolAndReturnsDeterministicConversion()
+    {
+        using var response = await _client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Convert 100 Celsius to Fahrenheit", scenario = "temperature" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = await JsonDocument.ParseAsync(
+            await response.Content.ReadAsStreamAsync(CancellationToken.None),
+            cancellationToken: CancellationToken.None);
+        var root = body.RootElement;
+        Assert.Equal("100 Celsius is 212 fahrenheit.", root.GetProperty("content").GetString());
+        Assert.Equal(2, root.GetProperty("iterations").GetInt32());
+        var tool = Assert.Single(root.GetProperty("tools").EnumerateArray());
+        Assert.Equal("convert_temperature", tool.GetProperty("toolName").GetString());
+        Assert.True(tool.GetProperty("succeeded").GetBoolean());
+    }
+
+    [Fact]
     public async Task UnknownScenarioReturnsValidationProblem()
     {
         using var response = await _client.PostAsJsonAsync(
