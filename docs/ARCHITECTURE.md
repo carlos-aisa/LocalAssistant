@@ -96,11 +96,11 @@ inspector rechaza una ventana configurada por encima del máximo del modelo.
 
 ## Dirección futura: privacidad y frontera de egreso
 
-El núcleo implementa ya una política determinista de clasificación y decisión de
-egreso. No existe todavía una herramienta ni un proveedor externo: el siguiente
-vertical slice deberá aplicar esta política en el `Tools Gateway` antes de enviar
-un payload real. El modelo local podrá usar contexto privado para decidir qué hacer,
-pero ese contexto no se convertirá implícitamente en una solicitud externa.
+El núcleo implementa una política determinista de clasificación y decisión de
+egreso, y `LocalAssistant.Infrastructure` aporta una primera pasarela controlada.
+No existe todavía un adaptador de producción ni acceso real a red. El modelo local
+podrá usar contexto privado para decidir qué hacer, pero ese contexto no se
+convertirá implícitamente en una solicitud externa.
 
 La política de privacidad será anterior al routing de proveedor y constituirá una
 restricción dura. Capacidad, dificultad, latencia, coste o falta de recursos locales
@@ -125,9 +125,18 @@ categoría nueva o desconocida se deniega por defecto. La referencia implementad
 
 La lista no es un enum cerrado ni una autorización global. La decisión actual recibe
 categoría, propósito y destino, y valida que `LOCATION` sea necesaria y que
-`SEARCH_QUERY` esté marcado como saneado. El primer gateway añadirá proveedor,
-operación, procedencia verificable y la correspondencia uno a uno con el payload
-final. Autorizar un campo `LOCATION` no autorizará otros campos del mismo turno.
+`SEARCH_QUERY` esté marcado como saneado. La pasarela resuelve un adaptador desde su
+allowlist, comprueba la operación, rechaza nombres de campo duplicados, construye la
+decisión sobre los descriptores exactos y solo entonces entrega los valores al
+adaptador. Autorizar un campo `LOCATION` no autorizará otros campos del mismo turno.
+
+Los contratos de `LocalAssistant.Core.ExternalTools` no dependen de SDKs. Cada
+adaptador fija su nombre, destino y operaciones; el solicitante no aporta una URL
+libre. `ControlledExternalToolsGateway` traduce excepciones a errores seguros y sus
+logs contienen adaptador, operación y decisión, nunca valores del payload. Los
+adaptadores actuales son dobles de prueba: credenciales, HTTP, rate limits, timeout,
+respuesta no confiable y auditoría durable se incorporarán con el primer proveedor
+real.
 
 La validación se realizará sobre el payload final. Una transformación local no
 cambia automáticamente la categoría: nombres de clases, repositorios, hosts, URLs,

@@ -33,15 +33,17 @@ Implementado:
 - Herramienta determinista de fecha y hora UTC basada en `TimeProvider`.
 - Bucle explícito de tool calling con cancelación, timeouts y límite de iteraciones.
 - Metadatos de impacto y confirmación de herramientas.
+- Política de egreso denegada por defecto y pasarela de adaptadores externos sin
+  proveedores reales habilitados.
 - Conversaciones en memoria.
 - Logging estructurado sin contenido de conversación.
 - Pruebas unitarias y de integración HTTP.
 - Contratos de proveedor reutilizados por el fake y el adaptador de Ollama.
 - Evaluación local reproducible de decisiones de tool calling por modelo.
 
-No implementado: detección automática de capacidades por modelo, proveedores cloud,
-persistencia, voz, wake word, RAG, Home Assistant, MQTT, MCP, autenticación,
-interfaz gráfica ni ejecución de comandos.
+No implementado: detección automática de capacidades por modelo, acceso real a
+Internet, proveedores cloud, persistencia, voz, wake word, RAG, Home Assistant,
+MQTT, MCP, autenticación, interfaz gráfica ni ejecución de comandos.
 
 ## Arquitectura actual
 
