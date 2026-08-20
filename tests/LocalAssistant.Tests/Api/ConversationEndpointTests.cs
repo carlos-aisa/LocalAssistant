@@ -105,6 +105,17 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
     }
 
     [Fact]
+    public async Task UnknownToolConfirmationReturnsNotFound()
+    {
+        using var response = await _client.PostAsJsonAsync(
+            $"/api/conversations/{Guid.NewGuid()}/tool-confirmations/{Guid.NewGuid()}/decisions",
+            new { approved = true },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task OllamaWithoutConfiguredModelReturnsValidationProblem()
     {
         using var response = await _client.PostAsJsonAsync(

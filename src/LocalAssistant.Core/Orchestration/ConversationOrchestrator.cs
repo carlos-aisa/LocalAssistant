@@ -6,354 +6,97 @@ using Microsoft.Extensions.Options;
 
 namespace LocalAssistant.Core.Orchestration;
 
+#pragma warning disable CA1725
 public sealed class ConversationOrchestrator : IConversationOrchestrator
 {
-    private readonly IConversationStore _conversationStore;
-    private readonly IToolRegistry _toolRegistry;
-    private readonly TimeProvider _timeProvider;
+    private readonly IConversationStore _store;
+    private readonly IToolRegistry _tools;
+    private readonly IToolConfirmationStore _confirmations;
+    private readonly IConversationExecutionLock _locks;
+    private readonly TimeProvider _clock;
     private readonly OrchestrationOptions _options;
     private readonly ILogger<ConversationOrchestrator> _logger;
 
-    public ConversationOrchestrator(
-        IConversationStore conversationStore,
-        IToolRegistry toolRegistry,
-        TimeProvider timeProvider,
-        IOptions<OrchestrationOptions> options,
-        ILogger<ConversationOrchestrator> logger)
+    public ConversationOrchestrator(IConversationStore store, IToolRegistry tools, IToolConfirmationStore confirmations, IConversationExecutionLock locks, TimeProvider clock, IOptions<OrchestrationOptions> options, ILogger<ConversationOrchestrator> logger)
     {
-        _conversationStore = conversationStore;
-        _toolRegistry = toolRegistry;
-        _timeProvider = timeProvider;
-        _options = options.Value;
-        _logger = logger;
-
-        if (_options.MaxIterations <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(options), "MaxIterations must be greater than zero.");
-        }
-
-        if (_options.ProviderTimeout <= TimeSpan.Zero || _options.ToolTimeout <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(options), "Timeouts must be greater than zero.");
-        }
+        _store = store; _tools = tools; _confirmations = confirmations; _locks = locks; _clock = clock; _options = options.Value; _logger = logger;
+        if (_options.MaxIterations <= 0 || _options.ProviderTimeout <= TimeSpan.Zero || _options.ToolTimeout <= TimeSpan.Zero || _options.ConfirmationTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(options));
     }
 
-    public async Task<ConversationTurnResult> ProcessAsync(
-        ConversationTurnRequest request,
-        ILanguageProvider provider,
-        CancellationToken cancellationToken)
+    public async Task<ConversationTurnResult> ProcessAsync(ConversationTurnRequest request, ILanguageProvider provider, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request); ArgumentNullException.ThrowIfNull(provider);
+        if (string.IsNullOrWhiteSpace(request.Message)) throw new ArgumentException("A message is required.", nameof(request));
+        var id = request.ConversationId ?? Guid.NewGuid();
+        using var lease = await _locks.AcquireAsync(id, ct);
+        if (await _confirmations.GetAsync(id, ct) is not null) return Result(id, null, [], 0, TimeSpan.Zero, TimeSpan.Zero, new("confirmation_pending", "A tool confirmation is already pending."));
+        await _store.AppendAsync(id, new(ConversationRole.User, request.Message), ct);
+        return await ContinueAsync(id, provider, [], 0, TimeSpan.Zero, ct);
+    }
+
+    public async Task<ConversationTurnResult> ResolveConfirmationAsync(Guid id, Guid confirmationId, bool approved, ILanguageProvider provider, CancellationToken ct)
+    {
         ArgumentNullException.ThrowIfNull(provider);
-
-        if (string.IsNullOrWhiteSpace(request.Message))
-        {
-            throw new ArgumentException("A message is required.", nameof(request));
-        }
-
-        var conversationId = request.ConversationId ?? Guid.NewGuid();
-        var startedAt = _timeProvider.GetUtcNow();
-        var startedTimestamp = _timeProvider.GetTimestamp();
-        var providerDuration = TimeSpan.Zero;
-        var toolDuration = TimeSpan.Zero;
-        var toolTraces = new List<ToolExecutionTrace>();
-        var iterations = 0;
-
-        OrchestrationLog.TurnStarted(_logger, conversationId);
-
-        await _conversationStore.AppendAsync(
-            conversationId,
-            new ConversationMessage(ConversationRole.User, request.Message),
-            cancellationToken);
-
-        for (iterations = 1; iterations <= _options.MaxIterations; iterations++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var messages = await _conversationStore.GetMessagesAsync(conversationId, cancellationToken);
-            var providerStarted = _timeProvider.GetTimestamp();
-
-            OrchestrationLog.ProviderCalled(_logger, provider.Name, iterations, conversationId);
-
-            LanguageProviderResponse response;
-            using (var providerCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
-            {
-                providerCancellation.CancelAfter(_options.ProviderTimeout);
-
-                try
-                {
-                    response = await provider.GetResponseAsync(
-                        new LanguageProviderRequest(conversationId, messages, _toolRegistry.Definitions),
-                        providerCancellation.Token);
-                }
-                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                {
-                    providerDuration += _timeProvider.GetElapsedTime(providerStarted);
-                    OrchestrationLog.ProviderTimedOut(_logger, provider.Name, iterations, conversationId);
-                    return Complete(
-                        conversationId,
-                        null,
-                        toolTraces,
-                        iterations,
-                        startedAt,
-                        startedTimestamp,
-                        providerDuration,
-                        toolDuration,
-                        new OrchestrationError("provider_timeout", "The language provider timed out."));
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    providerDuration += _timeProvider.GetElapsedTime(providerStarted);
-                    OrchestrationLog.ProviderFailed(
-                        _logger,
-                        provider.Name,
-                        iterations,
-                        conversationId,
-                        exception);
-                    return Complete(
-                        conversationId,
-                        null,
-                        toolTraces,
-                        iterations,
-                        startedAt,
-                        startedTimestamp,
-                        providerDuration,
-                        toolDuration,
-                        new OrchestrationError("provider_error", "The language provider failed."));
-                }
-            }
-
-            providerDuration += _timeProvider.GetElapsedTime(providerStarted);
-
-            if (response.Content is not null && response.ToolCalls.Count == 0)
-            {
-                await _conversationStore.AppendAsync(
-                    conversationId,
-                    new ConversationMessage(ConversationRole.Assistant, response.Content),
-                    cancellationToken);
-
-                return Complete(
-                    conversationId,
-                    response.Content,
-                    toolTraces,
-                    iterations,
-                    startedAt,
-                    startedTimestamp,
-                    providerDuration,
-                    toolDuration);
-            }
-
-            if (response.Content is not null || response.ToolCalls.Count == 0)
-            {
-                return Complete(
-                    conversationId,
-                    null,
-                    toolTraces,
-                    iterations,
-                    startedAt,
-                    startedTimestamp,
-                    providerDuration,
-                    toolDuration,
-                    new OrchestrationError(
-                        "invalid_provider_response",
-                        "The provider response must contain either final content or tool calls."));
-            }
-
-            foreach (var toolCall in response.ToolCalls)
-            {
-                var toolError = await ExecuteToolAsync(
-                    conversationId,
-                    toolCall,
-                    request.ApprovedTools,
-                    toolTraces,
-                    elapsed => toolDuration += elapsed,
-                    cancellationToken);
-
-                if (toolError is not null)
-                {
-                    return Complete(
-                        conversationId,
-                        null,
-                        toolTraces,
-                        iterations,
-                        startedAt,
-                        startedTimestamp,
-                        providerDuration,
-                        toolDuration,
-                        toolError);
-                }
-            }
-        }
-
-        return Complete(
-            conversationId,
-            null,
-            toolTraces,
-            _options.MaxIterations,
-            startedAt,
-            startedTimestamp,
-            providerDuration,
-            toolDuration,
-            new OrchestrationError(
-                "iteration_limit_reached",
-                "The maximum number of orchestration iterations was reached."));
+        using var lease = await _locks.AcquireAsync(id, ct);
+        var pending = await _confirmations.GetAsync(id, ct);
+        if (pending is null || pending.ConfirmationId != confirmationId) return Result(id, null, [], 0, TimeSpan.Zero, TimeSpan.Zero, new("confirmation_not_found", "The confirmation was not found."));
+        if (!StringComparer.Ordinal.Equals(pending.ProviderName, provider.Name)) return Result(id, null, [], 0, TimeSpan.Zero, TimeSpan.Zero, new("confirmation_provider_mismatch", "The confirmation must use its original provider."));
+        pending = await _confirmations.TakeAsync(id, confirmationId, ct);
+        if (pending is null) return Result(id, null, [], 0, TimeSpan.Zero, TimeSpan.Zero, new("confirmation_not_found", "The confirmation was not found."));
+        if (pending.ExpiresAtUtc <= _clock.GetUtcNow())
+        { await RejectAsync(id, pending.ToolCall, "The tool confirmation expired.", ct); return Result(id, null, [Failed(pending.ToolCall, "confirmation_expired")], 0, TimeSpan.Zero, TimeSpan.Zero, new("confirmation_expired", "The confirmation expired.")); }
+        var traces = new List<ToolExecutionTrace>(); var toolsTime = TimeSpan.Zero;
+        if (approved)
+        { var error = await ExecuteAsync(id, pending.ToolCall, traces, e => toolsTime += e, ct); if (error is not null) return Result(id, null, traces, 0, TimeSpan.Zero, toolsTime, error); }
+        else { await RejectAsync(id, pending.ToolCall, "The user rejected this tool call.", ct); traces.Add(Failed(pending.ToolCall, "tool_confirmation_rejected")); }
+        foreach (var call in pending.RemainingToolCalls)
+        { var outcome = await HandleAsync(id, provider.Name, call, [], traces, e => toolsTime += e, ct); if (outcome.Error is not null || outcome.Confirmation is not null) return Result(id, null, traces, 0, TimeSpan.Zero, toolsTime, outcome.Error, outcome.Confirmation); }
+        return await ContinueAsync(id, provider, traces, 0, toolsTime, ct);
     }
 
-    private async Task<OrchestrationError?> ExecuteToolAsync(
-        Guid conversationId,
-        ToolCall toolCall,
-        IReadOnlySet<string>? approvedTools,
-        List<ToolExecutionTrace> traces,
-        Action<TimeSpan> addToolDuration,
-        CancellationToken cancellationToken)
+    private async Task<ConversationTurnResult> ContinueAsync(Guid id, ILanguageProvider provider, List<ToolExecutionTrace> traces, int completedIterations, TimeSpan toolsTime, CancellationToken ct)
     {
-        OrchestrationLog.ToolRequested(
-            _logger,
-            toolCall.Name,
-            toolCall.Id,
-            conversationId);
-
-        await _conversationStore.AppendAsync(
-            conversationId,
-            new ConversationMessage(ConversationRole.Assistant, ToolCall: toolCall),
-            cancellationToken);
-
-        if (!_toolRegistry.TryGet(toolCall.Name, out var tool) || tool is null)
+        var providerTime = TimeSpan.Zero;
+        for (var iteration = completedIterations + 1; iteration <= _options.MaxIterations; iteration++)
         {
-            const string code = "tool_not_found";
-            AddFailedTrace(traces, toolCall, code, TimeSpan.Zero);
-            OrchestrationLog.ToolFailed(_logger, toolCall.Name, toolCall.Id, code, conversationId);
-            return new OrchestrationError(code, "The requested tool is not registered.", toolCall.Name);
+            LanguageProviderResponse response; var start = _clock.GetTimestamp();
+            try { using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct); timeout.CancelAfter(_options.ProviderTimeout); response = await provider.GetResponseAsync(new(id, await _store.GetMessagesAsync(id, ct), _tools.Definitions), timeout.Token); }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { providerTime += _clock.GetElapsedTime(start); return Result(id, null, traces, iteration, providerTime, toolsTime, new("provider_timeout", "The language provider timed out.")); }
+            catch (Exception exception) when (exception is not OperationCanceledException) { providerTime += _clock.GetElapsedTime(start); OrchestrationLog.ProviderFailed(_logger, provider.Name, iteration, id, exception); return Result(id, null, traces, iteration, providerTime, toolsTime, new("provider_error", "The language provider failed.")); }
+            providerTime += _clock.GetElapsedTime(start);
+            if (response.Content is not null && response.ToolCalls.Count == 0) { await _store.AppendAsync(id, new(ConversationRole.Assistant, response.Content), ct); return Result(id, response.Content, traces, iteration, providerTime, toolsTime, null); }
+            if (response.Content is not null || response.ToolCalls.Count == 0) return Result(id, null, traces, iteration, providerTime, toolsTime, new("invalid_provider_response", "The provider response must contain either final content or tool calls."));
+            for (var index = 0; index < response.ToolCalls.Count; index++)
+            { var outcome = await HandleAsync(id, provider.Name, response.ToolCalls[index], response.ToolCalls.Skip(index + 1).ToArray(), traces, e => toolsTime += e, ct); if (outcome.Error is not null || outcome.Confirmation is not null) return Result(id, null, traces, iteration, providerTime, toolsTime, outcome.Error, outcome.Confirmation); }
         }
-
-        if (tool.Definition.Metadata.RequiresConfirmation &&
-            (approvedTools is null || !approvedTools.Contains(toolCall.Name)))
-        {
-            const string code = "tool_confirmation_required";
-            AddFailedTrace(traces, toolCall, code, TimeSpan.Zero);
-            OrchestrationLog.ToolFailed(_logger, toolCall.Name, toolCall.Id, code, conversationId);
-            return new OrchestrationError(
-                code,
-                "The requested tool requires explicit confirmation.",
-                toolCall.Name);
-        }
-
-        var toolStarted = _timeProvider.GetTimestamp();
-        ToolExecutionResult result;
-
-        using (var toolCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
-        {
-            toolCancellation.CancelAfter(_options.ToolTimeout);
-
-            try
-            {
-                result = await tool.ExecuteAsync(toolCall.Arguments, toolCancellation.Token);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                var elapsed = _timeProvider.GetElapsedTime(toolStarted);
-                addToolDuration(elapsed);
-                const string code = "tool_timeout";
-                AddFailedTrace(traces, toolCall, code, elapsed);
-                OrchestrationLog.ToolFailed(_logger, toolCall.Name, toolCall.Id, code, conversationId);
-                return new OrchestrationError(code, "The tool timed out.", toolCall.Name);
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                var elapsed = _timeProvider.GetElapsedTime(toolStarted);
-                addToolDuration(elapsed);
-                const string code = "tool_execution_failed";
-                AddFailedTrace(traces, toolCall, code, elapsed);
-                OrchestrationLog.ToolFailed(
-                    _logger,
-                    toolCall.Name,
-                    toolCall.Id,
-                    code,
-                    conversationId,
-                    exception);
-                return new OrchestrationError(code, "The tool failed during execution.", toolCall.Name);
-            }
-        }
-
-        var toolElapsed = _timeProvider.GetElapsedTime(toolStarted);
-        addToolDuration(toolElapsed);
-
-        await _conversationStore.AppendAsync(
-            conversationId,
-            new ConversationMessage(
-                ConversationRole.Tool,
-                ToolResult: new ToolResultMessage(
-                    toolCall.Id,
-                    toolCall.Name,
-                    result.Content,
-                    !result.IsSuccess)),
-            cancellationToken);
-
-        if (!result.IsSuccess)
-        {
-            var code = result.ErrorCode ?? "tool_execution_failed";
-            AddFailedTrace(traces, toolCall, code, toolElapsed);
-            OrchestrationLog.ToolFailed(_logger, toolCall.Name, toolCall.Id, code, conversationId);
-            return new OrchestrationError(code, result.Content, toolCall.Name);
-        }
-
-        traces.Add(new ToolExecutionTrace(
-            toolCall.Id,
-            toolCall.Name,
-            Succeeded: true,
-            toolElapsed.TotalMilliseconds));
-        OrchestrationLog.ToolCompleted(
-            _logger,
-            toolCall.Name,
-            toolCall.Id,
-            toolElapsed.TotalMilliseconds,
-            conversationId);
-        return null;
+        return Result(id, null, traces, _options.MaxIterations, providerTime, toolsTime, new("iteration_limit_reached", "The maximum number of orchestration iterations was reached."));
     }
 
-    private static void AddFailedTrace(
-        List<ToolExecutionTrace> traces,
-        ToolCall toolCall,
-        string code,
-        TimeSpan elapsed)
+    private async Task<(OrchestrationError? Error, ToolConfirmationRequest? Confirmation)> HandleAsync(Guid id, string providerName, ToolCall call, IReadOnlyList<ToolCall> remaining, List<ToolExecutionTrace> traces, Action<TimeSpan> addTime, CancellationToken ct)
     {
-        traces.Add(new ToolExecutionTrace(
-            toolCall.Id,
-            toolCall.Name,
-            Succeeded: false,
-            elapsed.TotalMilliseconds,
-            code));
+        await _store.AppendAsync(id, new(ConversationRole.Assistant, ToolCall: call), ct);
+        if (!_tools.TryGet(call.Name, out var tool) || tool is null) { traces.Add(Failed(call, "tool_not_found")); return (new("tool_not_found", "The requested tool is not registered.", call.Name), null); }
+        if (tool.Definition.Metadata.RequiresConfirmation)
+        { var pending = new PendingToolConfirmation(Guid.NewGuid(), id, providerName, call, remaining, _clock.GetUtcNow().Add(_options.ConfirmationTimeout)); await _confirmations.CreateAsync(pending, ct); return (null, new(pending.ConfirmationId, call.Id, call.Name, call.Arguments, pending.ExpiresAtUtc)); }
+        return (await ExecuteAsync(id, call, traces, addTime, ct), null);
     }
 
-    private ConversationTurnResult Complete(
-        Guid conversationId,
-        string? content,
-        IReadOnlyList<ToolExecutionTrace> traces,
-        int iterations,
-        DateTimeOffset startedAt,
-        long startedTimestamp,
-        TimeSpan providerDuration,
-        TimeSpan toolDuration,
-        OrchestrationError? error = null)
+    private async Task<OrchestrationError?> ExecuteAsync(Guid id, ToolCall call, List<ToolExecutionTrace> traces, Action<TimeSpan> addTime, CancellationToken ct)
     {
-        var completedAt = _timeProvider.GetUtcNow();
-        var totalDuration = _timeProvider.GetElapsedTime(startedTimestamp);
-        OrchestrationLog.TurnCompleted(
-            _logger,
-            conversationId,
-            iterations,
-            totalDuration.TotalMilliseconds);
-
-        return new ConversationTurnResult(
-            conversationId,
-            content,
-            traces,
-            iterations,
-            new ExecutionTimings(
-                startedAt,
-                completedAt,
-                totalDuration.TotalMilliseconds,
-                providerDuration.TotalMilliseconds,
-                toolDuration.TotalMilliseconds),
-            error);
+        if (!_tools.TryGet(call.Name, out var tool) || tool is null) { traces.Add(Failed(call, "tool_not_found")); return new("tool_not_found", "The requested tool is not registered.", call.Name); }
+        var start = _clock.GetTimestamp(); ToolExecutionResult result;
+        try { using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct); timeout.CancelAfter(_options.ToolTimeout); result = await tool.ExecuteAsync(call.Arguments, timeout.Token); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { var elapsed = _clock.GetElapsedTime(start); addTime(elapsed); traces.Add(Failed(call, "tool_timeout", elapsed)); return new("tool_timeout", "The tool timed out.", call.Name); }
+        catch (Exception exception) when (exception is not OperationCanceledException) { var elapsed = _clock.GetElapsedTime(start); addTime(elapsed); traces.Add(Failed(call, "tool_execution_failed", elapsed)); OrchestrationLog.ToolFailed(_logger, call.Name, call.Id, "tool_execution_failed", id, exception); return new("tool_execution_failed", "The tool failed during execution.", call.Name); }
+        var duration = _clock.GetElapsedTime(start); addTime(duration);
+        await _store.AppendAsync(id, new(ConversationRole.Tool, ToolResult: new(call.Id, call.Name, result.Content, !result.IsSuccess)), ct);
+        if (!result.IsSuccess) { var code = result.ErrorCode ?? "tool_execution_failed"; traces.Add(Failed(call, code, duration)); return new(code, result.Content, call.Name); }
+        traces.Add(new(call.Id, call.Name, true, duration.TotalMilliseconds)); return null;
     }
+
+    private async Task RejectAsync(Guid id, ToolCall call, string message, CancellationToken ct) => await _store.AppendAsync(id, new(ConversationRole.Tool, ToolResult: new(call.Id, call.Name, message, true)), ct);
+    private static ToolExecutionTrace Failed(ToolCall call, string code, TimeSpan elapsed = default) => new(call.Id, call.Name, false, elapsed.TotalMilliseconds, code);
+    private ConversationTurnResult Result(Guid id, string? content, IReadOnlyList<ToolExecutionTrace> traces, int iterations, TimeSpan providerTime, TimeSpan toolsTime, OrchestrationError? error, ToolConfirmationRequest? confirmation = null)
+    { var now = _clock.GetUtcNow(); return new(id, content, traces, iterations, new(now, now, providerTime.TotalMilliseconds + toolsTime.TotalMilliseconds, providerTime.TotalMilliseconds, toolsTime.TotalMilliseconds), error, confirmation); }
 }
+#pragma warning restore CA1725

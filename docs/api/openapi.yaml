@@ -41,6 +41,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConversationResponse"
+        "202":
+          description: A server-held tool call requires a decision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationResponse"
         "400":
           description: The request, provider, provider configuration, or fake scenario is invalid.
           content:
@@ -54,11 +60,47 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConversationResponse"
         "422":
-          description: A requested tool was missing, invalid, or required confirmation.
+          description: A requested tool was missing or invalid.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConversationResponse"
+        "502":
+          description: The provider or a tool failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationResponse"
+        "504":
+          description: The provider or a tool timed out.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationResponse"
+  /api/conversations/{conversationId}/tool-confirmations/{confirmationId}/decisions:
+    post:
+      operationId: resolveToolConfirmation
+      summary: Approve or reject one server-held tool call.
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: confirmationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveToolConfirmationRequest"
+      responses:
+        "200": { description: The decision was processed. }
+        "404": { description: The confirmation was not found. }
+        "409": { description: The provider does not match the pending confirmation. }
+        "410": { description: The confirmation expired. }
         "502":
           description: The provider or a tool failed.
           content:
@@ -101,12 +143,18 @@ components:
           enum: [direct, time, temperature]
           default: direct
           description: Development-only scenario, used only when provider is fake.
-        approvedTools:
-          type: array
-          nullable: true
-          uniqueItems: true
-          items:
-            type: string
+    ResolveToolConfirmationRequest:
+      type: object
+      required: [approved]
+      properties:
+        approved:
+          type: boolean
+        provider:
+          type: string
+          default: fake
+        scenario:
+          type: string
+          default: direct
     ConversationResponse:
       type: object
       required: [conversationId, tools, iterations, timings]
@@ -131,6 +179,19 @@ components:
           allOf:
             - $ref: "#/components/schemas/OrchestrationError"
           nullable: true
+        confirmation:
+          allOf:
+            - $ref: "#/components/schemas/ToolConfirmationRequest"
+          nullable: true
+    ToolConfirmationRequest:
+      type: object
+      required: [confirmationId, toolCallId, toolName, arguments, expiresAtUtc]
+      properties:
+        confirmationId: { type: string, format: uuid }
+        toolCallId: { type: string }
+        toolName: { type: string }
+        arguments: { type: object, additionalProperties: true }
+        expiresAtUtc: { type: string, format: date-time }
     ToolExecutionTrace:
       type: object
       required: [toolCallId, toolName, succeeded, durationMilliseconds]

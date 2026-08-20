@@ -51,7 +51,7 @@ public sealed class FakeLanguageProviderFactory
             request =>
             {
                 var result = request.Messages.Last(item => item.ToolResult is not null).ToolResult!;
-                using var document = JsonDocument.Parse(result.Content);
+                using var document = JsonDocument.Parse(result!.Content);
                 var utc = document.RootElement.GetProperty("utc").GetString();
                 return LanguageProviderResponse.Final($"Current UTC time is {utc}.");
             },
@@ -63,21 +63,34 @@ public sealed class FakeLanguageProviderFactory
     {
         return new ScriptedLanguageProvider(
         [
-            ScriptedLanguageProvider.Return(LanguageProviderResponse.RequestTools(
-                new ToolCall(
-                    "fake-temperature-call-1",
-                    TemperatureConversionTool.ToolName,
-                    TemperatureArguments))),
-            request =>
-            {
-                var result = request.Messages.Last(item => item.ToolResult is not null).ToolResult!;
-                using var document = JsonDocument.Parse(result.Content);
-                var value = document.RootElement.GetProperty("value").GetDecimal();
-                var unit = document.RootElement.GetProperty("unit").GetString();
-                return LanguageProviderResponse.Final(
-                    $"100 Celsius is {value.ToString("G29", CultureInfo.InvariantCulture)} {unit}.");
-            },
+            TemperatureResponse,
+            TemperatureResponse,
         ],
         "fake-temperature");
+    }
+
+    private static LanguageProviderResponse TemperatureResponse(LanguageProviderRequest request)
+    {
+        var toolMessage = request.Messages.LastOrDefault(
+            item => item.ToolResult?.ToolName == TemperatureConversionTool.ToolName);
+        var result = toolMessage?.ToolResult;
+        if (result is null)
+        {
+            return LanguageProviderResponse.RequestTools(new ToolCall(
+                "fake-temperature-call-1",
+                TemperatureConversionTool.ToolName,
+                TemperatureArguments));
+        }
+
+        if (result.IsError)
+        {
+            return LanguageProviderResponse.Final("Temperature conversion was not performed.");
+        }
+
+        using var document = JsonDocument.Parse(result.Content);
+        var value = document.RootElement.GetProperty("value").GetDecimal();
+        var unit = document.RootElement.GetProperty("unit").GetString();
+        return LanguageProviderResponse.Final(
+            $"100 Celsius is {value.ToString("G29", CultureInfo.InvariantCulture)} {unit}.");
     }
 }

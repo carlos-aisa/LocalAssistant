@@ -38,6 +38,12 @@ extensión educativo: todavía no está vinculada a usuario, sesión, intención
 caducidad ni autenticación. No debe reutilizarse como autorización productiva.
 La confirmación tampoco sustituye la autorización para leer un dato sensible.
 
+La confirmación implementada retiene en el servidor la llamada exacta (herramienta,
+argumentos, proveedor y caducidad) y la decisión posterior solo acepta aprobar o
+rechazarla. Es de un único uso y no permite sustituir argumentos desde HTTP. Su
+almacenamiento actual es en RAM: se pierde al reiniciar y no incorpora identidad,
+autorización durable ni auditoría; no debe tratarse como autorización productiva.
+
 ## Amenazas relevantes
 
 - **Prompt injection:** texto del usuario, documentos o conectores pueden intentar
