@@ -118,6 +118,14 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
 - Definir un concepto mínimo de `User` o `Principal` y el alcance de propiedad y
   acceso antes de persistir memoria personal; no usar conversación, dispositivo o
   habitación como identidad implícita.
+- Introducir la identidad de instalación y un bootstrap de un solo propietario,
+  invalidado tras la configuración inicial y sin credenciales predeterminadas.
+- Sustituir la API key educativa por autenticación adecuada para las interfaces
+  escritas cuando exista el primer dato privado persistente; no elegir proveedor de
+  identidad antes de concretar el despliegue.
+- Separar desde el modelo de datos memoria personal, compartida del hogar, de módulo,
+  administrativa y efímera; aplicar autorización antes de recuperar contexto para el
+  modelo.
 - Aprobar un modelo de privacidad de almacenamiento con propiedad, retención,
   borrado selectivo, control de acceso y auditoría antes de considerar completa la
   persistencia de información privada.
@@ -164,7 +172,11 @@ Assistant y mantiene preparadas las políticas para acciones confirmadas.
 
 - Integración inicial de solo lectura.
 - Registro explícito de entidades y capacidades permitidas.
+- Clasificar cada operación doméstica por capacidad y riesgo; los invitados estarán
+  denegados y los menores limitados a acciones seguras por defecto.
 - Acciones con cambio de estado únicamente tras disponer de confirmación verificable.
+- Exigir identidad doméstica y autenticación reforzada antes de habilitar cerraduras,
+  alarmas u otras acciones sensibles.
 - MQTT solo cuando existan eventos o presencia que justifiquen desacoplamiento.
 - Auditoría y separación de credenciales por conector.
 
@@ -189,6 +201,8 @@ dispositivo con captura visible y cancelable.
 - Estados visibles: inactivo, escuchando, capturando, procesando, respondiendo y error.
 - Introducir el contexto mínimo de dispositivo o canal de origen con uso y tests
   reales, manteniendo sencilla la API HTTP.
+- Tratar la sesión de voz como usuario desconocido o invitado mientras no exista una
+  prueba suficiente; wake word y voz no concederán permisos personales.
 - Someter cualquier STT o TTS externo futuro a la misma política de egreso, sin
   asumir que un proveedor de voz puede recibir conversación o memoria adicional.
 - Interpretar órdenes naturales de profundidad de investigación, manteniendo la
@@ -213,6 +227,8 @@ núcleo desde una habitación registrada.
 - Elegir una plataforma solo después de un prototipo comparativo: Home Assistant
   Assist, ESP32-S3, Raspberry Pi, Android u ordenador siguen siendo candidatos.
 - Registrar un satélite y asociarlo a una habitación.
+- Crear una identidad técnica revocable, distinta de cualquier cuenta humana, con
+  tipo, capacidades, estado y relación con quien registró el dispositivo.
 - Describir capacidades de entrada, salida, pantalla, botones, indicadores y wake
   word local.
 - Autenticar el dispositivo y cifrar audio y control dentro de la red doméstica.
@@ -238,6 +254,8 @@ por audio o pantalla en su Nest Hub registrado.
 - Reproducir respuestas TTS mediante Google Cast.
 - Mostrar paneles de Home Assistant, avisos o contexto adecuado para una pantalla
   compartida.
+- Aplicar una política de salida que pueda reducir el contenido o enviarlo a un
+  dispositivo personal cuando resulte privado para una habitación compartida.
 - Seleccionar el Nest Hub de la habitación que originó el turno.
 - No asumir acceso al micrófono, audio, wake word ni sustitución de Google Assistant.
 
@@ -281,10 +299,12 @@ interrupción sin que el asistente procese su propia salida.
 - Cancelación de eco y prevención de que LocalAssistant escuche su propio TTS.
 - Interrupción de una respuesta por parte del usuario (barge-in).
 - Detección robusta de final de turno y conversación continua.
+- Incorporar identificación probable de hablante solo como señal contextual y
+  solicitar `step-up` para acciones cuyo riesgo supere la confianza disponible.
 - Recuperación ante desconexión, error o cambio de dispositivo de salida.
 
-**Capacidades excluidas:** identificación biométrica automática y transferencia
-implícita de sesiones privadas.
+**Capacidades excluidas:** usar identificación biométrica como autenticación
+suficiente y transferencia implícita de sesiones privadas.
 
 **Criterio de finalización:** eco, barge-in, final de turno y recuperación se validan
 en escenarios reproducibles.
@@ -307,6 +327,86 @@ otra habitación sin perder continuidad ni propiedad.
 
 **Criterio de finalización:** transferencia, cancelación, aislamiento y selección de
 salida están cubiertos por pruebas con varias habitaciones.
+
+## Línea transversal — Household Identity, Authorization and Guest Access
+
+Esta línea evoluciona la identidad local educativa hacia un hogar multiusuario sin
+obligar a autenticarse para una consulta pública. No define aún proveedor de
+identidad, catálogo definitivo de permisos, biometría ni interfaz de administración.
+Cada hito se implementará solo cuando un vertical slice necesite su comportamiento.
+
+### Hito 0 — Frontera mínima de herramientas (completado)
+
+La API key local aporta un principal configurado y scopes de servidor. La política
+filtra herramientas fuera del LLM, reevalúa antes de ejecutar y liga confirmaciones
+al principal. No representa usuarios domésticos ni propiedad de conversaciones.
+
+### Hito 1 — Instalación, propietario e interfaces escritas
+
+**Resultado utilizable:** una instalación crea un único propietario mediante un
+bootstrap de un solo uso y protege el primer dato privado escrito.
+
+**Incluye:** identidad de instalación; alta inicial no reclamable desde la red;
+autenticación escrita; recuperación sin puerta trasera; capacidades y decisiones de
+autorización fuera del LLM; separación personal y compartida; exportación, borrado y
+auditoría mínimas. Se coordina con la fase 4.
+
+### Hito 2 — Miembros domésticos y administración básica
+
+**Resultado utilizable:** propietario, adulto y menor usan datos y módulos según
+capacidades y propiedad sin mezclar perfiles.
+
+**Incluye:** roles provisionales; concesiones específicas por usuario; ciclo de vida
+de invitación, activación, cambio de rol, suspensión, revocación y eliminación; reglas
+apropiadas para menores; administración y recuperación del propietario. El catálogo
+de capacidades crecerá con `BatchCooking`, tutor de inglés y Home Assistant.
+
+### Hito 3 — Invitaciones y sesiones efímeras
+
+**Resultado utilizable:** un propietario o adulto con `users.invite_guest` crea una
+sesión temporal, revocable y aislada para texto o una habitación concreta.
+
+**Incluye:** anfitrión, caducidad, capacidades, dispositivos o habitaciones, cuotas,
+proveedor, presupuesto y persistencia; memoria efímera por defecto; revocación
+inmediata; ausencia de autoalta y de propagación a otras habitaciones. Un menor no
+podrá invitar.
+
+### Hito 4 — Identidades de dispositivos y servicios
+
+**Resultado utilizable:** satélites, workers y conectores se autentican con identidad
+propia y privilegios mínimos sin suplantar personas.
+
+**Incluye:** identificador, tipo, habitación, capacidades, credencial revocable,
+registro, estado, última conexión, permisos y principal registrador. Se implementa
+con el primer satélite y cada servicio real, no como directorio preventivo.
+
+### Hito 5 — Voz, step-up y privacidad contextual
+
+**Resultado utilizable:** Jarvis distingue usuario confirmado, probable, desconocido,
+invitado o insuficientemente autenticado y evita revelar o ejecutar más de lo que la
+confianza permite.
+
+**Incluye:** reconocimiento de hablante solo como señal; autenticación reforzada
+mediante aplicación, PIN no hablado, passkey, biometría personal, código temporal o
+aprobación; políticas por habitación y salida compartida; derivación de resultados
+sensibles a un dispositivo personal. Se coordina con las fases 6 a 11.
+
+### Hito 6 — Auditoría y administración avanzada
+
+**Resultado utilizable:** el hogar puede revisar cambios de identidad, permisos,
+invitaciones, acciones sensibles, módulos y dispositivos sin convertir la auditoría
+en una copia de las conversaciones.
+
+**Incluye:** protección de registros frente a usuarios y módulos ordinarios; cambios
+de rol y capacidad; inicios y cierres de sesión; rechazos; step-up; revocaciones;
+recuperación; reglas de retención; y administración proporcional al riesgo.
+
+La secuencia conceptual es: identidad mínima de instalación, autenticación escrita,
+capacidades externas al LLM, separación personal/compartida, miembros adultos y
+menores, administración, invitados, sesiones efímeras, identidades técnicas,
+identificación probable por voz, `step-up`, privacidad de salidas y auditoría
+avanzada. Acciones domésticas sensibles, repositorios y autoextensión dependerán del
+nivel correspondiente, no solo de poseer el rol de administrador.
 
 ## Líneas posteriores o paralelas
 
@@ -827,6 +927,9 @@ activación y rollback propios antes de habilitar el siguiente nivel de riesgo.
 - Modelo definitivo de autorización de herramientas y combinación de impacto,
   sensibilidad, identidad, alcance, egreso, confirmación y coste; evolucionará con
   vertical slices reales sin anticipar RBAC o ABAC completos.
+- Proveedor de identidad, credenciales, esquema de usuarios y permisos, mecanismo de
+  bootstrap y recuperación, experiencia administrativa y tecnología de identificación
+  de hablante; se elegirán con el despliegue y los canales reales.
 - Tecnología concreta de protección en reposo y política de backups; se elegirán
   junto con el almacenamiento y modelo de despliegue.
 - Formato definitivo del manifiesto, mecanismo de carga, packaging, aislamiento de
