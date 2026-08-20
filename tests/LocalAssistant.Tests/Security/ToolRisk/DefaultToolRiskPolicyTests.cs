@@ -31,10 +31,21 @@ public sealed class DefaultToolRiskPolicyTests
     {
         var result = _sut.Evaluate(
             Metadata(Profile(requiredScopes: ["documents.read"])),
-            new ToolPolicyContext(true, new HashSet<string>(StringComparer.Ordinal)));
+            new ToolPolicyContext("test-principal", new HashSet<string>(StringComparer.Ordinal)));
 
         Assert.Equal(ToolPolicyDecisionKind.Denied, result.Kind);
         Assert.Equal("scope_not_granted", result.Code);
+    }
+
+    [Fact]
+    public void RequiresAuthenticationForScopedTool()
+    {
+        var result = _sut.Evaluate(
+            Metadata(Profile(requiredScopes: ["documents.read"])),
+            ToolPolicyContext.Anonymous);
+
+        Assert.Equal(ToolPolicyDecisionKind.Denied, result.Kind);
+        Assert.Equal("authentication_required", result.Code);
     }
 
     [Fact]

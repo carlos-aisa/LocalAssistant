@@ -28,6 +28,9 @@ paths:
     post:
       operationId: sendConversationMessage
       summary: Process one conversation message through the explicit orchestration loop.
+      security:
+        - {}
+        - LocalApiKey: []
       requestBody:
         required: true
         content:
@@ -53,6 +56,10 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ValidationProblem"
+        "401":
+          description: A supplied local API key was invalid, or a tool required authentication.
+        "403":
+          description: The authenticated principal was not authorized for a requested tool.
         "409":
           description: The provider response was invalid or the iteration limit was reached.
           content:
@@ -81,6 +88,9 @@ paths:
     post:
       operationId: resolveToolConfirmation
       summary: Approve or reject one server-held tool call.
+      security:
+        - {}
+        - LocalApiKey: []
       parameters:
         - name: conversationId
           in: path
@@ -98,6 +108,7 @@ paths:
               $ref: "#/components/schemas/ResolveToolConfirmationRequest"
       responses:
         "200": { description: The decision was processed. }
+        "401": { description: A supplied local API key was invalid. }
         "404": { description: The confirmation was not found. }
         "409": { description: The provider does not match the pending confirmation. }
         "410": { description: The confirmation expired. }
@@ -114,6 +125,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConversationResponse"
 components:
+  securitySchemes:
+    LocalApiKey:
+      type: apiKey
+      in: header
+      name: X-LocalAssistant-Api-Key
+      description: >-
+        Optional local API key. When configured, it creates the server-defined
+        principal and scopes used by the tool risk policy.
   schemas:
     HealthResponse:
       type: object

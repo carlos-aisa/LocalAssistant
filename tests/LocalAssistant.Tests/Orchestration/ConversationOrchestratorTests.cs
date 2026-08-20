@@ -289,7 +289,7 @@ public sealed class ConversationOrchestratorTests
             ProviderRequesting(new ToolCall("sensitive-1", "read_sensitive", EmptyArguments())),
             CancellationToken.None);
 
-        Assert.Equal("tool_policy_denied", result.Error?.Code);
+        Assert.Equal("authentication_required", result.Error?.Code);
         Assert.Equal(0, executions);
     }
 
@@ -312,7 +312,7 @@ public sealed class ConversationOrchestratorTests
                 return ValueTask.FromResult(ToolExecutionResult.Success("private data"));
             });
         var authenticated = new ToolPolicyContext(
-            true,
+            "test-principal",
             new HashSet<string>(StringComparer.Ordinal));
         var contextAccessor = new SequenceToolPolicyContextAccessor(
             authenticated,
@@ -326,7 +326,7 @@ public sealed class ConversationOrchestratorTests
             ProviderRequesting(new ToolCall("private-1", "read_private", EmptyArguments())),
             CancellationToken.None);
 
-        Assert.Equal("tool_policy_denied", result.Error?.Code);
+        Assert.Equal("authentication_required", result.Error?.Code);
         Assert.Equal(0, executions);
     }
 
@@ -352,6 +352,57 @@ public sealed class ConversationOrchestratorTests
 
         Assert.True(result.IsSuccess);
         Assert.NotNull(result.Confirmation);
+    }
+
+    [Fact]
+    public async Task DoesNotAllowAnotherPrincipalToResolvePendingConfirmation()
+    {
+        var executions = 0;
+        var tool = new DelegateTool("change_state", true, (_, _) =>
+        {
+            executions++;
+            return ValueTask.FromResult(ToolExecutionResult.Success("changed"));
+        });
+        var firstPrincipal = new ToolPolicyContext(
+            "first-principal",
+            new HashSet<string>(StringComparer.Ordinal));
+        var otherPrincipal = new ToolPolicyContext(
+            "other-principal",
+            new HashSet<string>(StringComparer.Ordinal));
+        var provider = new ScriptedLanguageProvider(
+        [
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.RequestTools(
+                new ToolCall("change-1", "change_state", EmptyArguments()))),
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.Final("Done")),
+        ]);
+        var sut = CreateOrchestrator(
+            tools: [tool],
+            toolPolicyContextAccessor: new SequenceToolPolicyContextAccessor(
+                firstPrincipal,
+                otherPrincipal,
+                firstPrincipal,
+                firstPrincipal));
+
+        var pending = await sut.ProcessAsync(new ConversationTurnRequest("Change"), provider, CancellationToken.None);
+        var denied = await sut.ResolveConfirmationAsync(
+            pending.ConversationId,
+            pending.Confirmation!.ConfirmationId,
+            true,
+            provider,
+            CancellationToken.None);
+
+        Assert.Equal("confirmation_not_found", denied.Error?.Code);
+        Assert.Equal(0, executions);
+
+        var approved = await sut.ResolveConfirmationAsync(
+            pending.ConversationId,
+            pending.Confirmation!.ConfirmationId,
+            true,
+            provider,
+            CancellationToken.None);
+
+        Assert.True(approved.IsSuccess);
+        Assert.Equal(1, executions);
     }
 
     [Fact]

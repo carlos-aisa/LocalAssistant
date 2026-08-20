@@ -7,10 +7,11 @@ habitaciones.
 
 ## Lectura por horizonte
 
-- **Capacidades actuales:** fases 1 y 2 completadas; núcleo conversacional, fake,
-  bucle explícito de herramientas y primer proveedor Ollama.
-- **Próximo incremento:** fase 3, con una herramienta útil adicional y autorización,
-  confirmación y egreso ligados a la operación concreta.
+- **Capacidades actuales:** fases 1, 2 y el núcleo de la fase 3 completados: núcleo
+  conversacional, fake, Ollama, herramientas locales, confirmación exacta, política
+  de riesgo, egreso controlado e identidad local opcional.
+- **Próximo incremento:** completar la fase 3 con auditoría, idempotencia y una
+  política de exposición de resultados.
 - **Horizonte cercano:** tutor de inglés escrito con role-play, correcciones e
   informe; persistencia e identidad de la fase 4; capacidad mínima de módulos,
   `Controlled Local Resources`, migración preparada y `BatchCooking` MVP. Home
@@ -93,7 +94,7 @@ confirmación y auditoría vinculadas a su solicitud.
 - [x] Tratar el riesgo como multidimensional: impacto de operación, sensibilidad del
   dato, identidad, alcance solicitado, exposición externa, coste y otros efectos;
   una lectura no será de bajo riesgo por definición.
-- Introducir identidad, autorización y confirmación de forma incremental según las
+- [x] Introducir identidad, autorización y confirmación de forma incremental según las
   necesidades del siguiente vertical slice, antes de leer datos privados o ejecutar
   operaciones con efectos relevantes; no diseñar todavía un sistema completo.
 - Auditoría, idempotencia y políticas de exposición de resultados.

@@ -74,6 +74,8 @@ public static class ConversationEndpoints
             null => StatusCodes.Status200OK,
             "provider_timeout" or "tool_timeout" => StatusCodes.Status504GatewayTimeout,
             "provider_error" or "tool_execution_failed" => StatusCodes.Status502BadGateway,
+            "authentication_required" => StatusCodes.Status401Unauthorized,
+            "scope_not_granted" or "external_gateway_required" or "tool_policy_denied" => StatusCodes.Status403Forbidden,
             "tool_not_found" or "invalid_tool_arguments" =>
                 StatusCodes.Status422UnprocessableEntity,
             "iteration_limit_reached" or "invalid_provider_response" or "confirmation_pending" or "confirmation_provider_mismatch" =>
