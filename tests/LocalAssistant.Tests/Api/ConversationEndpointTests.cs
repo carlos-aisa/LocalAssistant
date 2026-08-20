@@ -228,6 +228,33 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
     }
 
     [Fact]
+    public async Task ToolFailureDoesNotExposeProviderContentToTheApiClient()
+    {
+        using var client = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IToolRegistry>();
+                services.AddSingleton<IToolRegistry>(_ => new ToolRegistry([new FailingCurrentTimeTool()]));
+            });
+        }).CreateClient();
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "What time is it?", scenario = "time" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        var responseBody = await response.Content.ReadAsStringAsync(CancellationToken.None);
+        Assert.DoesNotContain("Sensitive provider detail", responseBody, StringComparison.Ordinal);
+        using var body = JsonDocument.Parse(responseBody);
+        Assert.Equal("The time service could not complete the request.", body.RootElement
+            .GetProperty("error")
+            .GetProperty("message")
+            .GetString());
+    }
+
+    [Fact]
     public async Task OllamaWithoutConfiguredModelReturnsValidationProblem()
     {
         using var response = await _client.PostAsJsonAsync(
@@ -364,6 +391,21 @@ file sealed class ScopedCurrentTimeTool : ITool
     public ValueTask<ToolExecutionResult> ExecuteAsync(
         JsonElement arguments,
         CancellationToken cancellationToken) => _inner.ExecuteAsync(arguments, cancellationToken);
+}
+
+file sealed class FailingCurrentTimeTool : ITool
+{
+    private readonly CurrentTimeTool _inner = new(TimeProvider.System);
+
+    public ToolDefinition Definition => _inner.Definition;
+
+    public ValueTask<ToolExecutionResult> ExecuteAsync(
+        JsonElement arguments,
+        CancellationToken cancellationToken) =>
+        ValueTask.FromResult(ToolExecutionResult.Failure(
+            "tool_execution_failed",
+            "Sensitive provider detail",
+            "The time service could not complete the request."));
 }
 
 file sealed class StaticHttpMessageHandler : HttpMessageHandler

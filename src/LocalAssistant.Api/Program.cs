@@ -15,6 +15,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IConversationStore, InMemoryConversationStore>();
 builder.Services.AddSingleton<IToolConfirmationStore, InMemoryToolConfirmationStore>();
 builder.Services.AddSingleton<IConversationExecutionLock, InMemoryConversationExecutionLock>();
+builder.Services.AddSingleton<IToolAuditSink, InMemoryToolAuditSink>();
 builder.Services.AddSingleton<IToolRiskPolicy, DefaultToolRiskPolicy>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddAuthentication(LocalApiKeyAuthenticationDefaults.SchemeName)

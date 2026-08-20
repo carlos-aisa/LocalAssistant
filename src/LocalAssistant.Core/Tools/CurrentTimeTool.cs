@@ -37,7 +37,8 @@ public sealed class CurrentTimeTool : ITool
         {
             return ValueTask.FromResult(ToolExecutionResult.Failure(
                 "invalid_tool_arguments",
-                "The time tool accepts an empty JSON object only."));
+                "The time tool accepts an empty JSON object only.",
+                "The time tool arguments are invalid."));
         }
 
         var content = JsonSerializer.Serialize(new

@@ -130,6 +130,111 @@ public sealed class ConversationOrchestratorTests
     }
 
     [Fact]
+    public async Task UsesSafeClientMessageAndExcludesToolContentFromAudit()
+    {
+        var auditSink = new InMemoryToolAuditSink();
+        var tool = new DelegateTool(
+            "sensitive_failure",
+            requiresConfirmation: false,
+            static (_, _) => ValueTask.FromResult(ToolExecutionResult.Failure(
+                "tool_failed",
+                "Sensitive provider result and secret argument",
+                "The operation could not be completed.")));
+        var provider = ProviderRequesting(new ToolCall(
+            "sensitive-call",
+            "sensitive_failure",
+            JsonSerializer.SerializeToElement(new { secret = "never-audit" })));
+        var sut = CreateOrchestrator(tools: [tool], auditSink: auditSink);
+
+        var result = await sut.ProcessAsync(
+            new ConversationTurnRequest("Run it"),
+            provider,
+            CancellationToken.None);
+
+        Assert.Equal("tool_failed", result.Error?.Code);
+        Assert.Equal("The operation could not be completed.", result.Error?.Message);
+        var events = auditSink.Events;
+        Assert.Collection(
+            events,
+            auditEvent => Assert.Equal(ToolAuditEventType.Requested, auditEvent.Type),
+            auditEvent => Assert.Equal(ToolAuditEventType.ExecutionStarted, auditEvent.Type),
+            auditEvent => Assert.Equal(ToolAuditEventType.ExecutionFailed, auditEvent.Type));
+        var serializedEvents = JsonSerializer.Serialize(events);
+        Assert.DoesNotContain("Sensitive provider result", serializedEvents, StringComparison.Ordinal);
+        Assert.DoesNotContain("never-audit", serializedEvents, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AuditsPolicyDenialWithoutExecutingTool()
+    {
+        var auditSink = new InMemoryToolAuditSink();
+        var tool = new DelegateTool(
+            "private_tool",
+            new ToolRiskProfile(
+                ToolOperationImpact.ReadOnly,
+                ToolDataSensitivity.Private,
+                ToolExposure.Local,
+                ToolCost.None,
+                RequiresConfirmation: false,
+                ["private.read"]),
+            static (_, _) => ValueTask.FromResult(ToolExecutionResult.Success("unreachable")));
+        var provider = ProviderRequesting(new ToolCall("private-call", "private_tool", EmptyArguments()));
+        var sut = CreateOrchestrator(tools: [tool], auditSink: auditSink);
+
+        var result = await sut.ProcessAsync(
+            new ConversationTurnRequest("Read private data"),
+            provider,
+            CancellationToken.None);
+
+        Assert.Equal("authentication_required", result.Error?.Code);
+        Assert.Collection(
+            auditSink.Events,
+            auditEvent => Assert.Equal(ToolAuditEventType.Requested, auditEvent.Type),
+            auditEvent =>
+            {
+                Assert.Equal(ToolAuditEventType.PolicyDenied, auditEvent.Type);
+                Assert.Equal("authentication_required", auditEvent.OutcomeCode);
+            });
+    }
+
+    [Fact]
+    public async Task AuditsApprovedConfirmationBeforeExecutingTool()
+    {
+        var auditSink = new InMemoryToolAuditSink();
+        var tool = new DelegateTool(
+            "change_tool",
+            requiresConfirmation: true,
+            static (_, _) => ValueTask.FromResult(ToolExecutionResult.Success("changed")));
+        var call = new ToolCall("change-call", "change_tool", EmptyArguments());
+        var provider = new ScriptedLanguageProvider(
+        [
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.RequestTools(call)),
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.Final("Done")),
+        ]);
+        var sut = CreateOrchestrator(tools: [tool], auditSink: auditSink);
+
+        var pending = await sut.ProcessAsync(
+            new ConversationTurnRequest("Change it"),
+            provider,
+            CancellationToken.None);
+        var result = await sut.ResolveConfirmationAsync(
+            pending.ConversationId,
+            pending.Confirmation!.ConfirmationId,
+            approved: true,
+            provider,
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Collection(
+            auditSink.Events,
+            auditEvent => Assert.Equal(ToolAuditEventType.Requested, auditEvent.Type),
+            auditEvent => Assert.Equal(ToolAuditEventType.ConfirmationRequested, auditEvent.Type),
+            auditEvent => Assert.Equal(ToolAuditEventType.ConfirmationApproved, auditEvent.Type),
+            auditEvent => Assert.Equal(ToolAuditEventType.ExecutionStarted, auditEvent.Type),
+            auditEvent => Assert.Equal(ToolAuditEventType.ExecutionSucceeded, auditEvent.Type));
+    }
+
+    [Fact]
     public async Task PropagatesCallerCancellation()
     {
         var provider = new BlockingProvider();
@@ -518,7 +623,8 @@ public sealed class ConversationOrchestratorTests
         ManualTimeProvider? timeProvider = null,
         InMemoryConversationStore? store = null,
         OrchestrationOptions? options = null,
-        IToolPolicyContextAccessor? toolPolicyContextAccessor = null)
+        IToolPolicyContextAccessor? toolPolicyContextAccessor = null,
+        IToolAuditSink? auditSink = null)
     {
         timeProvider ??= new ManualTimeProvider(FixedUtcNow);
         tools ??= [new CurrentTimeTool(timeProvider)];
@@ -528,6 +634,7 @@ public sealed class ConversationOrchestratorTests
             new ToolRegistry(tools),
             new DefaultToolRiskPolicy(),
             toolPolicyContextAccessor ?? new AnonymousToolPolicyContextAccessor(),
+            auditSink ?? new InMemoryToolAuditSink(),
             new InMemoryToolConfirmationStore(),
             new InMemoryConversationExecutionLock(),
             timeProvider,

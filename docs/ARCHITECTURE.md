@@ -722,10 +722,16 @@ bucle, sus fallos y sus políticas. Un adaptador futuro podrá traducir entre
 
 ## Observabilidad
 
-Los eventos estructurados registran inicio y final del turno, proveedor e
-iteración, solicitud y resultado de herramientas, código de error y duración. No
-registran mensaje, argumentos ni contenido devuelto. OpenTelemetry se pospone hasta
-que exista un consumidor concreto de trazas o métricas.
+Los logs estructurados registran inicio y final del turno, proveedor e iteración,
+solicitud y resultado de herramientas, código de error y duración. Además,
+`IToolAuditSink` conserva actualmente en memoria eventos de solicitud, denegación de
+política, confirmación, inicio, éxito, fallo y timeout. Cada evento incluye
+identificadores, principal, proveedor, herramienta, resultado y duración cuando
+aplica; no incluye mensajes, argumentos ni resultados de herramientas.
+
+La auditoría es diagnóstica y local: no sobrevive un reinicio, no tiene consulta HTTP
+ni sustituye una auditoría durable y protegida. OpenTelemetry y la persistencia se
+posponen hasta que exista un consumidor concreto de trazas o métricas.
 
 ## Configuración
 

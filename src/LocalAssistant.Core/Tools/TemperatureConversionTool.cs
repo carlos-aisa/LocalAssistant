@@ -48,7 +48,10 @@ public sealed class TemperatureConversionTool : ITool
 
         if (!TryReadArguments(arguments, out var value, out var fromUnit, out var toUnit, out var error))
         {
-            return ValueTask.FromResult(ToolExecutionResult.Failure("invalid_tool_arguments", error));
+            return ValueTask.FromResult(ToolExecutionResult.Failure(
+                "invalid_tool_arguments",
+                error,
+                "The temperature conversion arguments are invalid."));
         }
 
         var kelvin = ConvertToKelvin(value, fromUnit);
@@ -56,7 +59,8 @@ public sealed class TemperatureConversionTool : ITool
         {
             return ValueTask.FromResult(ToolExecutionResult.Failure(
                 "invalid_tool_arguments",
-                "The temperature cannot be below absolute zero."));
+                "The temperature cannot be below absolute zero.",
+                "The temperature conversion arguments are invalid."));
         }
 
         var convertedValue = decimal.Round(

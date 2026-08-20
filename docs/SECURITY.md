@@ -31,9 +31,10 @@ caducidad. La decisión posterior solo puede aprobar o rechazar esa llamada; es 
 único uso y no permite sustituir argumentos desde HTTP. Si la llamada se originó con
 un principal autenticado, otro principal no puede consumirla. El almacenamiento actual
 es en RAM: se pierde al reiniciar y no incorpora gestión de usuarios, autorización
-durable, propiedad de conversaciones ni auditoría. No debe tratarse como autorización
-productiva. La confirmación tampoco sustituye la autorización para leer un dato
-sensible.
+durable ni propiedad de conversaciones. Existe una auditoría local en memoria de
+solicitudes, decisiones, confirmaciones y ejecuciones, pero tampoco sobrevive un
+reinicio ni debe tratarse como registro productivo. La confirmación tampoco sustituye
+la autorización para leer un dato sensible.
 
 ## Amenazas relevantes
 
@@ -46,8 +47,10 @@ sensible.
   defecto. La privacidad precede al routing: clasificación y minimización se aplican
   antes de comparar proveedores, y la falta de capacidad local no autoriza datos
   `DENY` para un LLM externo.
-- **Acciones repetidas:** los identificadores, confirmaciones e idempotencia serán
-  necesarios antes de controlar dispositivos o servicios externos.
+- **Acciones repetidas:** la confirmación actual se consume una sola vez, pero no
+  aporta idempotencia distribuida. Las herramientas reales con cambios de estado o
+  coste deberán definir una clave de operación e idempotencia antes de conectarse a
+  dispositivos o servicios externos.
 - **Denegación de servicio:** el límite de iteraciones y los timeouts reducen bucles
   y esperas, pero faltan cuotas, límites de tamaño y rate limiting.
 - **Memoria sensible:** las conversaciones permanecen en RAM hasta terminar el
@@ -576,6 +579,13 @@ ubicación precisa, consultas completas, cabeceras, credenciales ni cuerpos exte
 Se registran identificador de conversación, proveedor, iteración, nombre e id de
 herramienta, éxito o código de error y tiempos.
 
+La auditoría en memoria añade identidad disponible, decisión de política, estado de
+confirmación y transición de ejecución. No registra el mensaje del usuario, los
+argumentos, el contenido enviado al proveedor ni el resultado de la herramienta.
+El detalle técnico de un fallo puede conservarse en el historial interno para que el
+proveedor continúe el protocolo, pero la respuesta HTTP utiliza solo el mensaje seguro
+declarado por la herramienta o un mensaje genérico.
+
 No se registran por defecto:
 
 - mensajes o prompts;
@@ -591,7 +601,7 @@ limitada.
 
 Será necesario añadir una identidad y autorización aptas para el despliegue, HTTPS,
 límites de cuerpo y tasa, validación de origen, gestión externa de secretos,
-auditoría, políticas de red y pruebas contra prompt injection.
+auditoría durable y protegida, políticas de red y pruebas contra prompt injection.
 
 Los fallos HTTP actuales no devuelven excepciones internas. Los logs locales sí
 pueden contener la excepción del proveedor o herramienta para diagnóstico, por lo

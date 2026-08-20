@@ -7,11 +7,12 @@ habitaciones.
 
 ## Lectura por horizonte
 
-- **Capacidades actuales:** fases 1, 2 y el núcleo de la fase 3 completados: núcleo
-  conversacional, fake, Ollama, herramientas locales, confirmación exacta, política
-  de riesgo, egreso controlado e identidad local opcional.
-- **Próximo incremento:** completar la fase 3 con auditoría, idempotencia y una
-  política de exposición de resultados.
+- **Capacidades actuales:** fases 1, 2 y la mayor parte de la fase 3 completadas:
+  núcleo conversacional, fake, Ollama, herramientas locales, confirmación exacta,
+  política de riesgo, egreso controlado, identidad local opcional, auditoría local y
+  exposición segura de errores.
+- **Próximo incremento:** definir una operación idempotente al incorporar la primera
+  herramienta real que cambie estado o produzca coste.
 - **Horizonte cercano:** tutor de inglés escrito con role-play, correcciones e
   informe; persistencia e identidad de la fase 4; capacidad mínima de módulos,
   `Controlled Local Resources`, migración preparada y `BatchCooking` MVP. Home
@@ -97,7 +98,13 @@ confirmación y auditoría vinculadas a su solicitud.
 - [x] Introducir identidad, autorización y confirmación de forma incremental según las
   necesidades del siguiente vertical slice, antes de leer datos privados o ejecutar
   operaciones con efectos relevantes; no diseñar todavía un sistema completo.
-- Auditoría, idempotencia y políticas de exposición de resultados.
+- [x] Registrar en memoria eventos estructurados de solicitud, decisión de política,
+  confirmación y ejecución, sin argumentos ni resultados de herramienta.
+- [x] Separar el detalle de fallo que recibe el proveedor del mensaje seguro que se
+  expone al cliente HTTP.
+- Definir y probar una clave de idempotencia por operación con la primera herramienta
+  real que cambie estado o produzca coste. La confirmación actual es de un único uso,
+  pero todavía no es una garantía de idempotencia distribuida.
 
 **Capacidades excluidas:** un sistema completo de roles, acceso general a archivos y
 acciones domésticas de escritura no justificadas por el vertical slice.
