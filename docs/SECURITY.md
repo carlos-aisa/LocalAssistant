@@ -360,8 +360,10 @@ documentos ni otros datos del mismo usuario.
 
 `SEARCH_QUERY` requerirá saneado y minimización; `PUBLIC_DATA` podrá salir cuando la
 política del destino lo permita. Las categorías nuevas o desconocidas se denegarán
-por defecto. El sistema deberá poder añadir categorías y políticas sin rediseñar la
-frontera de egreso completa.
+por defecto. La política actual evalúa solamente descriptores de campos, sin valores
+ni logs de payload, y aún no permite comunicación externa. El primer `Tools Gateway`
+deberá aplicar su resultado sobre el payload final y no aceptar una marca de saneado
+procedente del modelo o del cliente como prueba suficiente.
 
 La comprobación se aplicará al payload final y no solo a sus fuentes originales.
 Consultas, resúmenes, nombres de proyecto, clases, hosts, URLs privadas,

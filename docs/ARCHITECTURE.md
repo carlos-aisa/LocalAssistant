@@ -96,11 +96,11 @@ inspector rechaza una ventana configurada por encima del máximo del modelo.
 
 ## Dirección futura: privacidad y frontera de egreso
 
-Esta sección describe una intención arquitectónica, no componentes implementados.
-El modelo local podrá usar contexto privado para decidir qué hacer, pero ese contexto
-no se convertirá implícitamente en una solicitud externa. La única excepción
-inicial explícita será la ubicación cuando resulte necesaria para cumplir la
-petición y su política de categoría la autorice.
+El núcleo implementa ya una política determinista de clasificación y decisión de
+egreso. No existe todavía una herramienta ni un proveedor externo: el siguiente
+vertical slice deberá aplicar esta política en el `Tools Gateway` antes de enviar
+un payload real. El modelo local podrá usar contexto privado para decidir qué hacer,
+pero ese contexto no se convertirá implícitamente en una solicitud externa.
 
 La política de privacidad será anterior al routing de proveedor y constituirá una
 restricción dura. Capacidad, dificultad, latencia, coste o falta de recursos locales
@@ -110,8 +110,8 @@ de contexto protegido que el modelo local no pueda procesar, podrá continuar co
 capacidad reducida, usar únicamente una parte pública o saneada si sigue siendo útil,
 o comunicar la limitación; la experiencia concreta queda pospuesta.
 
-La política futura clasificará datos y payloads derivados mediante categorías
-extensibles. Una primera referencia de comportamiento es:
+La política clasifica descriptores de campos mediante categorías extensibles. Una
+categoría nueva o desconocida se deniega por defecto. La referencia implementada es:
 
 | Categoría | Política inicial |
 | --- | --- |
@@ -123,10 +123,11 @@ extensibles. Una primera referencia de comportamiento es:
 | `SEARCH_QUERY` | `ALLOW_SANITIZED` |
 | `PUBLIC_DATA` | `ALLOW` |
 
-La lista no será un enum cerrado ni una autorización global. Una categoría nueva o
-desconocida se denegará hasta disponer de política. La decisión deberá considerar
-categoría, propósito, destino, proveedor, operación y procedencia. Autorizar un
-campo `LOCATION` no autorizará otros campos del mismo turno.
+La lista no es un enum cerrado ni una autorización global. La decisión actual recibe
+categoría, propósito y destino, y valida que `LOCATION` sea necesaria y que
+`SEARCH_QUERY` esté marcado como saneado. El primer gateway añadirá proveedor,
+operación, procedencia verificable y la correspondencia uno a uno con el payload
+final. Autorizar un campo `LOCATION` no autorizará otros campos del mismo turno.
 
 La validación se realizará sobre el payload final. Una transformación local no
 cambia automáticamente la categoría: nombres de clases, repositorios, hosts, URLs,
