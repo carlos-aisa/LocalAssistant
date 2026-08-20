@@ -140,6 +140,168 @@ serán explícitas y aplicarán el modelo de propiedad y almacenamiento privado.
 repositorios y el código fuente quedan fuera de las fuentes documentales y no se
 habilitarán accidentalmente mediante configuración amplia.
 
+## Módulos domésticos y recursos locales controlados
+
+Un módulo no heredará acceso a archivos, datos o herramientas por estar instalado.
+Cada principal doméstico autorizará recursos registrados y permisos concretos para
+cada módulo. Hogares y módulos tendrán almacenamiento, configuración y auditoría
+aislados. Leer, extraer, importar, exportar, crear, sobrescribir y eliminar serán
+operaciones diferentes; la lectura será el valor predeterminado y la escritura o
+destrucción exigirá una confirmación adicional con el recurso y efecto visibles.
+
+`Controlled Local Resources` validará el destino resuelto inmediatamente antes de
+cada acceso y evitará path traversal, rutas absolutas no registradas, enlaces,
+junctions y cambios de destino. Aplicará allowlists de formato, tamaño y tipo de
+contenido, límites de tiempo y memoria, hashes o versiones, y registro de la
+operación. Revocar un ámbito impedirá nuevos accesos sin borrar silenciosamente el
+estado ya importado; su retención se resolverá mediante una acción independiente.
+
+Los archivos y sus metadatos serán contenido no confiable. Texto, Markdown, JSON,
+CSV, hojas de cálculo, recetas y documentos importados podrán contener prompt
+injection, fórmulas, macros, vínculos externos, contenido activo, cargas malformadas
+o datos diseñados para agotar recursos. La extracción no ejecutará macros, fórmulas,
+scripts ni contenido incrustado; los valores se tratarán como datos y no podrán
+conceder permisos, cambiar políticas, solicitar secretos ni activar herramientas.
+Formatos avanzados requerirán sus propios límites y pruebas antes de habilitarse.
+
+Leer no significará importar. Antes de normalizar información se mostrará una
+previsualización con origen, versión, datos interpretados, omisiones, advertencias,
+suposiciones y campos pendientes, y se identificará al principal que confirma. El
+archivo original permanecerá intacto. Generar o rellenar una plantilla Excel creará
+una nueva versión por defecto; sobrescribir o eliminar requerirá autorización
+específica. Importaciones y exportaciones conservarán trazabilidad sin copiar su
+contenido completo al log.
+
+Los datos de `BatchCooking` son privados. Alergias, restricciones médicas, dietas,
+preferencias, presencia en casa, valoraciones e inventario pueden revelar salud,
+hábitos o composición familiar. No se codificarán en el repositorio ni se mezclarán
+entre hogares. El miembro que modifica o confirma un dato deberá quedar identificado;
+los cambios relevantes de inventario, menú, restricciones y preferencias serán
+auditables y corregibles.
+
+Al usar modelos o servicios externos, datos familiares, archivos, plantillas,
+recetas privadas y cualquier contenido derivado permanecerán inicialmente bajo
+`LOCAL_FILES`, `LOCAL_DOCUMENTS`, `PRIVATE_CONFIG` o la categoría sensible aplicable
+con egreso `DENY`. Un módulo no podrá levantar esa política. Una futura excepción
+deberá declarar propósito, proveedor, destino, campos mínimos, principal autorizado
+y retención; nunca incluirá secretos ni el historial completo por comodidad.
+
+Cada hogar podrá revisar, corregir, exportar y eliminar sus datos y procedencia. La
+eliminación deberá contemplar estado estructurado, archivos generados, historial,
+auditoría compatible con la política de retención y copias de seguridad, sin borrar
+originales del usuario salvo solicitud y autorización independientes.
+
+## Privacidad futura del tutor de inglés
+
+Perfil, ejercicios, errores, informes y transcripciones pertenecerán a un principal
+y no se mezclarán entre usuarios. Pueden contener información profesional,
+incidencias, clientes, arquitecturas o vocabulario confidencial; se tratarán como
+datos privados aunque el objetivo sea pedagógico. El tutor ofrecerá escenarios
+ficticios para practicar sin revelar información real.
+
+El audio se procesará localmente siempre que resulte razonable y no se conservará
+por defecto. Grabar, retener, reutilizar, exportar o eliminar audio serán decisiones
+separadas de conservar una transcripción o informe. Cualquier envío de audio,
+transcripción, perfil o contenido profesional a STT, TTS, LLM o evaluador externo
+requerirá proveedor conocido, minimización y autorización explícita conforme a la
+política de egreso.
+
+Las inferencias pedagógicas serán revisables y conservarán su evidencia temporal.
+Un error de transcripción no se atribuirá automáticamente al usuario, una sesión no
+fijará silenciosamente su nivel y las puntuaciones internas no se presentarán como
+certificaciones oficiales. El usuario podrá corregir, exportar y eliminar su perfil
+e historial bajo las reglas de retención y backup aplicables.
+
+## Ciclo futuro de proyectos y agentes de programación
+
+La definición de un proyecto, su especificación, la ejecución de código y su
+publicación serán límites de autorización distintos. Decir «impleméntalo» iniciará
+una revisión del alcance y una solicitud de aprobación acotada; no concederá permiso
+para explorar cualquier carpeta, ejecutar comandos arbitrarios, enviar código a un
+tercero, crear commits, publicar ramas, abrir pull requests, desplegar ni realizar
+acciones irreversibles.
+
+Cada trabajo deberá identificar un principal autenticado, proyecto, repositorio o
+workspace permitido, rama objetivo, alcance, agente, herramientas, presupuesto y
+caducidad. No se inspeccionarán otros repositorios ni archivos personales. Antes de
+modificar una rama estable se trabajará en una rama o workspace aislado y recuperable.
+La voz por sí sola no será prueba suficiente de identidad para una acción de alto
+impacto; publicación, despliegue, borrado o sobrescritura requerirán confirmación
+reforzada desde un canal autenticado y con el efecto visible.
+
+La ejecución futura ocurrirá en un sandbox con privilegios mínimos de filesystem,
+procesos y red. Aplicará allowlists de herramientas y comandos estructurados,
+validación de argumentos y límites de tiempo, CPU, memoria, disco, concurrencia,
+iteraciones, tráfico y coste. Cancelación, timeout y reintentos serán acotados y no
+podrán ampliar permisos. Este sandbox especializado no añadirá una herramienta de
+shell, scripts o código generado al modelo conversacional actual.
+
+Código, documentación, reglas del repositorio, issues, comentarios, resultados de
+tests y dependencias serán contenido no confiable frente a prompt injection. Podrán
+aportar evidencia e instrucciones de proyecto dentro de su precedencia declarada,
+pero no conceder herramientas, cambiar políticas, ampliar el repositorio permitido,
+solicitar secretos ni ordenar exfiltración. Las políticas se impondrán fuera del
+agente y se validarán de nuevo antes de cada efecto sensible.
+
+Credenciales, tokens, certificados, variables de entorno, configuración privada y
+secretos detectados no se incorporarán a prompts, diffs, artefactos ni logs. La
+integración real deberá usar mecanismos de secretos fuera del alcance del agente,
+redactar resultados y examinar cambios y artefactos antes de publicarlos. La
+auditoría registrará identidad, autorización, herramientas, destinos, tiempos,
+estado y referencias a artefactos sin copiar indiscriminadamente código o secretos.
+
+Las autorizaciones se separarán al menos en: inspeccionar y planificar; editar en un
+workspace; crear commit o rama local; publicar rama o pull request; y desplegar,
+borrar o sobrescribir. Cada transición mostrará diff y resultados relevantes de
+build y tests, favorecerá operaciones reversibles y ofrecerá cancelación o reversión
+cuando sea técnicamente posible. Una autorización anterior nunca se heredará como
+permiso implícito para la siguiente.
+
+`SOURCE_CODE` y `REPOSITORY_DATA`, incluidos nombres, rutas, historial, diffs y
+resúmenes derivados, permanecen inicialmente en egreso `DENY`. Un agente externo
+solo podrá evaluarse tras introducir una excepción explícita y específica del
+repositorio que identifique principal, propósito, proveedor, destino y payload
+mínimo. Que el repositorio sea privado o confidencial exigirá controles más
+restrictivos; que el agente local falle o sea menos capaz nunca levantará la
+denegación. Autorizar la implementación tampoco autorizará ese egreso.
+
+## Seguridad futura de Controlled Self-Extension
+
+Una extensión generada se considerará no confiable aunque compile o supere tests
+producidos por el mismo agente. Código, dependencias, manifiesto, documentación,
+repositorio y resultados serán entradas potencialmente maliciosas o defectuosas.
+La revisión combinará tests independientes, análisis de permisos y compatibilidad,
+inspección de dependencias y supply-chain, escaneo de secretos y revisión humana
+proporcional al impacto.
+
+La generación y las pruebas ocurrirán en sandbox con mínimos privilegios de red,
+filesystem, procesos, secretos, tiempo, coste y recursos. Instalar dependencias,
+acceder a un registry, ejecutar herramientas, leer repositorios o usar credenciales
+serán capacidades explícitas y auditadas. El contenido del repositorio no podrá
+ampliar el alcance ni convertir instrucciones incrustadas en autorizaciones.
+
+La instancia activa y sus políticas estarán fuera del workspace modificable. Una
+extensión común no podrá editar el núcleo, motor de autorización, auditoría,
+clasificación de datos, frontera de egreso, verificador de firmas o mecanismo de
+rollback; tampoco podrá concederse permisos, marcarse revisada ni aprobar su propia
+instalación. Un cambio del núcleo seguirá el flujo normal del producto y revisión
+humana obligatoria.
+
+Generar, modificar, integrar, instalar, activar y desplegar tendrán autorizaciones
+independientes. Acciones críticas exigirán un principal verificado mediante un canal
+o dispositivo autenticado; una orden de voz aislada no bastará. La instalación
+usará artefactos versionados y compatibles, no el workspace mutable del agente.
+
+Antes de activar se validarán permisos, migraciones, estrategia de desactivación,
+health checks y rollback. Tras activar se observarán fallos y consumo dentro de
+límites; una extensión podrá suspenderse automáticamente sin autoaprobar una versión
+alternativa. Revertir código no implicará que una migración de datos sea reversible,
+por lo que backup, compatibilidad hacia atrás y recuperación se probarán por separado.
+
+La auditoría cubrirá requisitos, agente, herramientas, dependencias, red, secretos
+referenciados, aprobaciones, artefactos, instalación, activación, fallos, suspensión
+y rollback sin copiar código o credenciales indiscriminadamente.
+
 ## Privacidad y seguridad del audio futuro
 
 Los satélites de habitación convierten el audio ambiente en un dato especialmente

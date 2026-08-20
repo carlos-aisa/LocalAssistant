@@ -5,7 +5,36 @@ vertical comprobable antes de introducir infraestructura adicional. En particula
 la voz se valida primero en un único dispositivo; solo después se distribuye por
 habitaciones.
 
+## Lectura por horizonte
+
+- **Capacidades actuales:** fases 1 y 2 completadas; núcleo conversacional, fake,
+  bucle explícito de herramientas y primer proveedor Ollama.
+- **Próximo incremento:** fase 3, con una herramienta útil adicional y autorización,
+  confirmación y egreso ligados a la operación concreta.
+- **Horizonte cercano:** tutor de inglés escrito con role-play, correcciones e
+  informe; persistencia e identidad de la fase 4; capacidad mínima de módulos,
+  `Controlled Local Resources`, migración preparada y `BatchCooking` MVP. Home
+  Assistant y voz podrán avanzar sobre dependencias comunes sin bloquear esos flujos
+  escritos.
+- **Horizonte intermedio:** perfil temporal de aprendizaje, conversación inglesa de
+  baja latencia, automatizaciones y dispositivos para `BatchCooking`, extensibilidad
+  estabilizada, agente simulado y ejecución aislada.
+- **Horizonte avanzado:** tutor desde satélites, pronunciación específica,
+  conocimiento externo, ciclo conversacional de proyectos completo y primeras
+  skills o tools mediante `Controlled Self-Extension`.
+- **Ideas exploratorias:** importaciones multimodales, integraciones comerciales,
+  optimización avanzada, módulos completos generados, propuestas proactivas y
+  cambios controlados del núcleo mediante el desarrollo normal. No constituyen
+  compromisos de los MVP.
+
 ## Fase 1 — Protocolo mínimo (completada)
+
+**Resultado utilizable:** una API local capaz de completar conversaciones y ejecutar
+una herramienta permitida mediante un protocolo visible y probado.
+
+**Dependencias:** ninguna fase anterior.
+
+**Capacidades incluidas:**
 
 - API de conversación.
 - Proveedor fake secuencial.
@@ -13,7 +42,19 @@ habitaciones.
 - Herramienta de hora, políticas iniciales, logging y tests.
 - Conversaciones en memoria.
 
+**Capacidades excluidas:** persistencia, modelo real, identidad, voz e integraciones.
+
+**Criterio de finalización:** flujo directo y tool calling deterministas cubiertos
+por pruebas sin red.
+
 ## Fase 2 — Primer modelo local (completada)
+
+**Resultado utilizable:** el mismo protocolo funciona con un modelo Ollama local y
+mantiene el fake como proveedor de pruebas.
+
+**Dependencias:** fase 1 y una instalación opcional de Ollama para smoke tests.
+
+**Capacidades incluidas:**
 
 - [x] Adaptador HTTP de Ollama detrás de `ILanguageProvider`.
 - [x] Selección y configuración explícitas desde la API, desactivado por defecto.
@@ -26,7 +67,19 @@ habitaciones.
 - [x] Ventana de contexto explícita y validada contra metadatos disponibles.
 - [x] Cancelación de inferencia propagada hasta la petición HTTP y probada en vuelo.
 
+**Capacidades excluidas:** routing cloud, memoria persistente y nuevas herramientas.
+
+**Criterio de finalización:** contratos comunes y adaptador validados con tests
+deterministas, más smoke test local reproducible.
+
 ## Fase 3 — Herramientas y permisos
+
+**Resultado utilizable:** una segunda capacidad útil puede invocarse con política,
+confirmación y auditoría vinculadas a su solicitud.
+
+**Dependencias:** fases 1 y 2.
+
+**Capacidades incluidas:**
 
 - Ampliar el catálogo con una segunda herramienta de solo lectura útil.
 - Definir clasificación de datos y políticas de egreso por categoría antes del
@@ -43,7 +96,20 @@ habitaciones.
   operaciones con efectos relevantes; no diseñar todavía un sistema completo.
 - Auditoría, idempotencia y políticas de exposición de resultados.
 
+**Capacidades excluidas:** un sistema completo de roles, acceso general a archivos y
+acciones domésticas de escritura no justificadas por el vertical slice.
+
+**Criterio de finalización:** la capacidad elegida demuestra autorización,
+confirmación, denegación y auditoría mediante pruebas deterministas.
+
 ## Fase 4 — Persistencia y memoria de conversación
+
+**Resultado utilizable:** conversaciones privadas y una primera fuente documental
+local pueden persistirse y consultarse con identidad, propiedad y retención.
+
+**Dependencias:** política mínima de identidad y permisos de la fase 3.
+
+**Capacidades incluidas:**
 
 - Elegir almacenamiento tras medir el patrón de acceso.
 - Definir un concepto mínimo de `User` o `Principal` y el alcance de propiedad y
@@ -78,7 +144,20 @@ habitaciones.
   completas por defecto; decidir la caché después de medir el patrón de acceso.
 - Protección frente a prompt injection procedente de documentos.
 
+**Capacidades excluidas:** repositorios, escritura arbitraria, RAG automático, OCR,
+watchers, base vectorial y acceso de módulos a carpetas no registradas.
+
+**Criterio de finalización:** persistencia, concurrencia, aislamiento por principal,
+retención y primer flujo documental están cubiertos por pruebas y documentación.
+
 ## Fase 5 — Home Assistant
+
+**Resultado utilizable:** Jarvis consulta un conjunto explícito de entidades de Home
+Assistant y mantiene preparadas las políticas para acciones confirmadas.
+
+**Dependencias:** herramientas, identidad y autorización mínimas de la fase 3.
+
+**Capacidades incluidas:**
 
 - Integración inicial de solo lectura.
 - Registro explícito de entidades y capacidades permitidas.
@@ -86,7 +165,20 @@ habitaciones.
 - MQTT solo cuando existan eventos o presencia que justifiquen desacoplamiento.
 - Auditoría y separación de credenciales por conector.
 
+**Capacidades excluidas:** automatizaciones autónomas, MQTT preventivo y control sin
+confirmación de dispositivos con efectos relevantes.
+
+**Criterio de finalización:** consulta permitida, denegación, fallo del conector y
+auditoría funcionan en un vertical slice reproducible.
+
 ## Fase 6 — Pipeline de voz en un único dispositivo
+
+**Resultado utilizable:** una conversación completa por voz funciona en un único
+dispositivo con captura visible y cancelable.
+
+**Dependencias:** núcleo conversacional estable y política de egreso de la fase 3.
+
+**Capacidades incluidas:**
 
 - Speech-to-text y text-to-speech intercambiables.
 - Wake word configurable y local cuando sea razonable.
@@ -100,7 +192,20 @@ habitaciones.
   selección automática cuando el usuario no indique una preferencia.
 - Indicador físico de captura y desactivación física del micrófono.
 
+**Capacidades excluidas:** satélites, routing entre habitaciones y Nest Hub como
+micrófono.
+
+**Criterio de finalización:** captura, transcripción, respuesta, TTS, cancelación y
+estados de error se validan en un solo equipo.
+
 ## Fase 7 — Primer satélite de habitación
+
+**Resultado utilizable:** un satélite autenticado mantiene una conversación con el
+núcleo desde una habitación registrada.
+
+**Dependencias:** fase 6 y concepto mínimo de identidad de dispositivo.
+
+**Capacidades incluidas:**
 
 - Elegir una plataforma solo después de un prototipo comparativo: Home Assistant
   Assist, ESP32-S3, Raspberry Pi, Android u ordenador siguen siendo candidatos.
@@ -111,7 +216,20 @@ habitaciones.
 - Monitorizar conexión, versión, estado y errores.
 - Mantener continuidad de conversación dentro de la habitación.
 
+**Capacidades excluidas:** flota multidispositivo, transferencia de conversaciones y
+selección avanzada de salidas.
+
+**Criterio de finalización:** un prototipo elegido completa el flujo autenticado con
+estado observable y recuperación básica de errores.
+
 ## Fase 8 — Nest Hub como salida de habitación
+
+**Resultado utilizable:** una conversación originada en la cocina puede responder
+por audio o pantalla en su Nest Hub registrado.
+
+**Dependencias:** primer satélite y routing mínimo de salida de la fase 7.
+
+**Capacidades incluidas:**
 
 - Registrar cada Google Nest Hub exclusivamente como dispositivo de salida.
 - Reproducir respuestas TTS mediante Google Cast.
@@ -120,7 +238,20 @@ habitaciones.
 - Seleccionar el Nest Hub de la habitación que originó el turno.
 - No asumir acceso al micrófono, audio, wake word ni sustitución de Google Assistant.
 
+**Capacidades excluidas:** captura desde Nest Hub, flota de habitaciones y contenido
+privado no adecuado para pantallas compartidas.
+
+**Criterio de finalización:** Cast y visualización funcionan con selección correcta
+de habitación, fallback y controles de privacidad probados.
+
 ## Fase 9 — Varios satélites y routing de habitación
+
+**Resultado utilizable:** varias habitaciones pueden conversar sin mezclar
+identidades, sesiones ni dispositivos de entrada y salida.
+
+**Dependencias:** fases 7 y 8.
+
+**Capacidades incluidas:**
 
 - Registrar varios dispositivos y habitaciones.
 - Seleccionar automáticamente una salida compatible y disponible.
@@ -129,21 +260,265 @@ habitaciones.
   de salida.
 - Diagnóstico y actualizaciones controladas de satélites.
 
+**Capacidades excluidas:** conversación continua avanzada y transferencia explícita
+entre habitaciones.
+
+**Criterio de finalización:** selección, fallback, aislamiento y diagnóstico se
+validan con varios dispositivos registrados.
+
 ## Fase 10 — Conversación de voz natural
+
+**Resultado utilizable:** la interacción por voz admite turnos naturales e
+interrupción sin que el asistente procese su propia salida.
+
+**Dependencias:** pipeline de voz y routing estable de las fases 6 a 9.
+
+**Capacidades incluidas:**
 
 - Cancelación de eco y prevención de que LocalAssistant escuche su propio TTS.
 - Interrupción de una respuesta por parte del usuario (barge-in).
 - Detección robusta de final de turno y conversación continua.
 - Recuperación ante desconexión, error o cambio de dispositivo de salida.
 
+**Capacidades excluidas:** identificación biométrica automática y transferencia
+implícita de sesiones privadas.
+
+**Criterio de finalización:** eco, barge-in, final de turno y recuperación se validan
+en escenarios reproducibles.
+
 ## Fase 11 — Transferencia entre habitaciones
+
+**Resultado utilizable:** el usuario transfiere explícitamente una conversación a
+otra habitación sin perder continuidad ni propiedad.
+
+**Dependencias:** fases 9 y 10, más autorización por principal.
+
+**Capacidades incluidas:**
 
 - Transferencia explícita y opcional de una conversación activa.
 - Política para elegir la nueva entrada y salida sin mezclar sesiones de usuarios.
 - Privacidad ante presencia múltiple y pantallas compartidas.
 - Auditoría y cancelación de transferencias erróneas.
 
+**Capacidades excluidas:** seguimiento automático de personas y biometría de voz.
+
+**Criterio de finalización:** transferencia, cancelación, aislamiento y selección de
+salida están cubiertos por pruebas con varias habitaciones.
+
 ## Líneas posteriores o paralelas
+
+### Conversational English Coach
+
+El tutor escrito podrá empezar tras el núcleo conversacional y no dependerá de Home
+Assistant, satélites ni voz. Será una capacidad funcional fuera del núcleo y
+reutilizará identidad, persistencia y trabajos cuando sus incrementos los necesiten.
+
+#### Hito 1 — Conversación escrita y role-play
+
+**Resultado utilizable:** el usuario completa en texto una conversación libre o una
+entrevista técnica en inglés y recibe un informe revisable.
+
+**Dependencias:** fases 1 y 2; proveedor simulado para tests y modelo local opcional.
+
+**Incluye:** objetivos y duración de sesión; conversación libre, entrevista técnica
+y daily meeting como primeros modos; dificultad y velocidad conceptuales; corrección
+inmediata, por turno, solo crítica o al final; clasificación de gramática,
+vocabulario, naturalidad, claridad y estilo; puntos fuertes y ejercicios posteriores.
+
+**Excluye:** voz, pronunciación, perfil persistente, certificación oficial y todos
+los modos de role-play previstos.
+
+**Criterio de finalización:** escenarios deterministas demuestran que la política de
+corrección no rompe el role-play y que el informe conserva evidencia de la sesión.
+
+#### Hito 2 — Perfil temporal y repaso
+
+**Resultado utilizable:** cada usuario retoma errores y ejercicios anteriores y
+puede revisar, corregir, exportar o eliminar su historial.
+
+**Dependencias:** identidad, propiedad, retención y persistencia de la fase 4.
+
+**Incluye:** nivel orientativo, objetivos, intereses, vocabulario, dificultades,
+fluidez, política preferida, historial y ejercicios; evidencias fechadas con frase,
+contexto, corrección, tipo, repeticiones y evolución; reglas inspeccionables para
+detectar tendencias sin confirmarlas como rasgos permanentes. Se añadirán de forma
+incremental entrevistas de recursos humanos, refinamiento, presentaciones, clientes,
+incidentes, negociación y vocabulario técnico.
+
+**Excluye:** puntuaciones equivalentes a certificaciones, grabaciones y adaptación
+opaca del perfil.
+
+**Criterio de finalización:** perfiles aislados explican por qué proponen un repaso,
+una observación aislada no sobrescribe una tendencia y exportación o borrado respetan
+la política de retención.
+
+#### Hito 3 — Voz inglesa de baja latencia
+
+**Resultado utilizable:** una sesión oral mantiene ritmo conversacional, admite
+interrupciones y genera después el análisis no urgente.
+
+**Dependencias:** pipeline de voz de la fase 6, conversación natural de la fase 10 y
+perfil del hito 2.
+
+**Incluye:** VAD, STT y TTS incrementales cuando el proveedor lo permita; final de
+turno rápido, barge-in, eco, cancelación de respuestas obsoletas, recuperación de
+transcripción y métricas por etapa; separación entre respuesta rápida, evaluador,
+informe y actualización del perfil. El análisis diferido empezará en proceso y solo
+usará trabajos duraderos si necesita sobrevivir a la petición.
+
+**Excluye:** modelos definitivos, conservación de audio por defecto y análisis
+fonético inferido únicamente desde la transcripción.
+
+**Criterio de finalización:** una prueba medible muestra latencia por etapa,
+cancelación efectiva y conversación continua mientras la evaluación se completa sin
+bloquear el siguiente turno.
+
+#### Hito 4 — Pronunciación, satélites y seguimiento
+
+**Resultado utilizable:** el usuario practica pronunciación con evidencia acústica y
+realiza sesiones programadas desde una habitación autorizada.
+
+**Dependencias:** hito 3, satélites y routing de las fases 7 a 9, más una tecnología
+fonética evaluada con métricas propias.
+
+**Incluye:** pronunciación y prosodia separadas de STT, repaso de errores, sesiones
+programadas, seguimiento temporal y routing de audio o informe al dispositivo
+adecuado.
+
+**Excluye:** biometría de voz, certificación oficial y uso de pantallas compartidas
+para información profesional sensible sin confirmación.
+
+**Criterio de finalización:** una evaluación reproducible distingue error acústico de
+transcripción y una sesión conserva privacidad y continuidad entre dispositivos.
+
+### Plataforma de módulos y BatchCooking
+
+`BatchCooking` será el primer módulo doméstico de referencia y no formará parte del
+núcleo. Esta línea comenzará tras disponer del mínimo necesario de herramientas,
+identidad, autorización y persistencia de las fases 3 y 4. Puede avanzar por texto
+en paralelo a Home Assistant y voz. Sus necesidades reales corregirán el contrato
+antes de estabilizar un SDK, según el
+[ADR 0007](adr/0007-use-batch-cooking-to-discover-module-contracts.md).
+
+#### Hito 0 — Módulos mínimos y recursos controlados
+
+**Resultado utilizable:** un módulo de prueba se registra, declara capacidades y
+accede en lectura únicamente a recursos locales asignados a su ámbito.
+
+**Dependencias:** identidad, autorización, confirmación y almacenamiento mínimos de
+las fases 3 y 4.
+
+**Incluye:** registro y descubrimiento mínimos; versión, configuración, activación,
+permisos, persistencia aislada y un test de contrato; `Controlled Local Resources`
+con carpetas registradas, formatos y tamaños limitados, hash, procedencia, acceso
+revocable y lectura separada de escritura. La lectura inicial incorporará de forma
+incremental texto, Markdown, JSON y CSV; Excel se añadirá con el caso real de la
+plantilla, no como lector universal.
+
+**Excluye:** SDK estable, carga arbitraria de extensiones, escritura de archivos,
+watchers, ejecución de contenido y rutas propuestas libremente por el modelo.
+
+**Criterio de finalización:** dos módulos de prueba no pueden acceder a recursos o
+datos del otro y la política deniega rutas, formatos y tamaños fuera del ámbito.
+
+#### Hito 1 — Preparación y migración trazable
+
+**Resultado utilizable:** el usuario previsualiza y confirma la migración de los
+recursos actuales a un estado estructurado de `BatchCooking` sin alterar originales.
+
+**Dependencias:** hito 0 y corpus real inventariado por el usuario.
+
+**Incluye:** separación del prompt en procedimiento, reglas, preferencias,
+valoraciones, platos, recetas, inventario, menús, plantilla e instrucciones;
+extracción, advertencias, supuestos y confirmación; soporte de los formatos realmente
+presentes, incluida la plantilla Excel; procedencia, versión o hash y comparación de
+cambios; historial temporal de preferencias, valoraciones y feedback. Alergias y
+restricciones estables no perderán prioridad por antigüedad.
+
+**Excluye:** relectura completa del archivo en cada semana, importación silenciosa,
+sobrescritura de originales, OCR, imágenes, Word, PDF y aprendizaje opaco.
+
+**Criterio de finalización:** una migración reproducible distingue importado,
+ignorado, conflictivo y pendiente de confirmar, conserva la fuente y no duplica ni
+elimina información al repetirse sobre la misma versión.
+
+#### Hito 2 — BatchCooking MVP escrito
+
+**Resultado utilizable:** un hogar prepara por texto una semana completa y obtiene
+menú aprobado, plan ordenado y lista de compra revisable, con historial local.
+
+**Dependencias:** hitos 0 y 1, principal doméstico y persistencia local.
+
+**Incluye:** miembros; preferencias, rechazos y restricciones básicas; catálogo
+sencillo de platos; valoraciones explícitas; inventario manual con certeza, cantidad,
+caducidad y ubicación; personas y comidas cubiertas; tiempo, equipamiento y reglas
+familiares; propuesta y ajustes de menú; preparaciones, dependencias, paralelismo,
+conservación y descongelación; compra derivada del inventario confirmado; feedback e
+historial básico. Las reglas serán inspeccionables y explicarán restricciones,
+suposiciones y compromisos.
+
+**Excluye:** voz, Nest Hub, APIs externas, consejo médico, nutrición detallada,
+optimización matemática compleja, predicción automática, visión artificial y
+generación del módulo por Jarvis.
+
+**Criterio de finalización:** un escenario semanal determinista recorre recopilación,
+inventario, menú, aprobación, preparación, compra y feedback; aprobar el menú no
+consume inventario y toda modificación relevante queda trazada.
+
+#### Hito 3 — Contrato de módulos y automatizaciones
+
+**Resultado utilizable:** el contrato corregido con `BatchCooking` soporta un segundo
+módulo pequeño y automatizaciones domésticas configurables.
+
+**Dependencias:** uso real y revisión del MVP.
+
+**Incluye:** estabilización incremental de manifiesto, compatibilidad, migraciones,
+health checks, eventos, herramientas, UI opcional, activación y tests de contrato;
+recordatorios de recopilación semanal, inventario, caducidad, descongelación, menú,
+sesión de cocina, feedback y compra pendiente. Todas las automatizaciones serán
+desactivables y respetarán horarios de silencio.
+
+**Excluye:** marketplace, ejecución de módulos no confiables y autoextensión.
+
+**Criterio de finalización:** el segundo módulo usa el contrato sin introducir su
+dominio en el núcleo y cada automatización puede configurarse, auditarse y apagarse.
+
+#### Hito 4 — Cocina por voz y dispositivos
+
+**Resultado utilizable:** durante la preparación se consultan y actualizan manos
+libres pasos, tareas, inventario y temporizadores, con salida visual en la cocina.
+
+**Dependencias:** MVP, pipeline de voz, satélite y Nest Hub de las fases 6 a 9.
+
+**Incluye:** siguiente paso, tareas completadas o canceladas, cantidades, ajustes del
+plan, temporizadores, consumo de inventario, compra y descongelación; pantalla con
+paso actual, cola, alertas, ingredientes y estado. Un satélite capturará voz y el
+Nest Hub seguirá siendo únicamente salida Cast.
+
+**Excluye:** micrófono del Nest Hub, confirmaciones sensibles basadas solo en voz y
+exposición de datos privados en pantallas compartidas.
+
+**Criterio de finalización:** una sesión interrumpible y ruidosa mantiene estado
+coherente entre texto, voz y pantalla, con confirmaciones breves y recuperables.
+
+#### Hito 5 — Capacidades avanzadas
+
+**Resultado utilizable:** el módulo incorpora una capacidad avanzada cada vez sobre
+datos trazables y métricas de utilidad reales.
+
+**Dependencias:** MVP estable y necesidad medida.
+
+**Incluye de forma incremental:** exportación Excel preservando plantilla y original;
+formatos y comparación de versiones avanzados; importación de recetas; códigos de
+barras, tickets e imágenes; presupuesto, nutrición informativa, sustituciones,
+caducidades, temporada, calendarios, listas externas, supermercados, historial
+avanzado e importación o exportación de datos.
+
+**Excluye:** adoptar todos los proveedores o formatos a la vez y recomendaciones
+médicas no supervisadas.
+
+**Criterio de finalización:** cada vertical slice tiene proveedor sustituible cuando
+corresponda, permisos mínimos, pruebas, métricas y posibilidad de desactivación.
 
 ### Enrutamiento híbrido
 
@@ -263,6 +638,173 @@ seguirán registradas mediante allowlist.
 - Evaluar planes fallidos, fuentes contradictorias, resultados parciales y
   cancelación antes de delegar investigaciones largas a un posible worker.
 
+### Conversational Project Lifecycle
+
+Esta línea podrá empezar en texto cuando las fases 3 y 4 aporten autorización,
+principal y persistencia suficientes para aislar proyectos y conservar decisiones.
+No depende de la voz: ese canal se incorporará después de la fase 6 sobre el mismo
+estado. Las notificaciones entre dispositivos llegarán cuando exista routing de
+habitaciones. La separación estable entre definición, especificación, ejecución y
+publicación se recoge en el
+[ADR 0006](adr/0006-separate-project-definition-execution-and-publication.md).
+
+#### Hito 1 — Definición escrita y estado estructurado
+
+- Crear y reanudar varios proyectos aislados desde conversaciones escritas.
+- Mantener objetivo, usuarios, alcance, requisitos, restricciones, riesgos,
+  preguntas, alternativas, decisiones, criterios de aceptación y roadmap.
+- Distinguir hechos confirmados, inferencias, preguntas abiertas y contenido
+  sustituido, con historial y detección explícita de contradicciones.
+- Separar transcripción, resumen operativo, estado estructurado y documentos
+  derivados; definir estados revisables sin fijar todavía el esquema definitivo.
+- Persistir el estado bajo propiedad, autorización, retención y borrado de la fase 4.
+
+#### Hito 2 — Especificaciones incrementales y revisión
+
+- Generar y actualizar documentos de visión, arquitectura, roadmap, seguridad y
+  ADRs a partir del estado confirmado, sin presentar inferencias como decisiones.
+- Permitir edición, comparación, revisión y confirmación incremental de cada
+  documento; conservar versiones obsoletas o sustituidas con su motivo.
+- Detectar divergencias entre conversación, estado y documentos antes de declarar
+  una especificación lista para implementar.
+
+#### Hito 3 — Asociación segura con repositorios
+
+- Asociar explícitamente un proyecto a un repositorio o workspace permitido, sin
+  incluir repositorios dentro de las fuentes documentales genéricas.
+- Inspeccionar en modo de solo lectura estructura, reglas y estado necesarios para
+  validar viabilidad, criterios de aceptación y primer incremento vertical.
+- Exigir selección visible de repositorio y rama de trabajo; no crear ni modificar
+  repositorios como efecto implícito de una conversación.
+
+#### Hito 4 — Protocolo con agente simulado
+
+- Definir una frontera independiente del proveedor para agentes locales, externos,
+  simulados o especializados, sin SDKs de proveedor en el dominio.
+- Tratar «impleméntalo» como inicio de comprobación, resumen, propuesta y aprobación,
+  no como ejecución ni permiso ilimitado.
+- Simular plan, progreso, cancelación, resultados, errores y artefactos para probar
+  estados, políticas y experiencia antes de ejecutar código real.
+- Mostrar agente, proveedor, herramientas, recursos, duración y coste estimado antes
+  de solicitar una autorización acotada.
+
+#### Hito 5 — Ejecución aislada en repositorios de prueba
+
+- Ejecutar únicamente el alcance aprobado dentro de un workspace desechable con
+  filesystem, procesos, red, tiempo y recursos limitados.
+- Validar argumentos y allowlists de herramientas; el agente de programación no se
+  convertirá en una shell genérica accesible al modelo conversacional.
+- Entregar diff, build, tests, resumen, trazabilidad y artefactos para revisión;
+  cancelar con seguridad y no crear commits por defecto.
+- Empezar con repositorios de prueba y agentes locales antes de evaluar código real
+  privado o cualquier proveedor externo.
+
+#### Hito 6 — Git y publicación controlados
+
+- Separar autorizaciones para editar, crear commit o rama local, publicar rama,
+  abrir pull request, desplegar y borrar o sobrescribir recursos.
+- Revisar el diff y los resultados de build y tests antes de integrar; favorecer
+  operaciones recuperables y ofrecer cancelación o reversión donde sea posible.
+- Añadir integración real con un host Git únicamente mediante un vertical slice
+  autorizado, auditable y probado; no asumir GitHub como contrato del dominio.
+
+#### Hito 7 — Trabajos largos, voz y continuidad entre dispositivos
+
+- Introducir trabajos duraderos y un posible worker solo cuando una ejecución deba
+  sobrevivir a una petición o reinicio; no elegir broker de forma preventiva.
+- Persistir estado, progreso y artefactos con timeout, cancelación, reintentos
+  acotados y recuperación tras reinicio.
+- Permitir preguntar por el estado y recibir notificaciones en un canal autorizado,
+  sin exponer código, secretos o resultados sensibles en dispositivos compartidos.
+- Continuar por texto o voz sobre el mismo proyecto; exigir confirmación reforzada
+  en un canal autenticado para publicar, desplegar o ejecutar acciones irreversibles.
+- Aplicar la política de egreso al agente y al repositorio: falta de capacidad local
+  nunca permitirá enviar `SOURCE_CODE` o `REPOSITORY_DATA` marcados `DENY`.
+
+### Controlled Self-Extension
+
+Esta línea avanzada no comenzará hasta estabilizar el contrato de módulos con
+`BatchCooking` y completar agente simulado, ejecución aislada, revisión de diffs y
+publicación controlada. Reutilizará `Conversational Project Lifecycle`; no creará un
+segundo protocolo de generación de código. El
+[ADR 0011](adr/0011-forbid-self-approval-and-active-instance-mutation.md) prohíbe
+autoaprobación y cambios directos sobre la instancia activa.
+
+#### Hito 1 — Clasificación y ciclo simulado
+
+**Resultado utilizable:** Jarvis convierte una petición de ampliación en una
+especificación y simula su ciclo completo sin generar ni instalar código.
+
+**Dependencias:** contrato de módulos validado por un segundo módulo y protocolo con
+agente simulado de `Conversational Project Lifecycle`.
+
+**Incluye:** clasificación entre skill, tool, connector, module, capacidad de
+satélite y cambio del núcleo; elección del mecanismo mínimo; manifiesto conceptual,
+permisos y recursos; estados de propuesta, build, tests, revisión, aprobación,
+instalación, activación, suspensión y retirada; autorizaciones independientes y
+artefactos simulados.
+
+**Excluye:** ejecución de comandos, código real, instalación, activación y cambios en
+el núcleo o instancia activa.
+
+**Criterio de finalización:** pruebas deterministas demuestran clasificación,
+transiciones permitidas y rechazo de saltos, autoaprobación o elevación de permisos.
+
+#### Hito 2 — Primera skill o tool generada
+
+**Resultado utilizable:** una skill o tool pequeña y reversible se genera en un
+repositorio de prueba y queda como diff revisable, sin instalarse en producción.
+
+**Dependencias:** ciclo simulado, sandbox, agente intercambiable, trabajos, build,
+tests y Git controlado de los hitos 4 a 7 de `Conversational Project Lifecycle`.
+
+**Incluye:** requisitos, riesgos, rama y alcance; dependencias, filesystem, red,
+secretos, tiempo y coste declarados; build, tests independientes, análisis de
+seguridad y supply-chain, revisión de permisos, diff y aprobaciones de integración.
+
+**Excluye:** connector con credenciales reales, módulo completo, modificación del
+núcleo, autoaprobación, publicación o activación implícitas.
+
+**Criterio de finalización:** el artefacto puede rechazarse o integrarse en un host de
+prueba y ninguna capacidad posterior ocurre sin su autorización verificable.
+
+#### Hito 3 — Instalación, activación y rollback controlados
+
+**Resultado utilizable:** una extensión revisada se instala y activa en un entorno
+no activo, se monitoriza y puede suspenderse o revertirse.
+
+**Dependencias:** hito 2, artefactos versionados, compatibilidad, health checks y
+estrategias de migración y rollback probadas.
+
+**Incluye:** aprobaciones separadas de integración, instalación, activación y
+despliegue; health checks, monitorización, desactivación automática por fallos,
+rollback de código y tratamiento explícito del estado migrado.
+
+**Excluye:** mutación en caliente de la instancia activa, políticas modificables por
+la extensión y despliegue sin dispositivo autenticado.
+
+**Criterio de finalización:** un fallo inducido suspende la extensión y restaura una
+versión conocida sin permitir que la extensión altere autorización o auditoría.
+
+#### Hito 4 — Ampliaciones de módulos y conectores
+
+**Resultado utilizable:** Jarvis propone una ampliación pequeña y reversible de un
+módulo existente, como un exportador o control de presupuesto, y la entrega mediante
+el flujo completo.
+
+**Dependencias:** hitos 1 a 3 y métricas de uso de un módulo estable.
+
+**Incluye progresivamente:** skills, tools, exportadores y ampliaciones acotadas de
+`BatchCooking`; después, connectors, capacidades de satélite y módulos completos con
+políticas específicas.
+
+**Excluye inicialmente:** generación de un módulo funcional completo, propuestas
+proactivas y cambios del núcleo. Estos últimos seguirán el desarrollo humano normal
+y permanecerán exploratorios aunque Jarvis ayude a especificarlos.
+
+**Criterio de finalización:** cada tipo demuestra permisos, compatibilidad, revisión,
+activación y rollback propios antes de habilitar el siguiente nivel de riesgo.
+
 ### Herramientas técnicas
 
 - Conectores API y MCP con allowlists y permisos mínimos.
@@ -284,6 +826,24 @@ seguirán registradas mediante allowlist.
   vertical slices reales sin anticipar RBAC o ABAC completos.
 - Tecnología concreta de protección en reposo y política de backups; se elegirán
   junto con el almacenamiento y modelo de despliegue.
+- Formato definitivo del manifiesto, mecanismo de carga, packaging, aislamiento de
+  procesos y SDK de módulos; `BatchCooking` y un segundo módulo aportarán evidencia
+  antes de estabilizarlos.
+- API y almacenamiento concretos de `Controlled Local Resources`, librerías para
+  texto, datos tabulares y Excel, y política de sincronización tras cambios; cada
+  formato se elegirá mediante un vertical slice y archivos de prueba hostiles.
+- Esquema de inventario, preferencias temporales y procedencia, ponderación de
+  tendencias y estrategia de migración física; se validarán contra una copia
+  saneada del sistema actual sin convertir el prompt en lógica permanente.
+- Proveedores de recetas, calendarios, listas, supermercados, nutrición, OCR,
+  códigos de barras e imágenes; quedan fuera del MVP de `BatchCooking`.
+- Forma final del tutor de inglés dentro del sistema de extensiones, modelos de
+  conversación y evaluación, objetivo de latencia, tecnología de pronunciación y
+  política opcional de grabaciones; se decidirán con el incremento escrito y pruebas
+  de voz medibles.
+- Formato final de manifiesto y estados de confianza para autoextensión, firma y
+  procedencia de artefactos, host de prueba, promoción entre entornos y herramientas
+  de análisis de supply-chain; se elegirán antes del primer artefacto instalable.
 - Formatos documentales definitivos, librerías de extracción, estrategia de búsqueda
   textual, índice, almacén y modelo local de embeddings; se decidirán con un corpus
   real y métricas. OCR, watchers e indexación de código permanecen fuera del primer
@@ -304,6 +864,13 @@ seguirán registradas mediante allowlist.
   requieren consultas y métricas reales.
 - Representación interna del plan multiherramienta y criterios exactos de profundidad;
   se decidirán con los primeros vertical slices, sin delegar las políticas al LLM.
+- Esquema y almacenamiento definitivos del estado de proyecto, documentos y
+  trabajos, incluidos nombres finales de estados y estrategia de versionado.
+- Agentes de programación, proveedores, protocolo del gateway, tecnología de
+  sandbox y estimación de costes; se elegirán con evaluaciones y repositorios de
+  prueba, no desde la documentación inicial.
+- Integración con proveedor Git, experiencia exacta de revisión y confirmación por
+  voz, y política de excepciones de egreso por repositorio.
 - `LocalAssistant.Worker`: aparecerá con la primera tarea larga que necesite
   sobrevivir a una petición HTTP.
 - Broker de mensajes: solo si API, worker o satélites necesitan desacoplamiento
