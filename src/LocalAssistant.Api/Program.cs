@@ -3,6 +3,7 @@ using LocalAssistant.Api.Fakes;
 using LocalAssistant.Api.LanguageModels;
 using LocalAssistant.Core.Conversations;
 using LocalAssistant.Core.Orchestration;
+using LocalAssistant.Core.Security.ToolRisk;
 using LocalAssistant.Core.Tools;
 using LocalAssistant.Infrastructure.LanguageModels.Ollama;
 
@@ -12,6 +13,8 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IConversationStore, InMemoryConversationStore>();
 builder.Services.AddSingleton<IToolConfirmationStore, InMemoryToolConfirmationStore>();
 builder.Services.AddSingleton<IConversationExecutionLock, InMemoryConversationExecutionLock>();
+builder.Services.AddSingleton<IToolRiskPolicy, DefaultToolRiskPolicy>();
+builder.Services.AddSingleton<IToolPolicyContextAccessor, AnonymousToolPolicyContextAccessor>();
 builder.Services.AddSingleton<ITool, CurrentTimeTool>();
 builder.Services.AddSingleton<ITool, TemperatureConversionTool>();
 builder.Services.AddSingleton<IToolRegistry>(services =>

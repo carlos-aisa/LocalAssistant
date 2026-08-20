@@ -90,7 +90,7 @@ confirmación y auditoría vinculadas a su solicitud.
   del núcleo conversacional.
 - [x] Confirmación vinculada a una solicitud concreta, no aprobación global por
   nombre.
-- Tratar el riesgo como multidimensional: impacto de operación, sensibilidad del
+- [x] Tratar el riesgo como multidimensional: impacto de operación, sensibilidad del
   dato, identidad, alcance solicitado, exposición externa, coste y otros efectos;
   una lectura no será de bajo riesgo por definición.
 - Introducir identidad, autorización y confirmación de forma incremental según las

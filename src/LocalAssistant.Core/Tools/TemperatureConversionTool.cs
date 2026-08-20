@@ -37,8 +37,7 @@ public sealed class TemperatureConversionTool : ITool
         new ToolMetadata(
             ToolName,
             "Converts a temperature between Celsius, Fahrenheit, and Kelvin.",
-            ToolImpact.ReadOnly,
-            RequiresConfirmation: false),
+            ToolRiskProfile.PublicLocalRead),
         InputSchema);
 
     public ValueTask<ToolExecutionResult> ExecuteAsync(

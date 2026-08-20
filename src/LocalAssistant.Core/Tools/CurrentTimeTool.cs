@@ -24,8 +24,7 @@ public sealed class CurrentTimeTool : ITool
         new ToolMetadata(
             ToolName,
             "Returns the current UTC date and time.",
-            ToolImpact.ReadOnly,
-            RequiresConfirmation: false),
+            ToolRiskProfile.PublicLocalRead),
         EmptyObjectSchema);
 
     public ValueTask<ToolExecutionResult> ExecuteAsync(

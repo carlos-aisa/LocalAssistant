@@ -5,28 +5,20 @@ límites que deben conservarse al añadir capacidades.
 
 ## Modelo inicial de herramientas
 
-Cada herramienta declara:
+Cada herramienta declara nombre, descripción, esquema JSON y un perfil de riesgo:
+impacto de lectura, modificación o ejecución; sensibilidad pública, privada o
+sensible; exposición local o externa controlada; coste; confirmación y scopes
+necesarios. «Solo lectura» no significa bajo riesgo: consultar presencia en casa,
+calendario, correo, ubicación, cámaras, memoria, documentos o salud puede revelar
+información privada sin modificar estado.
 
-- nombre y descripción;
-- impacto de solo lectura o modificación de estado;
-- necesidad de confirmación;
-- esquema JSON de argumentos.
-
-Esta clasificación implementada es deliberadamente inicial. «Solo lectura» no
-significa bajo riesgo: consultar presencia en casa, calendario, correo, ubicación,
-cámaras, memoria, documentos o salud puede revelar información privada o sensible
-sin modificar estado. Autorización y confirmación dependerán del riesgo y los datos,
-no únicamente de lectura frente a escritura.
-
-La política futura podrá considerar, de forma incremental y sin fijar todavía
-contratos definitivos:
-
-- impacto de la operación: lectura, modificación o ejecución;
-- sensibilidad: pública, privada o sensible;
-- principal y alcance autorizado;
-- exposición externa inexistente o controlada;
-- necesidad de confirmación;
-- coste nulo, acotado o significativo y otros efectos relevantes.
+La política se impone fuera del modelo al filtrar el catálogo y de nuevo antes de
+ejecutar. El contexto implementado es anónimo y sin scopes: datos privados o
+sensibles, scopes ausentes y exposición externa se deniegan por defecto. Los cambios
+de estado, la ejecución, el coste significativo o una regla explícita requieren la
+confirmación exacta ya implementada. Este contexto no es autenticación: una futura
+frontera de identidad deberá proporcionar un principal y scopes verificables, nunca
+aceptados libremente desde el cliente o el modelo.
 
 `IToolRegistry` es una allowlist. Una respuesta del modelo no puede descubrir ni
 invocar métodos arbitrarios. No existe herramienta para comandos, scripts, archivos

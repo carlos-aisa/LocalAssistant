@@ -95,8 +95,7 @@ public abstract class LanguageProviderContractTests
                     new ToolMetadata(
                         "get_current_time",
                         "Returns the current time.",
-                        ToolImpact.ReadOnly,
-                        RequiresConfirmation: false),
+                        ToolRiskProfile.PublicLocalRead),
                     ParseJson("""{ "type": "object", "properties": {} }""")),
             ]);
     }
