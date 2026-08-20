@@ -202,8 +202,38 @@ public sealed class ConversationOrchestratorTests
             provider,
             CancellationToken.None);
 
-        Assert.Equal("tool_confirmation_required", result.Error?.Code);
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(result.Confirmation);
+        Assert.Equal("change_state", result.Confirmation!.ToolName);
         Assert.Equal(0, executions);
+    }
+
+    [Fact]
+    public async Task ExecutesOnlyTheServerHeldToolCallAfterApproval()
+    {
+        var executions = 0;
+        var receivedValue = 0;
+        var tool = new DelegateTool("change_state", true, (arguments, _) =>
+        {
+            executions++;
+            receivedValue = arguments.GetProperty("value").GetInt32();
+            return ValueTask.FromResult(ToolExecutionResult.Success("changed"));
+        });
+        var call = new ToolCall("change-1", "change_state", JsonSerializer.SerializeToElement(new { value = 7 }));
+        var provider = new ScriptedLanguageProvider([
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.RequestTools(call)),
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.Final("Done")),
+        ]);
+        var store = new InMemoryConversationStore();
+        var sut = CreateOrchestrator(tools: [tool], store: store);
+
+        var pending = await sut.ProcessAsync(new ConversationTurnRequest("Change"), provider, CancellationToken.None);
+        var result = await sut.ResolveConfirmationAsync(pending.ConversationId, pending.Confirmation!.ConfirmationId, true, provider, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Done", result.Content);
+        Assert.Equal(1, executions);
+        Assert.Equal(7, receivedValue);
     }
 
     private static ConversationOrchestrator CreateOrchestrator(
@@ -218,6 +248,8 @@ public sealed class ConversationOrchestratorTests
         return new ConversationOrchestrator(
             store ?? new InMemoryConversationStore(),
             new ToolRegistry(tools),
+            new InMemoryToolConfirmationStore(),
+            new InMemoryConversationExecutionLock(),
             timeProvider,
             Options.Create(options ?? new OrchestrationOptions()),
             NullLogger<ConversationOrchestrator>.Instance);

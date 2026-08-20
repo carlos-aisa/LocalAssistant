@@ -10,6 +10,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IConversationStore, InMemoryConversationStore>();
+builder.Services.AddSingleton<IToolConfirmationStore, InMemoryToolConfirmationStore>();
+builder.Services.AddSingleton<IConversationExecutionLock, InMemoryConversationExecutionLock>();
 builder.Services.AddSingleton<ITool, CurrentTimeTool>();
 builder.Services.AddSingleton<ITool, TemperatureConversionTool>();
 builder.Services.AddSingleton<IToolRegistry>(services =>
@@ -24,7 +26,7 @@ builder.Services.AddOptions<OrchestrationOptions>()
     .Bind(builder.Configuration.GetSection("LocalAssistant:Orchestration"))
     .Validate(options => options.MaxIterations > 0, "MaxIterations must be greater than zero.")
     .Validate(
-        options => options.ProviderTimeout > TimeSpan.Zero && options.ToolTimeout > TimeSpan.Zero,
+        options => options.ProviderTimeout > TimeSpan.Zero && options.ToolTimeout > TimeSpan.Zero && options.ConfirmationTimeout > TimeSpan.Zero,
         "Timeouts must be greater than zero.")
     .ValidateOnStart();
 builder.Services.AddOptions<OllamaOptions>()

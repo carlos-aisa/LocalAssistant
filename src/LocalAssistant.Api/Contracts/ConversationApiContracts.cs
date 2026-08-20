@@ -6,8 +6,12 @@ public sealed record SendMessageRequest(
     string Message,
     Guid? ConversationId = null,
     string Provider = "fake",
-    string Scenario = "direct",
-    IReadOnlyList<string>? ApprovedTools = null);
+    string Scenario = "direct");
+
+public sealed record ResolveToolConfirmationRequest(
+    bool Approved,
+    string Provider = "fake",
+    string Scenario = "direct");
 
 public sealed record ConversationApiResponse(
     Guid ConversationId,
@@ -15,7 +19,8 @@ public sealed record ConversationApiResponse(
     IReadOnlyList<ToolExecutionTrace> Tools,
     int Iterations,
     ExecutionTimings Timings,
-    OrchestrationError? Error)
+    OrchestrationError? Error,
+    ToolConfirmationRequest? Confirmation)
 {
     public static ConversationApiResponse FromResult(ConversationTurnResult result) => new(
         result.ConversationId,
@@ -23,5 +28,6 @@ public sealed record ConversationApiResponse(
         result.Tools,
         result.Iterations,
         result.Timings,
-        result.Error);
+        result.Error,
+        result.Confirmation);
 }

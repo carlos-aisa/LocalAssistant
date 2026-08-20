@@ -2,8 +2,7 @@ namespace LocalAssistant.Core.Orchestration;
 
 public sealed record ConversationTurnRequest(
     string Message,
-    Guid? ConversationId = null,
-    IReadOnlySet<string>? ApprovedTools = null);
+    Guid? ConversationId = null);
 
 public sealed record OrchestrationError(string Code, string Message, string? ToolName = null);
 
@@ -21,13 +20,21 @@ public sealed record ExecutionTimings(
     double ProviderMilliseconds,
     double ToolsMilliseconds);
 
+public sealed record ToolConfirmationRequest(
+    Guid ConfirmationId,
+    string ToolCallId,
+    string ToolName,
+    System.Text.Json.JsonElement Arguments,
+    DateTimeOffset ExpiresAtUtc);
+
 public sealed record ConversationTurnResult(
     Guid ConversationId,
     string? Content,
     IReadOnlyList<ToolExecutionTrace> Tools,
     int Iterations,
     ExecutionTimings Timings,
-    OrchestrationError? Error)
+    OrchestrationError? Error,
+    ToolConfirmationRequest? Confirmation = null)
 {
     public bool IsSuccess => Error is null;
 }
@@ -39,12 +46,21 @@ public sealed class OrchestrationOptions
     public TimeSpan ProviderTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
     public TimeSpan ToolTimeout { get; init; } = TimeSpan.FromSeconds(10);
+
+    public TimeSpan ConfirmationTimeout { get; init; } = TimeSpan.FromMinutes(5);
 }
 
 public interface IConversationOrchestrator
 {
     Task<ConversationTurnResult> ProcessAsync(
         ConversationTurnRequest request,
+        LanguageModels.ILanguageProvider provider,
+        CancellationToken cancellationToken);
+
+    Task<ConversationTurnResult> ResolveConfirmationAsync(
+        Guid conversationId,
+        Guid confirmationId,
+        bool approved,
         LanguageModels.ILanguageProvider provider,
         CancellationToken cancellationToken);
 }
