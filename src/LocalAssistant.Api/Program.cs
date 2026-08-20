@@ -11,6 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IConversationStore, InMemoryConversationStore>();
 builder.Services.AddSingleton<ITool, CurrentTimeTool>();
+builder.Services.AddSingleton<ITool, TemperatureConversionTool>();
 builder.Services.AddSingleton<IToolRegistry>(services =>
     new ToolRegistry(services.GetServices<ITool>()));
 builder.Services.AddSingleton<FakeLanguageProviderFactory>();

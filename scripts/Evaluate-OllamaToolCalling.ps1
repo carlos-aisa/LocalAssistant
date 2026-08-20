@@ -19,27 +19,42 @@ $cases = @(
     [pscustomobject]@{
         Id = "current-time-es"
         Prompt = "¿Qué hora UTC es ahora?"
-        ExpectedTool = $true
+        ExpectedTool = "get_current_time"
     },
     [pscustomobject]@{
         Id = "event-time-es"
         Prompt = "Necesito la hora actual en UTC para registrar este evento."
-        ExpectedTool = $true
+        ExpectedTool = "get_current_time"
     },
     [pscustomobject]@{
         Id = "current-time-en"
         Prompt = "What is the current UTC time?"
-        ExpectedTool = $true
+        ExpectedTool = "get_current_time"
+    },
+    [pscustomobject]@{
+        Id = "temperature-celsius-to-fahrenheit-es"
+        Prompt = "Convierte 100 grados Celsius a Fahrenheit."
+        ExpectedTool = "convert_temperature"
+    },
+    [pscustomobject]@{
+        Id = "temperature-fahrenheit-to-celsius-en"
+        Prompt = "Convert 32 degrees Fahrenheit to Celsius."
+        ExpectedTool = "convert_temperature"
     },
     [pscustomobject]@{
         Id = "utc-explanation-es"
         Prompt = "Explícame qué significa UTC sin consultar la hora actual."
-        ExpectedTool = $false
+        ExpectedTool = $null
+    },
+    [pscustomobject]@{
+        Id = "temperature-explanation-es"
+        Prompt = "Explícame cómo se convierten Celsius y Fahrenheit sin hacer una conversión."
+        ExpectedTool = $null
     },
     [pscustomobject]@{
         Id = "tool-name-literal-es"
         Prompt = "Escribe literalmente el nombre get_current_time y nada más."
-        ExpectedTool = $false
+        ExpectedTool = $null
     }
 )
 
@@ -68,10 +83,10 @@ foreach ($run in 1..$Runs) {
             $toolNames = @($tools | ForEach-Object { $_.toolName })
             $hasExpectedTool =
                 $tools.Count -eq 1 -and
-                $tools[0].toolName -eq "get_current_time" -and
+                $tools[0].toolName -eq $case.ExpectedTool -and
                 $tools[0].succeeded -eq $true
             $hasNoTools = $tools.Count -eq 0
-            $toolDecisionPassed = if ($case.ExpectedTool) {
+            $toolDecisionPassed = if ($null -ne $case.ExpectedTool) {
                 $hasExpectedTool -and $response.iterations -ge 2
             }
             else {
@@ -112,7 +127,7 @@ foreach ($run in 1..$Runs) {
 $passedCount = @($results | Where-Object { $_.passed }).Count
 $totalCount = $results.Count
 $report = [ordered]@{
-    schemaVersion = 1
+    schemaVersion = 2
     evaluatedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
     model = $Model
     apiUrl = $baseUri

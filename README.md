@@ -119,6 +119,21 @@ El fake solicitará `get_current_time`, recibirá su JSON y generará la respues
 final en una segunda iteración. La respuesta incluye `conversationId`, `tools`,
 `iterations`, `timings` y `error`.
 
+### Escenario 3: conversión de temperatura
+
+```powershell
+$body = @{ message = "Convierte 100 grados Celsius a Fahrenheit"; scenario = "temperature" } |
+  ConvertTo-Json
+Invoke-RestMethod -Method Post `
+  -Uri http://localhost:5100/api/conversations/messages `
+  -ContentType application/json `
+  -Body $body
+```
+
+El fake solicitará `convert_temperature` con valor, unidad de origen y unidad de
+destino. La herramienta solo admite Celsius, Fahrenheit y Kelvin y rechaza
+argumentos no esperados o temperaturas inferiores al cero absoluto.
+
 El campo `scenario` solo existe para demostrar de forma reproducible el proveedor
 fake. El campo `provider` selecciona `fake` (valor predeterminado) u `ollama`.
 
