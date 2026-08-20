@@ -32,17 +32,13 @@ contratos definitivos:
 invocar métodos arbitrarios. No existe herramienta para comandos, scripts, archivos
 o código generado.
 
-El orquestador rechaza herramientas desconocidas y bloquea las que requieren
-confirmación salvo aprobación explícita por nombre. Esta aprobación es un punto de
-extensión educativo: todavía no está vinculada a usuario, sesión, intención exacta,
-caducidad ni autenticación. No debe reutilizarse como autorización productiva.
-La confirmación tampoco sustituye la autorización para leer un dato sensible.
-
-La confirmación implementada retiene en el servidor la llamada exacta (herramienta,
-argumentos, proveedor y caducidad) y la decisión posterior solo acepta aprobar o
-rechazarla. Es de un único uso y no permite sustituir argumentos desde HTTP. Su
-almacenamiento actual es en RAM: se pierde al reiniciar y no incorpora identidad,
-autorización durable ni auditoría; no debe tratarse como autorización productiva.
+El orquestador rechaza herramientas desconocidas y retiene en el servidor la llamada
+exacta que requiere confirmación: herramienta, argumentos, proveedor y caducidad.
+La decisión posterior solo puede aprobar o rechazar esa llamada; es de un único uso
+y no permite sustituir argumentos desde HTTP. El almacenamiento actual es en RAM:
+se pierde al reiniciar y no incorpora identidad, autorización durable ni auditoría.
+No debe tratarse como autorización productiva. La confirmación tampoco sustituye la
+autorización para leer un dato sensible.
 
 ## Amenazas relevantes
 
