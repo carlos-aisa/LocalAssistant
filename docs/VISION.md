@@ -28,12 +28,17 @@ seguridad y operación.
 8. **Conocimiento externo controlado:** Internet y los servicios de terceros serán
    herramientas explícitas, acotadas y trazables; el modelo no tendrá acceso de red
    irrestricto ni presentará todas las fuentes como igualmente fiables.
+9. **Control humano por transiciones:** una intención conversacional puede preparar
+   trabajo, pero editar, publicar, desplegar o realizar otra acción sensible exige
+   alcance visible y autorización adecuada para esa transición concreta.
 
 ## Resultado a largo plazo
 
 Un núcleo .NET coordinará modelos locales y externos bajo una política de privacidad
-que prevalece sobre cualquier decisión de routing. Coste, dificultad, latencia y
-recursos solo decidirán entre proveedores que puedan recibir el payload autorizado.
+que prevalece sobre cualquier decisión de routing. Complejidad, razonamiento,
+compatibilidad con herramientas, latencia, coste, hardware disponible, preferencias
+del usuario y confidencialidad solo decidirán entre proveedores que puedan recibir
+el payload autorizado.
 Un modelo externo podrá procesar una petición pública o saneada, pero no recibirá
 automáticamente conversación, memoria, documentos, RAG, código, repositorio ni
 configuración privada cuando el modelo local resulte insuficiente. Servicios
@@ -60,6 +65,92 @@ configuradas, empezando por su carpeta Documentos. Búsqueda, lectura e incorpor
 a memoria o RAG serán decisiones separadas. El modelo no obtendrá acceso arbitrario
 al sistema de archivos y el procesamiento documental permanecerá local por defecto;
 repositorios y búsqueda de código constituirán una capacidad diferente.
+
+Jarvis crecerá mediante módulos funcionales que consuman capacidades generales de
+conversación, identidad, memoria, herramientas, persistencia, automatización,
+confirmación, dispositivos y observabilidad. El núcleo no incorporará conceptos de
+cada dominio. `BatchCooking` será el primer módulo doméstico de referencia: permitirá
+descubrir con un caso real el contrato mínimo de extensibilidad antes de estabilizar
+un SDK y, mucho después, antes de permitir que Jarvis proponga o implemente nuevas
+capacidades de forma controlada.
+
+`BatchCooking` acompañará el ciclo semanal de inventario, menú, preparación, compra
+y feedback sin presentar suposiciones como existencias confirmadas ni sustituir
+consejo sanitario profesional. El conocimiento doméstico existente se migrará de
+forma gradual y trazable; reglas, preferencias, valoraciones, recetas, inventarios,
+menús y plantillas no se convertirán en un prompt monolítico ni se reconstruirán
+desde cero.
+
+Una capacidad general futura de `Controlled Local Resources` permitirá a cada módulo
+usar únicamente carpetas y recursos registrados, con lectura y escritura separadas,
+previsualización y confirmación antes de importar o modificar. Los archivos serán
+fuentes no confiables, no instrucciones. Las restricciones estables y las
+preferencias variables conservarán procedencia y vigencia: una valoración nueva no
+borrará el historial ni reducirá silenciosamente la prioridad de una alergia.
+
+## Conversational English Coach
+
+Jarvis podrá actuar como tutor personal de inglés para conversación cotidiana y
+profesional, entrevistas, reuniones, presentaciones, incidencias, clientes y
+vocabulario de .NET, sistemas distribuidos, AMR e IA. Una primera experiencia escrita
+ofrecerá role-play, política de corrección configurable e informe de sesión antes de
+depender de la infraestructura de voz doméstica.
+
+Conversar, evaluar y actualizar el perfil de aprendizaje serán responsabilidades
+distintas. El camino interactivo priorizará naturalidad y baja latencia; correcciones
+no bloqueantes, análisis pedagógico e informes podrán completarse después. Nivel,
+objetivos, errores, vocabulario, fluidez y ejercicios conservarán evidencias
+temporales por usuario: una inferencia o una mala sesión no se convertirá
+silenciosamente en una característica permanente.
+
+La evolución por voz permitirá ajustar velocidad, interrupciones y momento de las
+correcciones, pero no confundirá transcripción con pronunciación. El análisis
+fonético preciso requerirá evidencia de audio y tecnología específica todavía no
+seleccionada. Grabaciones, transcripciones y contenido profesional serán privados;
+el audio no se conservará por defecto ni saldrá a un proveedor externo sin
+autorización.
+
+## Conversational Project Lifecycle
+
+Jarvis podrá convertir progresivamente una conversación natural en un proyecto
+diseñado, implementado, probado y revisable, siempre mediante transiciones
+autorizadas. Ayudará a aclarar objetivo, usuarios, alcance, requisitos, restricciones,
+riesgos, seguridad, alternativas, decisiones y criterios de aceptación; conservará
+un estado estructurado y generará especificaciones y roadmaps que el usuario pueda
+inspeccionar y corregir.
+
+Texto y voz serán canales intercambiables, no almacenes del proyecto. Una sesión
+podrá comenzar hablando, continuar en una interfaz escrita, reanudarse días después
+y mantener varios proyectos aislados. Las afirmaciones relevantes distinguirán
+confirmaciones del usuario, inferencias, preguntas abiertas y decisiones sustituidas,
+con historial suficiente para detectar contradicciones.
+
+«Impleméntalo» será una intención de transición, no permiso ilimitado para ejecutar.
+Jarvis resumirá el alcance, señalará decisiones bloqueantes, propondrá un primer
+incremento, identificará repositorio, agente, herramientas, proveedor y posible
+coste, y solicitará confirmación antes de preparar un entorno aislado. El resultado
+será un diff con build, tests y trazabilidad; commits, ramas remotas, pull requests,
+despliegues y acciones irreversibles requerirán autorizaciones independientes.
+
+Los agentes de programación podrán ser locales, externos, simulados o especializados
+y se conectarán mediante una frontera intercambiable. Privacidad y confidencialidad
+del repositorio seguirán precediendo al routing: un agente externo potente no podrá
+recibir código o contexto `DENY` solo porque el agente local resulte insuficiente.
+
+## Controlled Self-Extension
+
+Después de validar manualmente la extensibilidad con `BatchCooking`, Jarvis podrá
+proponer e implementar ampliaciones para su propio ecosistema mediante el ciclo
+conversacional de proyectos. Elegirá el mecanismo mínimo suficiente —skill, tool,
+connector, module o capacidad de satélite— y tratará un cambio del núcleo como una
+excepción de mayor riesgo sujeta al desarrollo normal del producto.
+
+Ninguna extensión se autoaprobará ni modificará o desplegará directamente la
+instancia activa. Requisitos, código, integración, instalación, activación y
+despliegue tendrán revisiones y autorizaciones separadas. El trabajo ocurrirá en
+repositorio, rama y entorno aislados y producirá especificación, análisis de
+permisos, build, tests, revisión de seguridad, diff y artefactos antes de poder
+integrarse. La activación será monitorizable, desactivable y reversible.
 
 El acceso por voz podrá distribuirse mediante satélites de habitación pequeños y
 especializados. Una conversación no quedará ligada a un único aparato: el

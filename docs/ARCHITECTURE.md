@@ -240,6 +240,287 @@ todo dato derivado deberá superar la política sobre el payload final ya defini
 Cuando existan varios principales, fuente, búsqueda, lectura e ingesta respetarán
 propiedad y alcance de acceso antes de revelar metadatos o contenido.
 
+## Dirección futura: módulos funcionales y BatchCooking
+
+Los módulos funcionales se apoyarán en capacidades de plataforma sin trasladar su
+dominio al núcleo. Conversación, identidad, memoria, persistencia, herramientas,
+permisos, confirmaciones, eventos, automatizaciones, dispositivos y observabilidad
+serán servicios generales; recetas, ingredientes, platos, inventario y menús
+pertenecerán exclusivamente a `BatchCooking`.
+
+`BatchCooking` será el primer módulo doméstico de referencia y se implementará
+manualmente antes de estabilizar un SDK. Un contrato mínimo deberá permitir registro
+y descubrimiento, manifiesto y versión, capacidades y permisos, configuración,
+herramientas expuestas al modelo, persistencia y migraciones aisladas, health checks,
+eventos, automatizaciones, interfaz opcional, dispositivos, activación y tests de
+contrato. Son responsabilidades que el caso real deberá validar, no un formato de
+manifiesto ni interfaces definitivas que deban diseñarse ahora. La decisión se
+recoge en el [ADR 0007](adr/0007-use-batch-cooking-to-discover-module-contracts.md).
+
+El módulo declarará por separado operaciones como leer o modificar inventario, leer
+preferencias, proponer o cambiar un menú, crear o enviar una lista, programar un
+recordatorio y mostrar información en un dispositivo. La plataforma resolverá
+identidad, autorización, confirmación y auditoría; el módulo impondrá además sus
+invariantes de dominio. Desactivarlo no deberá mezclar ni hacer accesibles sus datos
+a otro hogar o módulo.
+
+### Controlled Local Resources
+
+Una capacidad general de plataforma registrará carpetas o recursos previamente
+autorizados y concederá ámbitos independientes por principal y módulo. El modo
+inicial será de solo lectura. Escritura, creación, sobrescritura y eliminación
+requerirán permisos y confirmaciones adicionales; el acceso podrá revocarse. El
+modelo nunca recibirá una operación equivalente a `read_any_file(path)`.
+
+Cada recurso conservará origen, ámbito, formato, tamaño y una versión o hash de
+contenido. Tipo, tamaño y contenido activo se validarán antes de procesarlo. Texto,
+Markdown, JSON, CSV y Excel son los formatos iniciales previstos, pero cada vertical
+slice incorporará solo los necesarios. Word, PDF, imágenes, tickets, fotografías y
+códigos de barras quedarán para incrementos posteriores.
+
+Leer bytes, extraer datos, previsualizar una interpretación, validarla, importarla
+al dominio y detectar cambios posteriores serán operaciones diferentes:
+
+```text
+Recurso autorizado
+→ análisis
+→ extracción
+→ previsualización
+→ confirmación
+→ normalización
+→ almacenamiento estructurado
+→ trazabilidad con el origen
+```
+
+Una importación registrará recurso y versión, fecha, datos extraídos, elementos
+ignorados, advertencias, suposiciones, campos pendientes y principal que la aprobó.
+Un cambio posterior producirá una comparación; nunca eliminará silenciosamente
+reglas o preferencias ya importadas. Tras normalizar el conocimiento útil, la
+planificación consultará el estado estructurado y no releerá todo el archivo
+histórico. Excel tendrá un vertical slice específico para validar una plantilla,
+rellenarla preservando formato, producir una nueva versión sin sobrescribir el
+original y relacionarla con el menú aprobado.
+
+Los documentos importados serán contenido no confiable y no podrán conceder
+permisos ni convertirse en instrucciones del sistema. Este límite y el acceso solo
+mediante recursos autorizados se recogen en el
+[ADR 0008](adr/0008-authorize-and-distrust-local-resources.md).
+
+### Migración controlada de BatchCooking
+
+El sistema doméstico existente se tratará como fuentes de migración, no como lógica
+de negocio ya validada. El prompt ayudará a separar procedimiento del planificador,
+reglas domésticas, preferencias por miembro, valoraciones temporales, catálogos de
+platos y recetas, inventario, menús históricos, plantillas de salida e instrucciones
+operativas. Los documentos anteriores conservarán su relación con el origen.
+
+Antes de confirmar la importación se señalarán duplicados, contradicciones, datos
+sin fecha, preferencias antiguas, reglas temporales posiblemente caducadas,
+suposiciones presentadas como hechos, información sensible y campos que requieren
+respuesta del usuario. La migración podrá repetirse de forma idempotente por versión
+o hash y mostrará qué cambió respecto a una importación anterior.
+
+### Estado doméstico e historial temporal
+
+El inventario será una fuente de verdad explícita. Distinguirá estados conceptuales
+equivalentes a confirmado, estimado, desconocido, reservado, consumido, agotado y
+pendiente de compra; cantidad exacta, aproximada o presencia sin cantidad; caducidad
+confirmada o estimada; y ubicación en despensa, nevera o congelador. Aprobar un menú
+no descontará existencias: reservar, preparar, consumir, descartar y corregir serán
+eventos visibles y auditables. Una carencia crítica provocará una pregunta o una
+suposición marcada.
+
+Miembros, tamaño de ración, asistencia, reglas familiares, objetivos, restricciones,
+preferencias, rechazos, valoraciones y comentarios tendrán procedencia y vigencia.
+Alergias y restricciones médicas serán estables y prioritarias hasta revisión
+explícita; ausencias serán puntuales; valoraciones, cansancio, temporada y contexto
+serán observaciones temporales. Una preferencia actual podrá derivarse mediante
+reglas inspeccionables de recencia, frecuencia, tendencia, preparación y contexto,
+pero una tendencia solo propondrá un cambio y nunca lo confirmará silenciosamente.
+
+Cada observación conservará conceptualmente miembro, plato, receta o preparación,
+valor, fecha, contexto, comentario, fuente, confianza, carácter explícito o inferido
+y posible duración. Así podrá explicarse por qué se eligió un plato o ingrediente y
+de dónde procede cada regla. El historial temporal, en lugar de sobrescribir el
+último valor, se fija en el
+[ADR 0009](adr/0009-store-preferences-as-temporal-history.md).
+
+El flujo semanal considerará miembros presentes, comidas cubiertas, inventario y
+caducidad, descongelación, tiempo, equipamiento, presupuesto, variedad, historial,
+sobras, ausencias, comidas fijas, dificultad, almacenamiento y preparaciones base.
+La propuesta revisable explicará prioridades, repeticiones, restricciones no
+satisfechas, información ausente e inferencias.
+
+Tras aprobar el menú se producirá un plan con dependencias, paralelismo, aparatos,
+tiempo activo y de espera, recipientes, seguridad alimentaria, conservación y
+resultado esperado. La compra se calculará desde las necesidades aprobadas menos
+inventario confirmado, utilizable y no reservado, más márgenes configurados. Un
+elemento añadido manualmente no desaparecerá por equivalencia inferida sin
+confirmación. La lista será una propuesta revisable y enviarla a otro sistema será
+una acción independiente. Los eventos de ejecución permitirán reajustar tareas e
+inventario. El feedback distinguirá plato general, receta, preparación concreta,
+incidencia puntual, cambio estable y saturación temporal antes de alimentar el
+historial. El primer incremento usará texto y reglas comprensibles, sin aprendizaje
+opaco, optimización matemática compleja ni integraciones externas.
+
+## Dirección futura: Conversational English Coach
+
+El tutor será una capacidad funcional separada del núcleo. Consumirá conversación,
+identidad, persistencia, memoria, trabajos, voz y dispositivos como servicios de
+plataforma. Su forma final —módulo, skill acompañada de estado u otra composición—
+se decidirá después de estabilizar el modelo de extensiones; el núcleo no conocerá
+entrevistas, ejercicios, errores gramaticales ni niveles de inglés.
+
+Una sesión de práctica mantendrá modo, objetivo, tema, duración, dificultad,
+velocidad y política de corrección. La política distinguirá corrección inmediata,
+posterior al turno, solo crítica, resumen final o combinación; y clasificará errores
+gramaticales, vocabulario, expresiones poco naturales, pronunciación, claridad y
+estilo. La fluidez podrá priorizarse sin perder las observaciones para el informe.
+
+La arquitectura separará cuatro responsabilidades:
+
+- el camino conversacional mantiene el role-play y produce la siguiente respuesta;
+- un evaluador pedagógico analiza turnos sin bloquear cuando no sea urgente;
+- un generador compone el informe y ejercicios al terminar;
+- el perfil de aprendizaje incorpora únicamente evidencias y actualizaciones
+  autorizadas con procedencia temporal.
+
+El primer incremento será escrito y podrá usar un proveedor simulado. Una cola o
+worker no se añadirá hasta que el análisis diferido necesite sobrevivir a la
+petición; al principio bastará una frontera lógica y ejecución acotada. Esta
+separación para proteger la latencia se recoge en el
+[ADR 0010](adr/0010-separate-live-conversation-from-language-evaluation.md).
+
+Cada evidencia conservará fecha, contexto, frase original, propuesta, tipo,
+repeticiones y respuesta posterior del usuario. Nivel, objetivos, vocabulario,
+errores recurrentes, fluidez, preferencias de corrección y ejercicios pertenecerán
+a un principal. Una observación aislada no sobrescribirá el perfil: las tendencias
+serán inspeccionables y corregibles, siguiendo el mismo principio temporal del
+[ADR 0009](adr/0009-store-preferences-as-temporal-history.md).
+
+La evolución de voz optimizará y medirá wake word, detección de actividad, STT en
+streaming, final de turno, generación y TTS incrementales, barge-in, cancelación de
+eco y cancelación de respuestas obsoletas. Una transcripción dudosa podrá corregirse
+sin atribuir automáticamente un error al usuario. El análisis fonético preciso será
+un vertical slice diferente: requerirá audio y referencias temporales, no podrá
+inferirse con fiabilidad a partir del texto transcrito y no fija todavía modelos.
+
+## Dirección futura: ciclo conversacional de proyectos
+
+Esta capacidad mantendrá separados cuatro ciclos: conversación y definición del
+proyecto, especificación revisable, ejecución de código y publicación o despliegue.
+La separación está recogida en el
+[ADR 0006](adr/0006-separate-project-definition-execution-and-publication.md). Ni
+la conversación ni una especificación confirmada concederán por sí mismas permiso
+para ejecutar o publicar cambios.
+
+Una sesión conceptual de definición de proyecto conservará, como mínimo, identidad
+del proyecto, nombre provisional, problema y objetivo, usuarios o actores, alcance
+incluido y excluido, requisitos funcionales y no funcionales, restricciones,
+suposiciones, riesgos, preguntas abiertas, decisiones de arquitectura, alternativas
+descartadas con sus motivos, criterios de aceptación, roadmap incremental y relación
+con un repositorio. Cada dato relevante distinguirá su procedencia y si fue
+confirmado por el usuario, inferido, cuestionado o sustituido.
+
+El historial literal, el resumen operativo, el estado estructurado del proyecto y
+los documentos derivados serán representaciones diferentes. Se actualizarán de
+forma incremental y conservarán historial suficiente para detectar contradicciones
+sin convertir toda la transcripción en contexto permanente. Texto y voz serán
+canales sobre la misma sesión; varios proyectos tendrán identidad, autorización y
+estado aislados. Los documentos podrán recorrer estados conceptuales como `Draft`,
+`PendingReview`, `Confirmed`, `Obsolete` y `Superseded`; los nombres definitivos y
+su almacenamiento se decidirán al implementar el primer vertical slice.
+
+La intención «impleméntalo» iniciará un protocolo de transición. Jarvis comprobará
+si quedan decisiones bloqueantes, mostrará alcance y primer incremento vertical,
+repositorio o propuesta de creación, agente y proveedor candidatos, acciones,
+recursos y coste estimado, y solicitará una aprobación acotada. Solo después podrá
+prepararse un workspace aislado, ejecutar el plan autorizado y devolver diff,
+build, tests, artefactos y trazabilidad para revisión. Commit, creación o publicación
+de rama, pull request, despliegue y acciones irreversibles serán transiciones
+independientes con autorización propia.
+
+Un futuro `Coding Agent Gateway` aislará al núcleo de agentes locales, externos,
+simulados o especializados. Jarvis será responsable de estado, política, selección,
+aprobaciones, presupuesto, cancelación, auditoría y presentación de resultados. El
+agente será responsable únicamente de proponer o ejecutar trabajo dentro del
+workspace, herramientas, red, recursos y tiempo concedidos. No se elige todavía
+proveedor, protocolo, sandbox ni tecnología de integración.
+
+Las primeras pruebas usarán un agente simulado y trabajos cortos. Si una ejecución
+real necesitase sobrevivir a una petición o reinicio, se introducirá un sistema de
+trabajos duradero y, solo entonces, un posible `LocalAssistant.Worker`. Deberá
+persistir estado, progreso y artefactos; admitir cancelación, timeout y reintentos
+acotados; recuperar trabajo tras reinicio; y enrutar notificaciones al canal
+autorizado. Estados conceptuales como `Drafting`, `WaitingForInformation`,
+`ReadyForReview`, `WaitingForApproval`, `Scheduled`, `Running`, `Paused`,
+`Cancelling`, `Cancelled`, `Failed`, `Completed`, `WaitingForPublishApproval` y
+`Published` describen necesidades, no un contrato cerrado ni una razón para añadir
+ahora un broker.
+
+La política de privacidad seguirá precediendo a la elección del agente. El código,
+los metadatos del repositorio y sus derivados permanecen inicialmente en
+`SOURCE_CODE` y `REPOSITORY_DATA` con egreso `DENY`. Una futura autorización para
+implementar no autorizará su envío externo: cualquier excepción requerirá política
+explícita y específica del repositorio, principal autorizado, destino conocido y
+minimización del payload.
+
+## Dirección futura: Controlled Self-Extension
+
+La autoextensión compondrá capacidades ya definidas, no abrirá un camino privilegiado
+hacia el sistema activo. Dependerá del ciclo conversacional de proyectos, del modelo
+de módulos validado por `BatchCooking`, de repositorios autorizados, agente
+intercambiable, sandbox, trabajos duraderos, revisión de diffs, versionado, health
+checks y rollback. La prohibición de autoaprobar o modificar directamente la
+instancia activa se recoge en el
+[ADR 0011](adr/0011-forbid-self-approval-and-active-instance-mutation.md).
+
+Jarvis clasificará cada petición con el mecanismo más pequeño suficiente:
+
+| Tipo | Responsabilidad y tratamiento |
+| --- | --- |
+| Skill | Instrucciones o procedimiento sin nuevos efectos por sí mismo. |
+| Tool | Acción concreta, estructurada y limitada por una allowlist. |
+| Connector | Integración externa con red, credenciales y política de egreso propias. |
+| Module | Dominio, estado y ciclo de vida funcional independientes. |
+| Satellite capability | Función ligada a hardware y compatibilidad de dispositivo. |
+| Core change | Cambio excepcional del producto, siempre por el flujo humano normal. |
+
+La clasificación determina revisión, permisos, tests y activación; una petición no
+se convertirá automáticamente en módulo. Un cambio del núcleo no podrá instalarse
+mediante el mecanismo normal de extensiones.
+
+```text
+Petición
+→ requisitos
+→ clasificación y especificación
+→ análisis de riesgo y permisos
+→ plan y aprobación
+→ rama, repositorio y sandbox aislados
+→ build, tests y revisión de seguridad
+→ diff y artefactos
+→ aprobación de integración
+→ aprobación de instalación o activación
+→ monitorización
+→ desactivación o rollback
+```
+
+El manifiesto conceptual declarará identidad, versión, compatibilidad, capacidades,
+herramientas, permisos, configuración, recursos locales, red, datos, eventos,
+automatizaciones, health checks, migraciones, desactivación y rollback. No se fija
+su formato. Estados equivalentes a `Proposed`, `Generated`, `Built`, `TestsPassed`,
+`Reviewed`, `Approved`, `Installed`, `Active`, `Suspended`, `Rejected` y `Retired`
+mostrarán evidencia acumulada, no confianza automática: compilar o superar tests
+generados por el mismo agente no equivaldrá a revisión independiente.
+
+Analizar, leer repositorio, especificar, generar, modificar, ejecutar, instalar
+dependencias, usar red o secretos, crear rama o commit, publicar, abrir pull request,
+integrar, instalar, activar, desplegar, eliminar y revertir serán autorizaciones
+separables. Una extensión común no podrá cambiar el motor de políticas, elevar sus
+propios permisos, autoaprobarse ni elegir como destino la instancia activa. La
+instalación se hará desde artefactos revisados y versionados y permitirá suspender o
+volver a una versión conocida.
+
 ## Topología futura de habitaciones
 
 La evolución de voz distinguirá cinco conceptos que hoy no necesitan tipos de
