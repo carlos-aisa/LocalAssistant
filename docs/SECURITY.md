@@ -31,9 +31,10 @@ caducidad. La decisión posterior solo puede aprobar o rechazar esa llamada; es 
 único uso y no permite sustituir argumentos desde HTTP. Si la llamada se originó con
 un principal autenticado, otro principal no puede consumirla. El almacenamiento actual
 es en RAM: se pierde al reiniciar y no incorpora gestión de usuarios, autorización
-durable, propiedad de conversaciones ni auditoría. No debe tratarse como autorización
-productiva. La confirmación tampoco sustituye la autorización para leer un dato
-sensible.
+durable ni propiedad de conversaciones. Existe una auditoría local en memoria de
+solicitudes, decisiones, confirmaciones y ejecuciones, pero tampoco sobrevive un
+reinicio ni debe tratarse como registro productivo. La confirmación tampoco sustituye
+la autorización para leer un dato sensible.
 
 ## Amenazas relevantes
 
@@ -46,8 +47,10 @@ sensible.
   defecto. La privacidad precede al routing: clasificación y minimización se aplican
   antes de comparar proveedores, y la falta de capacidad local no autoriza datos
   `DENY` para un LLM externo.
-- **Acciones repetidas:** los identificadores, confirmaciones e idempotencia serán
-  necesarios antes de controlar dispositivos o servicios externos.
+- **Acciones repetidas:** la confirmación actual se consume una sola vez, pero no
+  aporta idempotencia distribuida. Las herramientas reales con cambios de estado o
+  coste deberán definir una clave de operación e idempotencia antes de conectarse a
+  dispositivos o servicios externos.
 - **Denegación de servicio:** el límite de iteraciones y los timeouts reducen bucles
   y esperas, pero faltan cuotas, límites de tamaño y rate limiting.
 - **Memoria sensible:** las conversaciones permanecen en RAM hasta terminar el
@@ -98,6 +101,169 @@ selectivo, control de acceso, protección en reposo, auditoría y consecuencias 
 backup y restauración. La elección podrá combinar permisos del sistema operativo,
 cifrado de disco, capacidades de la base de datos o protección de aplicación según
 el almacenamiento y despliegue reales; no se selecciona todavía una tecnología.
+
+## Identidad, autorización y acceso de invitados futuros
+
+La API key local actual es una frontera educativa para un único principal. No será
+la identidad doméstica definitiva. La instalación futura comenzará con un hogar y
+distinguirá principales humanos de identidades técnicas. Los nombres de personas,
+relaciones familiares y credenciales serán configuración privada, nunca datos del
+repositorio.
+
+El modelo combinado de autorización, los límites de voz, el filtrado previo de
+memoria y el aislamiento de invitados se fijan respectivamente en los ADR
+[0017](adr/0017-combine-roles-capabilities-context-and-risk-for-authorization.md),
+[0018](adr/0018-treat-voice-as-context-not-strong-authentication.md),
+[0019](adr/0019-authorize-memory-before-retrieval.md) y
+[0020](adr/0020-isolate-guests-in-expiring-sessions.md).
+
+### Decisión de autorización
+
+La autorización se aplicará fuera del LLM y combinará:
+
+- rol provisional y concesiones o denegaciones específicas;
+- capacidad solicitada, distinguiendo lectura, modificación, aprobación y ejecución;
+- propietario, hogar, módulo y ámbito personal o compartido del recurso;
+- sensibilidad, coste, reversibilidad y nivel de riesgo de la acción;
+- dispositivo, canal, habitación y presencia conocida;
+- método, confianza y antigüedad de la autenticación;
+- confirmación exacta o autenticación reforzada cuando corresponda.
+
+El modelo podrá solicitar una herramienta, pero no decidir quién es el usuario,
+conceder capacidades, levantar una denegación ni considerar una frase como prueba de
+autorización. Un módulo podrá declarar capacidades, nunca asignarlas o modificar las
+políticas que lo gobiernan.
+
+Los nombres siguientes ilustran la granularidad buscada y no son un catálogo cerrado:
+
+```text
+conversation.general
+memory.personal.read
+memory.personal.write
+memory.household.read
+memory.household.write
+batchcooking.menu.read
+batchcooking.menu.write
+batchcooking.preference.rate
+shopping_list.read
+shopping_list.write
+home.safe_actions.execute
+home.sensitive_actions.execute
+english_tutor.use
+projects.read
+projects.modify
+extensions.request
+extensions.approve
+extensions.activate
+users.invite_guest
+users.manage
+audit.read
+system.configure
+```
+
+### Roles domésticos provisionales
+
+| Rol o identidad | Acceso inicial esperado | Denegaciones y límites predeterminados |
+| --- | --- | --- |
+| `Owner/Administrator` | Configuración, usuarios, dispositivos, proveedores, módulos, integraciones, privacidad y auditoría. | No evita confirmaciones destructivas, secretos, privacidad de salidas, auditoría ni separación entre implementar, integrar, activar y desplegar. |
+| `Adult Household Member` | Conversación, memoria propia, datos compartidos autorizados, módulos cotidianos y acciones de bajo riesgo. Puede invitar solo con `users.invite_guest`. | No se autoeleva, cambia políticas, instala módulos, aprueba extensiones, lee datos ajenos ni autoriza alto riesgo por defecto. |
+| `Child Household Member` | Consultas, aprendizaje, tutor adaptado, menú, valoraciones, recordatorios simples y acciones expresamente seguras. | Sin administración, invitados, compras, secretos, código, módulos, datos privados adultos ni acciones sensibles. Límites de contenido y proveedor configurables. |
+| `Guest` | Consulta pública y capacidades temporales expresamente concedidas. | Sin memoria familiar, documentos, calendarios, inventario, herramientas domésticas, automatizaciones, repositorios, agentes, compras ni persistencia por defecto. |
+| `Device/Service` | Operaciones técnicas mínimas de satélite, worker o conector. | No suplanta a una persona ni hereda roles humanos; credenciales revocables y ámbito limitado. |
+
+Los permisos finales podrán restringirse o ampliarse por principal dentro de límites
+administrativos. La edad o el rol podrán cambiar sin reasignar ni perder el historial
+propio; la transición y su autor quedarán auditados. La supervisión de menores será
+proporcionada, configurable y visible, no vigilancia oculta.
+
+### Riesgo y confianza de autenticación
+
+Los niveles conceptuales ayudan a expresar requisitos, pero no sustituyen la
+evaluación multidimensional de cada herramienta:
+
+| Nivel | Ejemplos | Requisito orientativo |
+| --- | --- | --- |
+| 0 — Público | Pregunta general o conversación sin memoria privada. | Puede ser anónimo. |
+| 1 — Personal bajo | Preferencia propia, recordatorio sencillo o sesión de inglés. | Principal autenticado y capacidad personal. |
+| 2 — Doméstico compartido | Menú, lista común, recordatorio familiar o dispositivo seguro. | Capacidad doméstica, contexto válido y posible confirmación. |
+| 3 — Sensible | Cerradura, alarma, finanzas, documentos privados, credenciales, servicios externos o publicación de código. | Autenticación fuerte reciente, capacidad específica y confirmación. |
+| 4 — Administrativo | Usuarios, permisos, módulos, proveedores, políticas, despliegue o eliminación. | Canal administrativo, `step-up`, transición exacta y auditoría reforzada. |
+
+La identidad observada por voz podrá clasificarse como confirmada, probable,
+desconocida, invitada o insuficiente para la acción. Wake word, habitación,
+dispositivo compartido y reconocimiento de hablante no serán prueba suficiente para
+acciones sensibles. Ruido, errores, grabaciones, cambios de voz y presencia múltiple
+impiden tratarlos como autenticación fuerte.
+
+Cuando la confianza sea insuficiente, el sistema solicitará `step-up` sin revelar
+antes el dato protegido. Los mecanismos candidatos incluyen confirmación en una
+aplicación autenticada, PIN introducido —nunca dictado—, passkey, biometría en un
+dispositivo personal, código temporal o aprobación administrativa. El método concreto
+se elegirá con la interfaz y el riesgo reales.
+
+### Invitaciones y sesiones efímeras
+
+Un invitado no podrá autoactivarse ni ser creado por una petición verbal desconocida.
+La invitación la iniciará el propietario o un adulto con `users.invite_guest`; un
+menor no tendrá esa capacidad. La autorización incluirá anfitrión, duración,
+caducidad, dispositivos o habitaciones, capacidades, proveedor, cuota, presupuesto,
+persistencia y revocación inmediata.
+
+Las sesiones invitadas serán aisladas y efímeras por defecto: no usarán memoria
+personal o familiar, no expondrán herramientas privadas, no crearán perfil persistente
+sin consentimiento y expirarán automáticamente. Activar una sesión en una habitación
+no convertirá otros dispositivos ni el hogar completo en invitados. QR, enlace,
+código de un solo uso o alta desde aplicación son alternativas futuras, no decisiones
+tecnológicas actuales.
+
+### Datos, RAG y respuestas compartidas
+
+Se separarán conocimiento general, memoria personal, memoria del hogar, memoria de
+módulo, memoria administrativa y sesión efímera. Cada elemento tendrá propietario,
+ámbito, sujetos autorizados, fuente, sensibilidad, fecha, retención y borrado. La
+eliminación de una cuenta definirá por separado datos personales, elementos
+compartidos, automatizaciones, valoraciones, historial y auditoría obligatoria.
+
+El filtro de autorización se aplicará durante la selección y recuperación de memoria,
+documentos y fragmentos RAG. El LLM no recibirá contenido que el principal no pueda
+consultar; filtrar solo la respuesta final no evita divulgación ni influencia
+indebida. Índices, embeddings y metadatos respetarán la misma propiedad.
+
+Una salida hablada o visible añadirá otra decisión. Incluso un administrador puede
+estar ante un altavoz o pantalla compartidos. Habitación, personas conocidas,
+sensibilidad, dispositivo y preferencias podrán reducir el detalle o desviar el
+resultado a un dispositivo personal. Nunca se leerán en voz alta contraseñas, tokens,
+datos médicos o financieros detallados, conversaciones privadas ni repositorios
+confidenciales.
+
+### Aplicación a módulos y acciones
+
+- `BatchCooking`: adultos y propietario según capacidades; menores podrán consultar
+  menú y valorar; invitados denegados por defecto; alergias y restricciones médicas
+  serán sensibles.
+- `Conversational English Coach`: perfil e historial por usuario; configuración
+  apropiada para menores; invitado efímero sin perfil persistente; audio y
+  transcripciones sujetos a su política.
+- `Home Assistant`: acciones por riesgo; invitados denegados, menores limitados a
+  acciones seguras y operaciones sensibles con `step-up`.
+- `Controlled Self-Extension`: un miembro autorizado podrá proponer; por defecto solo
+  el administrador aprobará instalación, activación o cambios del núcleo. Ninguna
+  extensión modificará usuarios, capacidades o políticas.
+
+### Bootstrap, ciclo de vida y auditoría
+
+El bootstrap del primer propietario se ejecutará solo durante la configuración
+inicial, creará una única cuenta y quedará invalidado al completarse. No dependerá de
+credenciales conocidas ni permitirá que otro equipo de la red reclame la instalación.
+La recuperación administrativa tendrá evidencias, revocación y auditoría propias sin
+crear una puerta trasera permanente.
+
+El ciclo de vida contemplará invitación, activación, configuración inicial, cambio de
+rol, suspensión, revocación, caducidad, eliminación, exportación y recuperación. La
+auditoría proporcional cubrirá sesiones, invitaciones, cambios de rol o capacidades,
+acciones sensibles, confirmaciones, denegaciones, administración, módulos y
+revocación de dispositivos. No copiará conversaciones completas y estará protegida
+frente a modificación por usuarios ordinarios, módulos y extensiones.
 
 ## Acceso futuro a documentos locales
 
@@ -413,6 +579,13 @@ ubicación precisa, consultas completas, cabeceras, credenciales ni cuerpos exte
 Se registran identificador de conversación, proveedor, iteración, nombre e id de
 herramienta, éxito o código de error y tiempos.
 
+La auditoría en memoria añade identidad disponible, decisión de política, estado de
+confirmación y transición de ejecución. No registra el mensaje del usuario, los
+argumentos, el contenido enviado al proveedor ni el resultado de la herramienta.
+El detalle técnico de un fallo puede conservarse en el historial interno para que el
+proveedor continúe el protocolo, pero la respuesta HTTP utiliza solo el mensaje seguro
+declarado por la herramienta o un mensaje genérico.
+
 No se registran por defecto:
 
 - mensajes o prompts;
@@ -428,7 +601,7 @@ limitada.
 
 Será necesario añadir una identidad y autorización aptas para el despliegue, HTTPS,
 límites de cuerpo y tasa, validación de origen, gestión externa de secretos,
-auditoría, políticas de red y pruebas contra prompt injection.
+auditoría durable y protegida, políticas de red y pruebas contra prompt injection.
 
 Los fallos HTTP actuales no devuelven excepciones internas. Los logs locales sí
 pueden contener la excepción del proveedor o herramienta para diagnóstico, por lo

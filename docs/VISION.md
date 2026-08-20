@@ -31,6 +31,9 @@ seguridad y operación.
 9. **Control humano por transiciones:** una intención conversacional puede preparar
    trabajo, pero editar, publicar, desplegar o realizar otra acción sensible exige
    alcance visible y autorización adecuada para esa transición concreta.
+10. **Identidad doméstica explícita:** rol, capacidades, propiedad, contexto y
+    confianza de autenticación se combinan fuera del modelo. Una voz, habitación,
+    conversación o dispositivo compartido no identifican por sí solos a una persona.
 
 ## Resultado a largo plazo
 
@@ -87,6 +90,46 @@ previsualización y confirmación antes de importar o modificar. Los archivos se
 fuentes no confiables, no instrucciones. Las restricciones estables y las
 preferencias variables conservarán procedencia y vigencia: una valoración nueva no
 borrará el historial ni reducirá silenciosamente la prioridad de una alergia.
+
+## Household Identity, Authorization and Guest Access
+
+LocalAssistant comenzará en un único hogar, pero distinguirá al propietario o
+administrador, miembros adultos, miembros infantiles, invitados e identidades no
+humanas de dispositivos y servicios. Los nombres reales y la composición familiar
+pertenecerán a la configuración de cada instalación y nunca al repositorio.
+
+Los roles serán perfiles iniciales, no autorizaciones absolutas. La decisión efectiva
+combinará capacidades específicas, propiedad y ámbito del dato, dispositivo y
+habitación, riesgo de la acción, contexto de uso, confianza del método de
+autenticación y confirmación adicional. Administrar el sistema no eliminará límites
+destructivos, protección de secretos, privacidad de salidas compartidas, auditoría ni
+la separación entre proponer, integrar, activar y desplegar.
+
+Los miembros adultos usarán las funciones domésticas y personales que tengan
+concedidas. Los menores dispondrán de capacidades apropiadas y supervisión
+proporcionada y transparente, sin administración, invitados, compras, secretos ni
+acciones sensibles por defecto. Los invitados operarán mediante sesiones temporales,
+revocables y aisladas, sin memoria familiar, herramientas privadas ni persistencia
+predeterminada. Un adulto solo podrá invitar si posee la capacidad correspondiente;
+un menor no podrá hacerlo.
+
+Satélites, workers y conectores tendrán identidad propia, credenciales revocables y
+privilegios mínimos. Autenticar un dispositivo demostrará qué dispositivo participa,
+no quién habla delante de él. La wake word y el reconocimiento de hablante serán
+señales contextuales; una acción sensible exigirá autenticación reforzada mediante un
+canal personal adecuado.
+
+Memoria personal, memoria compartida del hogar, estado de módulos, administración y
+sesiones efímeras serán ámbitos diferentes. La autorización se aplicará antes de
+recuperar contenido para RAG o entregarlo al LLM y también antes de seleccionar una
+salida: un altavoz o una pantalla compartidos no revelarán información sensible solo
+porque el principal tenga permiso para consultarla.
+
+La primera instalación tendrá un bootstrap de propietario de un solo uso, limitado a
+configuración inicial y resistente a reclamaciones desde la red. Recuperar al
+administrador será un proceso explícito y auditable, no una credencial predeterminada
+ni una puerta trasera. La API key local actual es un peldaño educativo y no representa
+este modelo doméstico completo.
 
 ## Conversational English Coach
 

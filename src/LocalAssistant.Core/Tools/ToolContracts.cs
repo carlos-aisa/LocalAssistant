@@ -39,12 +39,19 @@ public sealed record ToolMetadata(
 
 public sealed record ToolDefinition(ToolMetadata Metadata, JsonElement InputSchema);
 
-public sealed record ToolExecutionResult(bool IsSuccess, string Content, string? ErrorCode = null)
+public sealed record ToolExecutionResult(
+    bool IsSuccess,
+    string Content,
+    string? ErrorCode = null,
+    string? ClientMessage = null)
 {
     public static ToolExecutionResult Success(string content) => new(true, content);
 
-    public static ToolExecutionResult Failure(string errorCode, string message) =>
-        new(false, message, errorCode);
+    public static ToolExecutionResult Failure(
+        string errorCode,
+        string providerContent,
+        string? clientMessage = null) =>
+        new(false, providerContent, errorCode, clientMessage);
 }
 
 public interface ITool

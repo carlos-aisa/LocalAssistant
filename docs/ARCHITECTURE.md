@@ -78,6 +78,87 @@ estructurados y respeta una cancelación previa. Las pruebas específicas de cad
 adaptador siguen cubriendo serialización y errores propios; la suite común no intenta
 ocultar esas diferencias.
 
+## Dirección futura: identidad y autorización domésticas
+
+La API key local implementada representa un único principal configurado y scopes de
+servidor. No modela todavía un hogar, usuarios, invitados, propiedad persistente ni
+niveles de confianza. La evolución sustituirá ese adaptador en el límite de entrada
+sin trasladar SDKs de identidad al núcleo ni permitir que el cliente o el LLM creen
+permisos.
+
+Las decisiones se recogen en [ADR 0017](adr/0017-combine-roles-capabilities-context-and-risk-for-authorization.md),
+[ADR 0018](adr/0018-treat-voice-as-context-not-strong-authentication.md),
+[ADR 0019](adr/0019-authorize-memory-before-retrieval.md) y
+[ADR 0020](adr/0020-isolate-guests-in-expiring-sessions.md).
+
+El modelo conceptual separará, al menos, estas responsabilidades:
+
+| Concepto | Responsabilidad |
+| --- | --- |
+| Instalación u hogar | Límite inicial de administración, datos compartidos y dispositivos registrados. |
+| Principal humano | Propietario de datos y sujeto al que se conceden capacidades. |
+| Principal técnico | Satélite, worker, conector o servicio con credenciales revocables y privilegios mínimos. |
+| Asignación de rol | Conjunto provisional de capacidades iniciales; no decisión final. |
+| Concesión de capacidad | Permiso específico para leer, modificar, aprobar o ejecutar dentro de un ámbito. |
+| Política de recurso | Propiedad, ámbito personal o compartido, sensibilidad y reglas del módulo. |
+| Contexto de autenticación | Método, confianza, dispositivo, canal, habitación y caducidad de la prueba. |
+| Sesión de invitado | Autorización temporal, aislada, revocable y con presupuesto propio. |
+
+Los roles iniciales serán `Owner/Administrator`, `Adult Household Member`, `Child
+Household Member` y `Guest`. Existirán además identidades de dispositivo o servicio,
+que no heredarán roles humanos. El propietario podrá administrar la instalación, pero
+seguirá sujeto a confirmaciones destructivas, protección de secretos, privacidad del
+canal de salida, auditoría y separación de transiciones. Un adulto podrá invitar solo
+con una capacidad explícita; un menor no podrá gestionar invitados; el invitado será
+denegado por defecto salvo capacidades acotadas de su sesión.
+
+Los nombres de capacidades se definirán con cada vertical slice. El vocabulario
+conceptual distinguirá operaciones como `memory.personal.read`,
+`memory.household.write`, `batchcooking.preference.rate`,
+`home.safe_actions.execute`, `extensions.approve`, `users.invite_guest`,
+`audit.read` o `system.configure`. Son ejemplos, no un catálogo estable. Los módulos
+declararán qué capacidades consumen o exponen, pero no podrán concederlas ni modificar
+la política.
+
+```mermaid
+flowchart LR
+    Request[Petición o tool call] --> Policy[Motor de autorización]
+    Identity[Principal + confianza] --> Policy
+    Resource[Propiedad + ámbito + sensibilidad] --> Policy
+    Context[Canal + dispositivo + habitación] --> Policy
+    Risk[Riesgo + coste + efecto] --> Policy
+    Policy -->|denegar| Denied[Denegación segura]
+    Policy -->|prueba insuficiente| StepUp[Autenticación reforzada]
+    Policy -->|efecto confirmable| Confirm[Confirmación exacta]
+    Policy -->|permitir| Capability[Herramienta, dato o salida acotados]
+    Capability --> LLM[LLM recibe solo contexto autorizado]
+```
+
+La decisión será determinista y externa al modelo. Evaluará rol, concesiones y
+denegaciones específicas, propiedad, contexto, riesgo y confianza; podrá permitir,
+denegar, exigir `step-up`, exigir confirmación o restringir la salida. El modelo solo
+podrá solicitar la capacidad visible. Una aprobación no elevará otros permisos ni
+autorizará una operación distinta.
+
+La memoria se dividirá en conocimiento general, memoria personal, memoria compartida
+del hogar, estado de módulo, memoria administrativa y sesión efímera. Cada elemento
+persistido tendrá propietario, ámbito, autorización, fuente, sensibilidad, fechas,
+retención y borrado. Búsqueda, ranking y recuperación aplicarán el filtro antes de
+entregar fragmentos al modelo; ocultar después la respuesta sería demasiado tarde.
+
+Una invitación futura almacenará quién invita, caducidad, habitaciones o dispositivos,
+capacidades, proveedor permitido, cuota o presupuesto, persistencia y revocación. Una
+sesión de voz invitada afectará solo a la habitación y duración aprobadas, no a todo el
+hogar. La voz y el reconocimiento de hablante aportarán señales `Confirmed`,
+`Probable`, `Unknown`, `Guest` o `Insufficient`; las acciones sensibles requerirán una
+prueba adicional desde un canal autenticado.
+
+El bootstrap inicial creará exactamente un propietario durante una ventana de
+configuración local y se invalidará al terminar. No usará credenciales publicadas ni
+permitirá que el primer cliente de la red reclame la instalación. Recuperación,
+revocación y reemplazo del administrador serán flujos explícitos y auditables cuyo
+mecanismo se elegirá cuando exista una superficie de administración real.
+
 ## Adaptador de Ollama
 
 `OllamaLanguageProvider` implementa `ILanguageProvider` mediante la API HTTP nativa
@@ -641,10 +722,16 @@ bucle, sus fallos y sus políticas. Un adaptador futuro podrá traducir entre
 
 ## Observabilidad
 
-Los eventos estructurados registran inicio y final del turno, proveedor e
-iteración, solicitud y resultado de herramientas, código de error y duración. No
-registran mensaje, argumentos ni contenido devuelto. OpenTelemetry se pospone hasta
-que exista un consumidor concreto de trazas o métricas.
+Los logs estructurados registran inicio y final del turno, proveedor e iteración,
+solicitud y resultado de herramientas, código de error y duración. Además,
+`IToolAuditSink` conserva actualmente en memoria eventos de solicitud, denegación de
+política, confirmación, inicio, éxito, fallo y timeout. Cada evento incluye
+identificadores, principal, proveedor, herramienta, resultado y duración cuando
+aplica; no incluye mensajes, argumentos ni resultados de herramientas.
+
+La auditoría es diagnóstica y local: no sobrevive un reinicio, no tiene consulta HTTP
+ni sustituye una auditoría durable y protegida. OpenTelemetry y la persistencia se
+posponen hasta que exista un consumidor concreto de trazas o métricas.
 
 ## Configuración
 

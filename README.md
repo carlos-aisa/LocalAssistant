@@ -34,6 +34,10 @@ Implementado:
 - Bucle explícito de tool calling con cancelación, timeouts y límite de iteraciones.
 - Metadatos de impacto y confirmación de herramientas.
 - Perfiles multidimensionales de riesgo y filtrado de herramientas no autorizadas.
+- Auditoría local en memoria de decisiones y ejecuciones de herramientas, sin
+  argumentos ni resultados.
+- Errores de herramienta separados entre el detalle para el proveedor y el mensaje
+  seguro expuesto por la API.
 - Identidad local opcional mediante API key y scopes concedidos por el servidor.
 - Política de egreso denegada por defecto y pasarela de adaptadores externos sin
   proveedores reales habilitados.
@@ -241,6 +245,9 @@ debía invocar la herramienta. La media fue 11,9 segundos por turno y la mediana
   caducan y se consumen una vez. Cuando la llamada procede de un principal
   autenticado, solo ese principal puede resolverla; aún no hay gestión de usuarios
   ni propiedad de conversaciones.
+- La auditoría actual se pierde al reiniciar y no es un registro durable ni
+  consultable. La confirmación de un único uso no sustituye una clave de idempotencia
+  para futuras herramientas con cambios de estado o coste.
 - Los timeouts detienen la espera cooperativa; una implementación de herramienta
   que ignore el token podría seguir trabajando internamente.
 - El fake demuestra el protocolo, no inteligencia ni comprensión del lenguaje.
