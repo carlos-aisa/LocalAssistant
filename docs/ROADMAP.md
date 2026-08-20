@@ -36,11 +36,11 @@ una herramienta permitida mediante un protocolo visible y probado.
 
 **Capacidades incluidas:**
 
-- API de conversación.
-- Proveedor fake secuencial.
-- Bucle explícito de herramientas.
-- Herramienta de hora, políticas iniciales, logging y tests.
-- Conversaciones en memoria.
+- [x] API de conversación.
+- [x] Proveedor fake secuencial.
+- [x] Bucle explícito de herramientas.
+- [x] Herramienta de hora, políticas iniciales, logging y tests.
+- [x] Conversaciones en memoria.
 
 **Capacidades excluidas:** persistencia, modelo real, identidad, voz e integraciones.
 
@@ -88,7 +88,8 @@ confirmación y auditoría vinculadas a su solicitud.
 - Definir el primer contrato de herramienta externa y una pasarela controlada
   (`Tools Gateway`) que mantenga proveedores, credenciales y acceso de red fuera
   del núcleo conversacional.
-- Confirmación vinculada a una solicitud concreta, no aprobación global por nombre.
+- [x] Confirmación vinculada a una solicitud concreta, no aprobación global por
+  nombre.
 - Tratar el riesgo como multidimensional: impacto de operación, sensibilidad del
   dato, identidad, alcance solicitado, exposición externa, coste y otros efectos;
   una lectura no será de bajo riesgo por definición.

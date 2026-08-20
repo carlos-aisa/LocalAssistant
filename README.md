@@ -197,7 +197,8 @@ debía invocar la herramienta. La media fue 11,9 segundos por turno y la mediana
 
 - Las conversaciones se pierden al reiniciar y no soportan coordinación entre
   varias instancias de la API.
-- La aprobación de herramientas es un punto de extensión técnico, no identidad ni
+- Las confirmaciones de herramientas retienen en el servidor la llamada exacta,
+  caducan y se consumen una vez, pero todavía no constituyen identidad ni
   autorización completa.
 - Los timeouts detienen la espera cooperativa; una implementación de herramienta
   que ignore el token podría seguir trabajando internamente.

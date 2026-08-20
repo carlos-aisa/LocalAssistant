@@ -584,9 +584,11 @@ comportamiento y tests reales.
 ## Conversaciones y concurrencia
 
 `InMemoryConversationStore` conserva mensajes en un diccionario concurrente y
-copia cada historial bajo bloqueo. No existe transacción que serialice dos turnos
-simultáneos de la misma conversación. Esta limitación es aceptable para el entorno
-de aprendizaje, pero deberá resolverse al introducir persistencia.
+copia cada historial bajo bloqueo. El orquestador añade además un bloqueo por
+conversación durante un turno o una resolución de confirmación, por lo que estas
+operaciones no se intercalan dentro del mismo proceso. Ese bloqueo y las
+confirmaciones están en memoria y no coordinan varias instancias ni sobreviven un
+reinicio; persistencia y coordinación distribuida siguen pendientes.
 
 Antes de persistir información privada se definirán propiedad y alcance de acceso,
 retención, borrado selectivo, control de acceso, protección en reposo, auditoría y
@@ -597,7 +599,8 @@ datos concreta ni que el cifrado de disco resulte suficiente por sí solo.
 ## Errores y timeouts
 
 El resultado del núcleo diferencia errores como `provider_timeout`,
-`tool_not_found`, `invalid_tool_arguments`, `tool_confirmation_required`,
+`tool_not_found`, `invalid_tool_arguments`, `confirmation_pending`,
+`confirmation_not_found`, `confirmation_expired`, `confirmation_provider_mismatch`,
 `tool_execution_failed` e `iteration_limit_reached`. La API los traduce a códigos
 HTTP sin exponer excepciones internas.
 

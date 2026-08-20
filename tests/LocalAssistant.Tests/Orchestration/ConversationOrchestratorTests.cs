@@ -236,6 +236,114 @@ public sealed class ConversationOrchestratorTests
         Assert.Equal(7, receivedValue);
     }
 
+    [Fact]
+    public async Task RejectionDoesNotExecuteToolAndReturnsToolResultToProvider()
+    {
+        var executions = 0;
+        var tool = new DelegateTool("change_state", true, (_, _) =>
+        {
+            executions++;
+            return ValueTask.FromResult(ToolExecutionResult.Success("changed"));
+        });
+        var call = new ToolCall("change-1", "change_state", EmptyArguments());
+        var provider = new ScriptedLanguageProvider([
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.RequestTools(call)),
+            request =>
+            {
+                var toolResult = request.Messages.Last(message => message.ToolResult is not null).ToolResult!;
+                Assert.True(toolResult.IsError);
+                Assert.Equal("The user rejected this tool call.", toolResult.Content);
+                return LanguageProviderResponse.Final("No change was made.");
+            },
+        ]);
+        var sut = CreateOrchestrator(tools: [tool]);
+
+        var pending = await sut.ProcessAsync(new ConversationTurnRequest("Change"), provider, CancellationToken.None);
+        var result = await sut.ResolveConfirmationAsync(pending.ConversationId, pending.Confirmation!.ConfirmationId, false, provider, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("No change was made.", result.Content);
+        Assert.Equal(0, executions);
+        Assert.Equal("tool_confirmation_rejected", Assert.Single(result.Tools).ErrorCode);
+    }
+
+    [Fact]
+    public async Task ExpiredConfirmationDoesNotExecuteTool()
+    {
+        var executions = 0;
+        var timeProvider = new ManualTimeProvider(FixedUtcNow);
+        var tool = new DelegateTool("change_state", true, (_, _) =>
+        {
+            executions++;
+            return ValueTask.FromResult(ToolExecutionResult.Success("changed"));
+        });
+        var provider = ProviderRequesting(new ToolCall("change-1", "change_state", EmptyArguments()));
+        var sut = CreateOrchestrator(
+            tools: [tool],
+            timeProvider: timeProvider,
+            options: new OrchestrationOptions { ConfirmationTimeout = TimeSpan.FromSeconds(1) });
+
+        var pending = await sut.ProcessAsync(new ConversationTurnRequest("Change"), provider, CancellationToken.None);
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        var result = await sut.ResolveConfirmationAsync(pending.ConversationId, pending.Confirmation!.ConfirmationId, true, provider, CancellationToken.None);
+
+        Assert.Equal("confirmation_expired", result.Error?.Code);
+        Assert.Equal(0, executions);
+    }
+
+    [Fact]
+    public async Task RejectsResolutionFromAnotherProviderWithoutConsumingConfirmation()
+    {
+        var tool = new DelegateTool(
+            "change_state",
+            true,
+            static (_, _) => ValueTask.FromResult(ToolExecutionResult.Success("changed")));
+        var provider = ProviderRequesting(new ToolCall("change-1", "change_state", EmptyArguments()));
+        var sut = CreateOrchestrator(tools: [tool]);
+
+        var pending = await sut.ProcessAsync(new ConversationTurnRequest("Change"), provider, CancellationToken.None);
+        var result = await sut.ResolveConfirmationAsync(
+            pending.ConversationId,
+            pending.Confirmation!.ConfirmationId,
+            true,
+            new NamedProvider("other-provider"),
+            CancellationToken.None);
+
+        Assert.Equal("confirmation_provider_mismatch", result.Error?.Code);
+
+        var stillPending = await sut.ProcessAsync(
+            new ConversationTurnRequest("Another message", pending.ConversationId),
+            provider,
+            CancellationToken.None);
+        Assert.Equal("confirmation_pending", stillPending.Error?.Code);
+    }
+
+    [Fact]
+    public async Task ResolvingTheSameConfirmationTwiceDoesNotExecuteToolTwice()
+    {
+        var executions = 0;
+        var tool = new DelegateTool("change_state", true, (_, _) =>
+        {
+            executions++;
+            return ValueTask.FromResult(ToolExecutionResult.Success("changed"));
+        });
+        var call = new ToolCall("change-1", "change_state", EmptyArguments());
+        var provider = new ScriptedLanguageProvider([
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.RequestTools(call)),
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.Final("Done")),
+        ]);
+        var sut = CreateOrchestrator(tools: [tool]);
+
+        var pending = await sut.ProcessAsync(new ConversationTurnRequest("Change"), provider, CancellationToken.None);
+        var confirmationId = pending.Confirmation!.ConfirmationId;
+        var first = await sut.ResolveConfirmationAsync(pending.ConversationId, confirmationId, true, provider, CancellationToken.None);
+        var second = await sut.ResolveConfirmationAsync(pending.ConversationId, confirmationId, true, provider, CancellationToken.None);
+
+        Assert.True(first.IsSuccess);
+        Assert.Equal("confirmation_not_found", second.Error?.Code);
+        Assert.Equal(1, executions);
+    }
+
     private static ConversationOrchestrator CreateOrchestrator(
         IEnumerable<ITool>? tools = null,
         ManualTimeProvider? timeProvider = null,
@@ -277,6 +385,16 @@ public sealed class ConversationOrchestratorTests
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             return LanguageProviderResponse.Final("unreachable");
         }
+    }
+
+    private sealed class NamedProvider(string name) : ILanguageProvider
+    {
+        public string Name { get; } = name;
+
+        public Task<LanguageProviderResponse> GetResponseAsync(
+            LanguageProviderRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(LanguageProviderResponse.Final("unreachable"));
     }
 
     private sealed class DelegateTool : ITool
