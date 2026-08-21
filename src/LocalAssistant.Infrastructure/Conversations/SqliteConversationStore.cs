@@ -12,16 +12,23 @@ public sealed class SqliteConversationStoreOptions
     public bool Enabled { get; set; }
 
     public string? DatabasePath { get; set; }
+
+    public int RetentionDays { get; set; } = 30;
 }
 
 public sealed class SqliteConversationStore : IConversationStore
 {
     private readonly string _connectionString;
     private readonly object _initializationSync = new();
+    private readonly TimeProvider _clock;
+    private readonly TimeSpan _retention;
     private Task? _initialization;
 
-    public SqliteConversationStore(IOptions<SqliteConversationStoreOptions> options)
+    public SqliteConversationStore(IOptions<SqliteConversationStoreOptions> options, TimeProvider clock)
     {
+        _clock = clock;
+        if (options.Value.RetentionDays <= 0) throw new ArgumentOutOfRangeException(nameof(options));
+        _retention = TimeSpan.FromDays(options.Value.RetentionDays);
         var databasePath = ResolveDatabasePath(options.Value.DatabasePath);
         _connectionString = new SqliteConnectionStringBuilder
         {
@@ -40,7 +47,8 @@ public sealed class SqliteConversationStore : IConversationStore
         await using var connection = await OpenAsync(cancellationToken);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
         var identifier = conversationId.ToString("N");
-        await ExecuteAsync(connection, transaction, "INSERT OR IGNORE INTO Conversations (ConversationId, OwnerPrincipalId) VALUES ($id, $owner);", cancellationToken, ("$id", (object)identifier), ("$owner", ownerPrincipalId));
+        await DeleteExpiredAsync(connection, transaction, cancellationToken);
+        await ExecuteAsync(connection, transaction, "INSERT OR IGNORE INTO Conversations (ConversationId, OwnerPrincipalId, ExpiresAtUnixMilliseconds) VALUES ($id, $owner, $expires);", cancellationToken, ("$id", (object)identifier), ("$owner", ownerPrincipalId), ("$expires", _clock.GetUtcNow().Add(_retention).ToUnixTimeMilliseconds()));
         var owner = await ScalarAsync(connection, transaction, "SELECT OwnerPrincipalId FROM Conversations WHERE ConversationId = $id;", cancellationToken, ("$id", (object)identifier));
         await transaction.CommitAsync(cancellationToken);
         return new(conversationId, owner ?? throw new InvalidOperationException("The persisted conversation metadata is invalid."));
@@ -87,6 +95,26 @@ public sealed class SqliteConversationStore : IConversationStore
         await transaction.CommitAsync(cancellationToken);
     }
 
+    public async ValueTask<bool> DeleteOwnedAsync(Guid conversationId, string ownerPrincipalId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        var identifier = conversationId.ToString("N");
+        await ExecuteAsync(connection, transaction, "DELETE FROM ConversationMessages WHERE ConversationId = $id AND EXISTS (SELECT 1 FROM Conversations WHERE ConversationId = $id AND OwnerPrincipalId = $owner);", cancellationToken, ("$id", (object)identifier), ("$owner", ownerPrincipalId));
+        var deleted = await ExecuteAsync(connection, transaction, "DELETE FROM Conversations WHERE ConversationId = $id AND OwnerPrincipalId = $owner;", cancellationToken, ("$id", (object)identifier), ("$owner", ownerPrincipalId));
+        await transaction.CommitAsync(cancellationToken);
+        return deleted > 0;
+    }
+
+    public async ValueTask<int> DeleteExpiredAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        var deleted = await DeleteExpiredAsync(connection, transaction, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return deleted;
+    }
+
     private async ValueTask<SqliteConnection> OpenAsync(CancellationToken cancellationToken)
     {
         await EnsureInitializedAsync(cancellationToken);
@@ -113,16 +141,26 @@ public sealed class SqliteConversationStore : IConversationStore
         Directory.CreateDirectory(Path.GetDirectoryName(databasePath) ?? throw new InvalidOperationException("The conversation database directory is invalid."));
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
-        await ExecuteAsync(connection, null, "CREATE TABLE IF NOT EXISTS Conversations (ConversationId TEXT PRIMARY KEY NOT NULL, OwnerPrincipalId TEXT NOT NULL); CREATE TABLE IF NOT EXISTS ConversationMessages (ConversationId TEXT NOT NULL, SequenceNumber INTEGER NOT NULL, PayloadJson TEXT NOT NULL, PRIMARY KEY (ConversationId, SequenceNumber), FOREIGN KEY (ConversationId) REFERENCES Conversations(ConversationId));", CancellationToken.None);
+        await ExecuteAsync(connection, null, "CREATE TABLE IF NOT EXISTS Conversations (ConversationId TEXT PRIMARY KEY NOT NULL, OwnerPrincipalId TEXT NOT NULL, ExpiresAtUnixMilliseconds INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS ConversationMessages (ConversationId TEXT NOT NULL, SequenceNumber INTEGER NOT NULL, PayloadJson TEXT NOT NULL, PRIMARY KEY (ConversationId, SequenceNumber), FOREIGN KEY (ConversationId) REFERENCES Conversations(ConversationId));", CancellationToken.None);
+        try
+        {
+            await ExecuteAsync(connection, null, "ALTER TABLE Conversations ADD COLUMN ExpiresAtUnixMilliseconds INTEGER NOT NULL DEFAULT 0;", CancellationToken.None);
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 1 && exception.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
+        {
+        }
     }
 
-    private static async Task ExecuteAsync(SqliteConnection connection, SqliteTransaction? transaction, string sql, CancellationToken cancellationToken, params (string Name, object Value)[] parameters)
+    private async Task<int> DeleteExpiredAsync(SqliteConnection connection, SqliteTransaction transaction, CancellationToken cancellationToken) =>
+        await ExecuteAsync(connection, transaction, "DELETE FROM ConversationMessages WHERE ConversationId IN (SELECT ConversationId FROM Conversations WHERE ExpiresAtUnixMilliseconds <= $now); DELETE FROM Conversations WHERE ExpiresAtUnixMilliseconds <= $now;", cancellationToken, ("$now", _clock.GetUtcNow().ToUnixTimeMilliseconds()));
+
+    private static async Task<int> ExecuteAsync(SqliteConnection connection, SqliteTransaction? transaction, string sql, CancellationToken cancellationToken, params (string Name, object Value)[] parameters)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = sql;
         foreach (var parameter in parameters) command.Parameters.AddWithValue(parameter.Name, parameter.Value);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<string?> ScalarAsync(SqliteConnection connection, SqliteTransaction? transaction, string sql, CancellationToken cancellationToken, params (string Name, object Value)[] parameters)
