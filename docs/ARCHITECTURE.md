@@ -66,8 +66,10 @@ herramientas públicas y no constituye un modelo completo de autorización.
 
 La confirmación pendiente conserva también el principal que originó la llamada. La
 resolución debe provenir del mismo principal antes de consumirla; una discrepancia se
-presenta como no encontrada. Las conversaciones en memoria siguen sin propiedad: no
-se usarán para datos privados hasta la fase de persistencia e identidad correspondiente.
+presenta como no encontrada. Las conversaciones creadas por un principal autenticado
+conservan ese propietario en memoria y solo él puede continuarlas o resolver sus
+confirmaciones. Las conversaciones anónimas permanecen sin propietario, públicas y
+efímeras; no se convertirán automáticamente en conversaciones privadas persistentes.
 
 El fake usa una cola de funciones de respuesta. Cada llamada consume exactamente
 un paso, por lo que una prueba declara de forma visible la secuencia esperada.

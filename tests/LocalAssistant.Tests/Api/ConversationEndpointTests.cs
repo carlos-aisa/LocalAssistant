@@ -138,6 +138,68 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
     }
 
     [Fact]
+    public async Task AnonymousClientCannotContinueAnAuthenticatedConversation()
+    {
+        using var client = CreateIdentityClient(["time.read"]);
+        client.DefaultRequestHeaders.Add(
+            LocalApiKeyAuthenticationDefaults.HeaderName,
+            LocalApiKey);
+
+        using var ownerResponse = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Owner message", scenario = "direct" },
+            CancellationToken.None);
+        Assert.Equal(HttpStatusCode.OK, ownerResponse.StatusCode);
+        using var ownerBody = await JsonDocument.ParseAsync(
+            await ownerResponse.Content.ReadAsStreamAsync(CancellationToken.None),
+            cancellationToken: CancellationToken.None);
+        var conversationId = ownerBody.RootElement.GetProperty("conversationId").GetGuid();
+
+        using var continuedOwnerResponse = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Owner follow-up", conversationId, scenario = "direct" },
+            CancellationToken.None);
+        Assert.Equal(HttpStatusCode.OK, continuedOwnerResponse.StatusCode);
+
+        client.DefaultRequestHeaders.Remove(LocalApiKeyAuthenticationDefaults.HeaderName);
+        using var anonymousResponse = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Anonymous access", conversationId, scenario = "direct" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.NotFound, anonymousResponse.StatusCode);
+        using var anonymousBody = await JsonDocument.ParseAsync(
+            await anonymousResponse.Content.ReadAsStreamAsync(CancellationToken.None),
+            cancellationToken: CancellationToken.None);
+        Assert.Equal(
+            "conversation_not_found",
+            anonymousBody.RootElement.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task AnonymousClientCanContinueAnAnonymousConversation()
+    {
+        using var client = CreateIdentityClient(["time.read"]);
+
+        using var firstResponse = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Public message", scenario = "direct" },
+            CancellationToken.None);
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        using var firstBody = await JsonDocument.ParseAsync(
+            await firstResponse.Content.ReadAsStreamAsync(CancellationToken.None),
+            cancellationToken: CancellationToken.None);
+        var conversationId = firstBody.RootElement.GetProperty("conversationId").GetGuid();
+
+        using var secondResponse = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Public follow-up", conversationId, scenario = "direct" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task InvalidApiKeyIsRejectedBeforeTheOrchestrator()
     {
         using var client = CreateIdentityClient(["time.read"]);

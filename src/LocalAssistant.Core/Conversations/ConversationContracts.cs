@@ -23,8 +23,21 @@ public sealed record ConversationMessage(
     ToolCall? ToolCall = null,
     ToolResultMessage? ToolResult = null);
 
+public sealed record ConversationMetadata(
+    Guid ConversationId,
+    string? OwnerPrincipalId);
+
 public interface IConversationStore
 {
+    ValueTask<ConversationMetadata> GetOrCreateMetadataAsync(
+        Guid conversationId,
+        string? ownerPrincipalId,
+        CancellationToken cancellationToken);
+
+    ValueTask<ConversationMetadata?> GetMetadataAsync(
+        Guid conversationId,
+        CancellationToken cancellationToken);
+
     ValueTask<IReadOnlyList<ConversationMessage>> GetMessagesAsync(
         Guid conversationId,
         CancellationToken cancellationToken);

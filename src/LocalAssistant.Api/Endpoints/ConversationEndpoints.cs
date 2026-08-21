@@ -80,7 +80,7 @@ public static class ConversationEndpoints
                 StatusCodes.Status422UnprocessableEntity,
             "iteration_limit_reached" or "invalid_provider_response" or "confirmation_pending" or "confirmation_provider_mismatch" =>
                 StatusCodes.Status409Conflict,
-            "confirmation_not_found" => StatusCodes.Status404NotFound,
+            "conversation_not_found" or "confirmation_not_found" => StatusCodes.Status404NotFound,
             "confirmation_expired" => StatusCodes.Status410Gone,
             _ => StatusCodes.Status500InternalServerError,
         };

@@ -46,6 +46,45 @@ public sealed class ConversationOrchestratorTests
     }
 
     [Fact]
+    public async Task DoesNotContinueOwnedConversationForAnotherPrincipal()
+    {
+        var owner = new ToolPolicyContext(
+            "owner-principal",
+            new HashSet<string>(StringComparer.Ordinal));
+        var otherPrincipal = new ToolPolicyContext(
+            "other-principal",
+            new HashSet<string>(StringComparer.Ordinal));
+        var contextAccessor = new MutableToolPolicyContextAccessor(owner);
+        var store = new InMemoryConversationStore();
+        var sut = CreateOrchestrator(
+            store: store,
+            toolPolicyContextAccessor: contextAccessor);
+        var ownerProvider = new ScriptedLanguageProvider(
+        [
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.Final("Owner answer")),
+        ]);
+
+        var ownedTurn = await sut.ProcessAsync(
+            new ConversationTurnRequest("Private conversation"),
+            ownerProvider,
+            CancellationToken.None);
+
+        contextAccessor.Current = otherPrincipal;
+        var otherProvider = new ScriptedLanguageProvider([]);
+        var rejectedTurn = await sut.ProcessAsync(
+            new ConversationTurnRequest("Attempted access", ownedTurn.ConversationId),
+            otherProvider,
+            CancellationToken.None);
+
+        Assert.Equal("conversation_not_found", rejectedTurn.Error?.Code);
+        Assert.Equal(0, otherProvider.CallCount);
+        var messages = await store.GetMessagesAsync(ownedTurn.ConversationId, CancellationToken.None);
+        Assert.Equal(2, messages.Count);
+        var metadata = await store.GetMetadataAsync(ownedTurn.ConversationId, CancellationToken.None);
+        Assert.Equal("owner-principal", metadata?.OwnerPrincipalId);
+    }
+
+    [Fact]
     public async Task ExecutesTimeToolAndReturnsItsResultToProvider()
     {
         var timeProvider = new ManualTimeProvider(FixedUtcNow);
@@ -496,7 +535,7 @@ public sealed class ConversationOrchestratorTests
             provider,
             CancellationToken.None);
 
-        Assert.Equal("confirmation_not_found", denied.Error?.Code);
+        Assert.Equal("conversation_not_found", denied.Error?.Code);
         Assert.Equal(0, executions);
 
         var approved = await sut.ResolveConfirmationAsync(
@@ -687,6 +726,13 @@ public sealed class ConversationOrchestratorTests
             _index++;
             return contexts[index];
         }
+    }
+
+    private sealed class MutableToolPolicyContextAccessor(ToolPolicyContext current) : IToolPolicyContextAccessor
+    {
+        public ToolPolicyContext Current { get; set; } = current;
+
+        public ToolPolicyContext GetCurrent() => Current;
     }
 
     private sealed class DelegateTool : ITool
