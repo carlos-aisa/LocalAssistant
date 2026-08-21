@@ -112,6 +112,12 @@ el almacenamiento y despliegue reales. El primer almacén elegido es SQLite loca
 conversaciones autenticadas y debe tratar el archivo, sus backups y sus permisos
 como datos privados.
 
+El ciclo de vida aprobado en el ADR 0025 clasifica las conversaciones autenticadas
+como datos personales del principal, con retención inicial de 30 días y borrado
+selectivo transaccional. Las conversaciones anónimas siguen fuera de SQLite. Backups
+y restauraciones conservan la misma propiedad, retención y requisitos de protección;
+no constituyen una excepción de acceso.
+
 ## Identidad, autorización y acceso de invitados futuros
 
 El bootstrap actual crea un único propietario desde una consola local y se invalida

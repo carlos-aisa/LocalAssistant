@@ -96,6 +96,8 @@ patrón actual de recuperación por conversación, propiedad y anexado ordenado 
 mensajes. El adaptador permanecerá fuera del núcleo y las conversaciones anónimas no
 se convertirán por ello en datos privados persistentes. La decisión y sus límites de
 protección en reposo se recogen en el [ADR 0024](adr/0024-use-sqlite-for-local-conversation-persistence.md).
+El ciclo de vida, retención y borrado selectivo de estos datos se definen en el
+[ADR 0025](adr/0025-define-private-storage-lifecycle.md).
 
 Las decisiones se recogen en [ADR 0017](adr/0017-combine-roles-capabilities-context-and-risk-for-authorization.md),
 [ADR 0018](adr/0018-treat-voice-as-context-not-strong-authentication.md),
