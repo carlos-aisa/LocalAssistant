@@ -48,6 +48,8 @@ Implementado:
   proveedores reales habilitados.
 - Conversaciones autenticadas persistibles en SQLite de forma opcional; las anónimas
   siguen en memoria y son efímeras.
+- Retención configurable de conversaciones persistidas, inicialmente 30 días, y
+  borrado selectivo interno protegido por propietario.
 - Logging estructurado sin contenido de conversación.
 - Pruebas unitarias y de integración HTTP.
 - Contratos de proveedor reutilizados por el fake y el adaptador de Ollama.
@@ -105,6 +107,22 @@ dotnet run --project src/LocalAssistant.Api -- --urls http://localhost:5100
 ```
 
 La comprobación de salud queda disponible en `http://localhost:5100/health`.
+
+### Persistencia de conversaciones
+
+La persistencia está desactivada por defecto. Para conservar solo conversaciones
+autenticadas en SQLite, configura una ruta absoluta y la retención en días antes de
+arrancar la API:
+
+```powershell
+$env:LocalAssistant__ConversationPersistence__Enabled = "true"
+$env:LocalAssistant__ConversationPersistence__DatabasePath = "C:\LocalAssistant\conversations.db"
+$env:LocalAssistant__ConversationPersistence__RetentionDays = "30"
+```
+
+Las conversaciones anónimas no se escriben en SQLite. El archivo y sus copias de
+seguridad contienen datos privados y deben protegerse mediante permisos y controles
+del sistema operativo.
 
 ### Bootstrap de instalación y identidad local
 
