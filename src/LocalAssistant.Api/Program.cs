@@ -8,8 +8,16 @@ using LocalAssistant.Core.Security.ToolRisk;
 using LocalAssistant.Core.Tools;
 using LocalAssistant.Infrastructure.LanguageModels.Ollama;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Options;
 
-var builder = WebApplication.CreateBuilder(args);
+var bootstrapRequested = args.Any(argument =>
+    StringComparer.Ordinal.Equals(argument, "--bootstrap-owner"));
+if (bootstrapRequested && args.Length != 1)
+{
+    throw new InvalidOperationException("The --bootstrap-owner command does not accept additional arguments.");
+}
+
+var builder = WebApplication.CreateBuilder(bootstrapRequested ? [] : args);
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IConversationStore, InMemoryConversationStore>();
@@ -17,6 +25,7 @@ builder.Services.AddSingleton<IToolConfirmationStore, InMemoryToolConfirmationSt
 builder.Services.AddSingleton<IConversationExecutionLock, InMemoryConversationExecutionLock>();
 builder.Services.AddSingleton<IToolAuditSink, InMemoryToolAuditSink>();
 builder.Services.AddSingleton<IToolRiskPolicy, DefaultToolRiskPolicy>();
+builder.Services.AddSingleton<IInstallationIdentityStore, FileInstallationIdentityStore>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddAuthentication(LocalApiKeyAuthenticationDefaults.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, LocalApiKeyAuthenticationHandler>(
@@ -58,8 +67,54 @@ builder.Services.AddOptions<LocalIdentityOptions>()
              options.Scopes.All(scope => !string.IsNullOrWhiteSpace(scope))),
         "Enabled local identity requires a principal, a SHA-256 API key hash, and non-empty scopes.")
     .ValidateOnStart();
+builder.Services.AddOptions<InstallationIdentityOptions>()
+    .Bind(builder.Configuration.GetSection(InstallationIdentityOptions.SectionName))
+    .Validate(
+        options => string.IsNullOrWhiteSpace(options.StateDirectory) ||
+            Path.IsPathFullyQualified(options.StateDirectory),
+        "Installation state directory must be an absolute path.")
+    .ValidateOnStart();
+
+if (bootstrapRequested)
+{
+    var bootstrapApplication = builder.Build();
+    var configuredIdentity = bootstrapApplication.Services
+        .GetRequiredService<IOptions<LocalIdentityOptions>>().Value;
+    if (configuredIdentity.Enabled)
+    {
+        await bootstrapApplication.DisposeAsync();
+        throw new InvalidOperationException(
+            "Bootstrap requires LocalAssistant:Identity:Enabled to remain disabled.");
+    }
+
+    var bootstrapIdentityStore = bootstrapApplication.Services
+        .GetRequiredService<IInstallationIdentityStore>();
+    var bootstrapResult = await bootstrapIdentityStore.BootstrapAsync(CancellationToken.None);
+    await bootstrapApplication.DisposeAsync();
+    if (bootstrapResult.Status == InstallationBootstrapStatus.AlreadyInitialized)
+    {
+        Console.Error.WriteLine("Installation bootstrap was already completed.");
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    Console.WriteLine("Installation bootstrap completed. Store this API key now; it will not be shown again.");
+    Console.WriteLine($"Owner principal: {bootstrapResult.OwnerPrincipalId}");
+    Console.WriteLine($"API key: {bootstrapResult.ApiKey}");
+    return;
+}
 
 var app = builder.Build();
+
+var localIdentityOptions = app.Services.GetRequiredService<IOptions<LocalIdentityOptions>>().Value;
+var installationIdentityStore = app.Services.GetRequiredService<IInstallationIdentityStore>();
+var installationIdentity = await installationIdentityStore.GetAsync(CancellationToken.None);
+if (localIdentityOptions.Enabled && installationIdentity is not null)
+{
+    await app.DisposeAsync();
+    throw new InvalidOperationException(
+        "Configured local identity and installation bootstrap identity cannot be enabled together.");
+}
 
 app.UseAuthentication();
 app.Use(async (context, next) =>

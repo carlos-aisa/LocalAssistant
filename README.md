@@ -38,7 +38,10 @@ Implementado:
   argumentos ni resultados.
 - Errores de herramienta separados entre el detalle para el proveedor y el mensaje
   seguro expuesto por la API.
-- Identidad local opcional mediante API key y scopes concedidos por el servidor.
+- Bootstrap local de instalación con un único propietario y API key generada una sola
+  vez; se conserva únicamente su hash.
+- Identidad local opcional mediante API key y scopes concedidos por el servidor para
+  pruebas o configuración educativa.
 - Política de egreso denegada por defecto y pasarela de adaptadores externos sin
   proveedores reales habilitados.
 - Conversaciones en memoria.
@@ -99,12 +102,30 @@ dotnet run --project src/LocalAssistant.Api -- --urls http://localhost:5100
 
 La comprobación de salud queda disponible en `http://localhost:5100/health`.
 
-### Identidad local opcional
+### Bootstrap de instalación y identidad local
 
-La API funciona de forma anónima para las herramientas públicas. Para habilitar un
-principal local con scopes concedidos por el servidor, configura un hash SHA-256 de
-una API key fuera de los archivos versionados. Este ejemplo genera una clave efímera
-para la sesión actual de PowerShell:
+Para inicializar una instalación local con un único propietario, ejecuta este comando
+en la consola del equipo que la administra. No abre el servidor HTTP:
+
+```powershell
+dotnet run --project src/LocalAssistant.Api -- --bootstrap-owner
+```
+
+Guarda la API key que muestra una única vez. El estado mínimo de instalación se guarda
+por defecto en `%LOCALAPPDATA%\LocalAssistant\installation-identity.json`; contiene
+solo el hash SHA-256 de la clave. Una segunda ejecución se rechaza. Después inicia la
+API normalmente y envía la clave con `X-LocalAssistant-Api-Key`.
+
+La variable `LocalAssistant__Installation__StateDirectory` permite elegir una ruta
+absoluta distinta para ese estado. No combines este bootstrap con la configuración
+`LocalAssistant__Identity__Enabled=true`.
+
+La API también funciona de forma anónima para herramientas públicas. Para pruebas o
+para configurar de forma educativa un principal local con scopes concedidos por el
+servidor, usa el mecanismo siguiente.
+
+Configura un hash SHA-256 de una API key fuera de los archivos versionados. Este
+ejemplo genera una clave efímera para la sesión actual de PowerShell:
 
 ```powershell
 $apiKey = [Guid]::NewGuid().ToString("N")

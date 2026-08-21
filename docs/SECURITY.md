@@ -13,13 +13,14 @@ calendario, correo, ubicación, cámaras, memoria, documentos o salud puede reve
 información privada sin modificar estado.
 
 La política se impone fuera del modelo al filtrar el catálogo y de nuevo antes de
-ejecutar. El contexto predeterminado es anónimo y sin scopes. Opcionalmente, una API
-key local autentica un único principal configurado y le asigna scopes definidos en la
-configuración del servidor; ni el cliente ni el modelo aportan scopes. Se configura
-solo el hash SHA-256 de la clave, nunca la clave en el repositorio o en
-`appsettings.json`. Datos privados o sensibles, scopes ausentes y exposición externa
-se deniegan por defecto. Los cambios de estado, la ejecución, el coste significativo
-o una regla explícita requieren la confirmación exacta ya implementada.
+ejecutar. El contexto predeterminado es anónimo y sin scopes. Una API key local
+autentica un único principal y le asigna scopes definidos en el servidor; ni el
+cliente ni el modelo aportan scopes. Puede proceder del bootstrap de instalación local
+o de la configuración educativa, nunca de ambas fuentes. Se configura o persiste solo
+el hash SHA-256 de la clave, nunca la clave en el repositorio o en `appsettings.json`.
+Datos privados o sensibles, scopes ausentes y exposición externa se deniegan por
+defecto. Los cambios de estado, la ejecución, el coste significativo o una regla
+explícita requieren la confirmación exacta ya implementada.
 
 `IToolRegistry` es una allowlist. Una respuesta del modelo no puede descubrir ni
 invocar métodos arbitrarios. No existe herramienta para comandos, scripts, archivos
@@ -104,11 +105,13 @@ el almacenamiento y despliegue reales; no se selecciona todavía una tecnología
 
 ## Identidad, autorización y acceso de invitados futuros
 
-La API key local actual es una frontera educativa para un único principal. No será
-la identidad doméstica definitiva. La instalación futura comenzará con un hogar y
-distinguirá principales humanos de identidades técnicas. Los nombres de personas,
-relaciones familiares y credenciales serán configuración privada, nunca datos del
-repositorio.
+El bootstrap actual crea un único propietario desde una consola local y se invalida
+tras completarse; no existe endpoint de autoalta. La clave se muestra una vez y solo
+su hash se guarda en el directorio local de la aplicación. La API key configurada
+permanece como frontera educativa. Ninguna es la identidad doméstica definitiva: la
+instalación futura distinguirá un hogar, principales humanos e identidades técnicas.
+Los nombres de personas, relaciones familiares y credenciales serán configuración
+privada, nunca datos del repositorio.
 
 El modelo combinado de autorización, los límites de voz, el filtrado previo de
 memoria y el aislamiento de invitados se fijan respectivamente en los ADR

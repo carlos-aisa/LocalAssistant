@@ -10,7 +10,8 @@ habitaciones.
 - **Capacidades actuales:** fases 1, 2 y la mayor parte de la fase 3 completadas:
   núcleo conversacional, fake, Ollama, herramientas locales, confirmación exacta,
   política de riesgo, egreso controlado, identidad local opcional, auditoría local y
-  exposición segura de errores.
+  exposición segura de errores; la fase 4 comienza con identidad de instalación con
+  propietario único.
 - **Próximo incremento:** definir una operación idempotente al incorporar la primera
   herramienta real que cambie estado o produzca coste.
 - **Horizonte cercano:** tutor de inglés escrito con role-play, correcciones e
@@ -125,7 +126,7 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
 - Definir un concepto mínimo de `User` o `Principal` y el alcance de propiedad y
   acceso antes de persistir memoria personal; no usar conversación, dispositivo o
   habitación como identidad implícita.
-- Introducir la identidad de instalación y un bootstrap de un solo propietario,
+- [x] Introducir la identidad de instalación y un bootstrap de un solo propietario,
   invalidado tras la configuración inicial y sin credenciales predeterminadas.
 - Sustituir la API key educativa por autenticación adecuada para las interfaces
   escritas cuando exista el primer dato privado persistente; no elegir proveedor de
@@ -934,9 +935,9 @@ activación y rollback propios antes de habilitar el siguiente nivel de riesgo.
 - Modelo definitivo de autorización de herramientas y combinación de impacto,
   sensibilidad, identidad, alcance, egreso, confirmación y coste; evolucionará con
   vertical slices reales sin anticipar RBAC o ABAC completos.
-- Proveedor de identidad, credenciales, esquema de usuarios y permisos, mecanismo de
-  bootstrap y recuperación, experiencia administrativa y tecnología de identificación
-  de hablante; se elegirán con el despliegue y los canales reales.
+- Proveedor de identidad, esquema de usuarios y permisos, recuperación tras borrar o
+  perder el estado de instalación, experiencia administrativa y tecnología de
+  identificación de hablante; se elegirán con el despliegue y los canales reales.
 - Tecnología concreta de protección en reposo y política de backups; se elegirán
   junto con el almacenamiento y modelo de despliegue.
 - Formato definitivo del manifiesto, mecanismo de carga, packaging, aislamiento de

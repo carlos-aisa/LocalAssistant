@@ -57,11 +57,12 @@ coste, confirmación explícita y scopes necesarios. Una lectura puede exponer
 presencia, calendario, correo, ubicación, cámaras, memoria o documentos y no se
 considera segura solo por no modificar estado. El orquestador filtra el catálogo que
 recibe el proveedor y vuelve a evaluar antes de ejecutar. El contexto procede del
-límite HTTP: sin API key es anónimo; con la API key local configurada, el adaptador
-crea un principal y scopes definidos exclusivamente por configuración del servidor.
-Una herramienta privada, sensible, con scope ausente o externa queda denegada. La
-API key es opcional para las herramientas públicas y no constituye un modelo completo
-de autorización.
+límite HTTP: sin API key es anónimo; con una API key válida, el adaptador crea un
+principal y scopes definidos exclusivamente por el servidor. La identidad puede
+proceder del bootstrap local de la instalación o de la configuración educativa
+existente, pero nunca de ambas fuentes a la vez. Una herramienta privada, sensible,
+con scope ausente o externa queda denegada. La API key es opcional para las
+herramientas públicas y no constituye un modelo completo de autorización.
 
 La confirmación pendiente conserva también el principal que originó la llamada. La
 resolución debe provenir del mismo principal antes de consumirla; una discrepancia se
@@ -80,10 +81,12 @@ ocultar esas diferencias.
 
 ## Dirección futura: identidad y autorización domésticas
 
-La API key local implementada representa un único principal configurado y scopes de
-servidor. No modela todavía un hogar, usuarios, invitados, propiedad persistente ni
-niveles de confianza. La evolución sustituirá ese adaptador en el límite de entrada
-sin trasladar SDKs de identidad al núcleo ni permitir que el cliente o el LLM creen
+El bootstrap implementado identifica una instalación y crea un único propietario
+local, con una API key cuyo hash permanece en el estado de instalación. La API key
+configurada sigue disponible como frontera educativa. Ninguna de las dos opciones
+modela todavía un hogar, usuarios, invitados, propiedad persistente ni niveles de
+confianza. La evolución sustituirá estos adaptadores en el límite de entrada sin
+trasladar SDKs de identidad al núcleo ni permitir que el cliente o el LLM creen
 permisos.
 
 Las decisiones se recogen en [ADR 0017](adr/0017-combine-roles-capabilities-context-and-risk-for-authorization.md),

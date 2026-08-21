@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace LocalAssistant.Tests.Api;
 
@@ -150,6 +151,31 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task BootstrappedInstallationAuthenticatesItsOwner()
+    {
+        using var stateDirectory = new TemporaryInstallationStateDirectory();
+        var store = new FileInstallationIdentityStore(
+            Options.Create(new InstallationIdentityOptions { StateDirectory = stateDirectory.Path }),
+            TimeProvider.System);
+        var bootstrap = await store.BootstrapAsync(CancellationToken.None);
+        Assert.Equal(InstallationBootstrapStatus.Created, bootstrap.Status);
+
+        using var client = _factory.WithWebHostBuilder(builder =>
+            builder.UseSetting("LocalAssistant:Installation:StateDirectory", stateDirectory.Path))
+            .CreateClient();
+        client.DefaultRequestHeaders.Add(
+            LocalApiKeyAuthenticationDefaults.HeaderName,
+            bootstrap.ApiKey);
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Owner message", scenario = "direct" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
@@ -323,13 +349,29 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
 
 public sealed class LocalAssistantApiFactory : WebApplicationFactory<Program>
 {
+    private readonly string _installationStateDirectory = Path.Combine(
+        Path.GetTempPath(),
+        $"LocalAssistant.ApiTests.{Guid.NewGuid():N}");
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        builder.UseSetting(
+            "LocalAssistant:Installation:StateDirectory",
+            _installationStateDirectory);
         builder.ConfigureServices(services =>
         {
             services.AddSingleton<TimeProvider>(
                 new ManualTimeProvider(new DateTimeOffset(2026, 8, 17, 14, 30, 0, TimeSpan.Zero)));
         });
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        if (disposing && Directory.Exists(_installationStateDirectory))
+        {
+            Directory.Delete(_installationStateDirectory, recursive: true);
+        }
     }
 }
 
