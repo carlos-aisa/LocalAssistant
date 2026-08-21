@@ -91,7 +91,7 @@ confianza. La evolución sustituirá estos adaptadores en el límite de entrada 
 trasladar SDKs de identidad al núcleo ni permitir que el cliente o el LLM creen
 permisos.
 
-La persistencia local de conversaciones se implementará con SQLite, elegida para el
+La persistencia local de conversaciones autenticadas se implementa con SQLite, elegida para el
 patrón actual de recuperación por conversación, propiedad y anexado ordenado de
 mensajes. El adaptador permanecerá fuera del núcleo y las conversaciones anónimas no
 se convertirán por ello en datos privados persistentes. La decisión y sus límites de

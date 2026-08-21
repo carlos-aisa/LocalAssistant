@@ -46,14 +46,15 @@ Implementado:
   pruebas o configuración educativa.
 - Política de egreso denegada por defecto y pasarela de adaptadores externos sin
   proveedores reales habilitados.
-- Conversaciones en memoria.
+- Conversaciones autenticadas persistibles en SQLite de forma opcional; las anónimas
+  siguen en memoria y son efímeras.
 - Logging estructurado sin contenido de conversación.
 - Pruebas unitarias y de integración HTTP.
 - Contratos de proveedor reutilizados por el fake y el adaptador de Ollama.
 - Evaluación local reproducible de decisiones de tool calling por modelo.
 
 No implementado: detección automática de capacidades por modelo, acceso real a
-Internet, proveedores cloud, persistencia, gestión de usuarios, voz, wake word,
+Internet, proveedores cloud, retención y auditoría durable, gestión de usuarios, voz, wake word,
 RAG, Home Assistant, MQTT, MCP, interfaz gráfica ni ejecución de comandos.
 
 ## Arquitectura actual
@@ -66,7 +67,8 @@ flowchart LR
     Orchestrator --> Ollama[Adaptador HTTP de Ollama]
     Orchestrator --> Registry[Registro de herramientas]
     Registry --> Time[Herramienta de hora UTC]
-    Orchestrator --> Memory[(Conversaciones en memoria)]
+    Orchestrator --> Memory[(Conversaciones anónimas en memoria)]
+    Orchestrator --> Sqlite[(Conversaciones autenticadas en SQLite)]
 ```
 
 `LocalAssistant.Api` compone y expone la aplicación. `LocalAssistant.Core` contiene

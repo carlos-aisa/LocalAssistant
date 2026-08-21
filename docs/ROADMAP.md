@@ -140,7 +140,8 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
   persistencia de información privada.
 - Evaluar protección en reposo y consecuencias de backup y restauración según el
   almacenamiento y despliegue elegidos, sin fijar todavía un mecanismo de cifrado.
-- Persistir conversaciones y trazas con retención configurable.
+- [x] Persistir conversaciones autenticadas en SQLite, manteniendo las anónimas
+  efímeras en memoria. Retención configurable y trazas durables siguen pendientes.
 - Resolver concurrencia de turnos sobre una misma conversación.
 - Definir fuentes documentales locales mediante allowlist. La primera resolverá la
   carpeta Documentos configurada por el sistema operativo, sin hardcodear usuario o

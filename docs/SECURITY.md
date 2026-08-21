@@ -108,8 +108,8 @@ selectivo, control de acceso, protección en reposo, auditoría y consecuencias 
 backup y restauración. La elección podrá combinar permisos del sistema operativo,
 cifrado de disco, capacidades de la base de datos o protección de aplicación según
 el almacenamiento y despliegue reales. El primer almacén elegido es SQLite local
-(ADR 0024), que no cifra datos por sí mismo: el adaptador persistirá inicialmente solo
-conversaciones autenticadas y deberá tratar el archivo, sus backups y sus permisos
+(ADR 0024), que no cifra datos por sí mismo: el adaptador persiste solo
+conversaciones autenticadas y debe tratar el archivo, sus backups y sus permisos
 como datos privados.
 
 ## Identidad, autorización y acceso de invitados futuros
