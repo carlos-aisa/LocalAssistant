@@ -30,46 +30,60 @@ public sealed class LocalIdentityOptions
 public sealed class LocalApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
     private readonly LocalIdentityOptions _identityOptions;
+    private readonly IInstallationIdentityStore _installationIdentityStore;
 
     public LocalApiKeyAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
         System.Text.Encodings.Web.UrlEncoder encoder,
-        IOptions<LocalIdentityOptions> identityOptions)
+        IOptions<LocalIdentityOptions> identityOptions,
+        IInstallationIdentityStore installationIdentityStore)
         : base(options, logger, encoder)
     {
         _identityOptions = identityOptions.Value;
+        _installationIdentityStore = installationIdentityStore;
     }
 
-    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        if (!_identityOptions.Enabled ||
-            !Request.Headers.TryGetValue(LocalApiKeyAuthenticationDefaults.HeaderName, out var values))
+        if (!Request.Headers.TryGetValue(LocalApiKeyAuthenticationDefaults.HeaderName, out var values))
         {
-            return Task.FromResult(AuthenticateResult.NoResult());
+            return AuthenticateResult.NoResult();
+        }
+
+        var effectiveIdentity = _identityOptions.Enabled
+            ? new InstallationIdentity(
+                "configured-local-identity",
+                _identityOptions.PrincipalId,
+                _identityOptions.ApiKeySha256,
+                new HashSet<string>(_identityOptions.Scopes, StringComparer.Ordinal))
+            : await _installationIdentityStore.GetAsync(Context.RequestAborted);
+        if (effectiveIdentity is null)
+        {
+            return AuthenticateResult.NoResult();
         }
 
         if (values.Count != 1 || string.IsNullOrWhiteSpace(values[0]))
         {
-            return Task.FromResult(AuthenticateResult.Fail("The API key is invalid."));
+            return AuthenticateResult.Fail("The API key is invalid.");
         }
 
         var presentedHash = SHA256.HashData(Encoding.UTF8.GetBytes(values[0]!));
-        var configuredHash = Convert.FromHexString(_identityOptions.ApiKeySha256);
+        var configuredHash = Convert.FromHexString(effectiveIdentity.ApiKeySha256);
         if (!CryptographicOperations.FixedTimeEquals(presentedHash, configuredHash))
         {
-            return Task.FromResult(AuthenticateResult.Fail("The API key is invalid."));
+            return AuthenticateResult.Fail("The API key is invalid.");
         }
 
         var claims = new List<Claim>
         {
-            new(ClaimTypes.NameIdentifier, _identityOptions.PrincipalId),
+            new(ClaimTypes.NameIdentifier, effectiveIdentity.OwnerPrincipalId),
         };
-        claims.AddRange(_identityOptions.Scopes.Select(
+        claims.AddRange(effectiveIdentity.GrantedScopes.Select(
             scope => new Claim(LocalApiKeyAuthenticationDefaults.ScopeClaimType, scope)));
-        var identity = new ClaimsIdentity(claims, Scheme.Name);
-        var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name);
-        return Task.FromResult(AuthenticateResult.Success(ticket));
+        var claimsIdentity = new ClaimsIdentity(claims, Scheme.Name);
+        var ticket = new AuthenticationTicket(new ClaimsPrincipal(claimsIdentity), Scheme.Name);
+        return AuthenticateResult.Success(ticket);
     }
 }
 

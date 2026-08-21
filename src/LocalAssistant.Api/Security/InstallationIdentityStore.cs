@@ -1,0 +1,184 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.Options;
+
+namespace LocalAssistant.Api.Security;
+
+public sealed class InstallationIdentityOptions
+{
+    public const string SectionName = "LocalAssistant:Installation";
+
+    public string? StateDirectory { get; set; }
+}
+
+public sealed record InstallationIdentity(
+    string InstallationId,
+    string OwnerPrincipalId,
+    string ApiKeySha256,
+    IReadOnlySet<string> GrantedScopes);
+
+public enum InstallationBootstrapStatus { Created, AlreadyInitialized }
+
+public sealed record InstallationBootstrapResult(
+    InstallationBootstrapStatus Status,
+    string? OwnerPrincipalId,
+    string? ApiKey);
+
+public interface IInstallationIdentityStore
+{
+    ValueTask<InstallationIdentity?> GetAsync(CancellationToken cancellationToken);
+
+    ValueTask<InstallationBootstrapResult> BootstrapAsync(CancellationToken cancellationToken);
+}
+
+public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
+{
+    private const string StateFileName = "installation-identity.json";
+    private const string OwnerScope = "installation.owner";
+    private const int CurrentSchemaVersion = 1;
+    private readonly InstallationIdentityOptions _options;
+    private readonly TimeProvider _clock;
+
+    public FileInstallationIdentityStore(
+        IOptions<InstallationIdentityOptions> options,
+        TimeProvider clock)
+    {
+        _options = options.Value;
+        _clock = clock;
+    }
+
+    public async ValueTask<InstallationIdentity?> GetAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var stateFilePath = GetStateFilePath();
+        if (!File.Exists(stateFilePath))
+        {
+            return null;
+        }
+
+        await using var stream = new FileStream(
+            stateFilePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 4096,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var state = await JsonSerializer.DeserializeAsync<StoredInstallationIdentity>(
+            stream,
+            cancellationToken: cancellationToken);
+        return Validate(state);
+    }
+
+    public async ValueTask<InstallationBootstrapResult> BootstrapAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var stateFilePath = GetStateFilePath();
+        if (File.Exists(stateFilePath))
+        {
+            return new(InstallationBootstrapStatus.AlreadyInitialized, null, null);
+        }
+
+        var stateDirectory = Path.GetDirectoryName(stateFilePath)
+            ?? throw new InvalidOperationException("The installation state directory is invalid.");
+        Directory.CreateDirectory(stateDirectory);
+
+        var ownerPrincipalId = $"owner-{Guid.NewGuid():N}";
+        var apiKey = CreateApiKey();
+        var state = new StoredInstallationIdentity(
+            CurrentSchemaVersion,
+            Guid.NewGuid().ToString("N"),
+            ownerPrincipalId,
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey))),
+            [OwnerScope],
+            _clock.GetUtcNow());
+        var temporaryFilePath = Path.Combine(
+            stateDirectory,
+            $".{StateFileName}.{Guid.NewGuid():N}.tmp");
+
+        try
+        {
+            await File.WriteAllBytesAsync(
+                temporaryFilePath,
+                JsonSerializer.SerializeToUtf8Bytes(state, SerializerOptions),
+                cancellationToken);
+            File.Move(temporaryFilePath, stateFilePath, overwrite: false);
+            return new(InstallationBootstrapStatus.Created, ownerPrincipalId, apiKey);
+        }
+        catch (IOException) when (File.Exists(stateFilePath))
+        {
+            return new(InstallationBootstrapStatus.AlreadyInitialized, null, null);
+        }
+        finally
+        {
+            if (File.Exists(temporaryFilePath))
+            {
+                File.Delete(temporaryFilePath);
+            }
+        }
+    }
+
+    public string GetStateFilePath()
+    {
+        var stateDirectory = _options.StateDirectory;
+        if (string.IsNullOrWhiteSpace(stateDirectory))
+        {
+            stateDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "LocalAssistant");
+        }
+
+        if (string.IsNullOrWhiteSpace(stateDirectory) || !Path.IsPathFullyQualified(stateDirectory))
+        {
+            throw new InvalidOperationException("The installation state directory must be an absolute path.");
+        }
+
+        return Path.Combine(Path.GetFullPath(stateDirectory), StateFileName);
+    }
+
+    private static InstallationIdentity Validate(StoredInstallationIdentity? state)
+    {
+        if (state is null || state.SchemaVersion != CurrentSchemaVersion ||
+            !Guid.TryParseExact(state.InstallationId, "N", out _) ||
+            !IsValidPrincipalId(state.OwnerPrincipalId) ||
+            !IsSha256Hash(state.ApiKeySha256) ||
+            state.GrantedScopes is null || state.GrantedScopes.Length == 0 ||
+            state.GrantedScopes.Any(scope => string.IsNullOrWhiteSpace(scope)) ||
+            state.GrantedScopes.Distinct(StringComparer.Ordinal).Count() != state.GrantedScopes.Length ||
+            state.InitializedAtUtc == default)
+        {
+            throw new InvalidOperationException("The installation identity state is invalid.");
+        }
+
+        return new(
+            state.InstallationId,
+            state.OwnerPrincipalId,
+            state.ApiKeySha256,
+            new HashSet<string>(state.GrantedScopes, StringComparer.Ordinal));
+    }
+
+    private static bool IsValidPrincipalId(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length <= 128 && !value.Any(char.IsControl);
+
+    private static bool IsSha256Hash(string value) =>
+        value.Length == 64 && value.All(Uri.IsHexDigit);
+
+    private static string CreateApiKey()
+    {
+        Span<byte> bytes = stackalloc byte[32];
+        RandomNumberGenerator.Fill(bytes);
+        var apiKey = Convert.ToHexString(bytes);
+        CryptographicOperations.ZeroMemory(bytes);
+        return apiKey;
+    }
+
+    private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = true };
+
+    private sealed record StoredInstallationIdentity(
+        int SchemaVersion,
+        string InstallationId,
+        string OwnerPrincipalId,
+        string ApiKeySha256,
+        string[] GrantedScopes,
+        DateTimeOffset InitializedAtUtc);
+}
