@@ -6,6 +6,7 @@ using LocalAssistant.Core.Conversations;
 using LocalAssistant.Core.Orchestration;
 using LocalAssistant.Core.Security.ToolRisk;
 using LocalAssistant.Core.Tools;
+using LocalAssistant.Infrastructure.Conversations;
 using LocalAssistant.Infrastructure.LanguageModels.Ollama;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
@@ -20,7 +21,17 @@ if (bootstrapRequested && args.Length != 1)
 var builder = WebApplication.CreateBuilder(bootstrapRequested ? [] : args);
 
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton<IConversationStore, InMemoryConversationStore>();
+builder.Services.AddSingleton<InMemoryConversationStore>();
+builder.Services.AddSingleton<SqliteConversationStore>();
+builder.Services.AddSingleton<IConversationStore>(services =>
+{
+    var options = services.GetRequiredService<IOptions<SqliteConversationStoreOptions>>().Value;
+    return options.Enabled
+        ? new AuthenticatedConversationStore(
+            services.GetRequiredService<SqliteConversationStore>(),
+            services.GetRequiredService<InMemoryConversationStore>())
+        : services.GetRequiredService<InMemoryConversationStore>();
+});
 builder.Services.AddSingleton<IToolConfirmationStore, InMemoryToolConfirmationStore>();
 builder.Services.AddSingleton<IConversationExecutionLock, InMemoryConversationExecutionLock>();
 builder.Services.AddSingleton<IToolAuditSink, InMemoryToolAuditSink>();
@@ -73,6 +84,12 @@ builder.Services.AddOptions<InstallationIdentityOptions>()
         options => string.IsNullOrWhiteSpace(options.StateDirectory) ||
             Path.IsPathFullyQualified(options.StateDirectory),
         "Installation state directory must be an absolute path.")
+    .ValidateOnStart();
+builder.Services.AddOptions<SqliteConversationStoreOptions>()
+    .Bind(builder.Configuration.GetSection(SqliteConversationStoreOptions.SectionName))
+    .Validate(
+        options => string.IsNullOrWhiteSpace(options.DatabasePath) || Path.IsPathFullyQualified(options.DatabasePath),
+        "Conversation database path must be an absolute path.")
     .ValidateOnStart();
 
 if (bootstrapRequested)
