@@ -135,9 +135,9 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
 - Separar desde el modelo de datos memoria personal, compartida del hogar, de módulo,
   administrativa y efímera; aplicar autorización antes de recuperar contexto para el
   modelo.
-- Aprobar un modelo de privacidad de almacenamiento con propiedad, retención,
-  borrado selectivo, control de acceso y auditoría antes de considerar completa la
-  persistencia de información privada.
+- [x] Aprobar un modelo de privacidad de almacenamiento con propiedad, retención,
+  borrado selectivo, control de acceso y auditoría (ADR 0025) antes de considerar
+  completa la persistencia de información privada.
 - Evaluar protección en reposo y consecuencias de backup y restauración según el
   almacenamiento y despliegue elegidos, sin fijar todavía un mecanismo de cifrado.
 - [x] Persistir conversaciones autenticadas en SQLite, manteniendo las anónimas
