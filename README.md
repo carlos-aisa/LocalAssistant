@@ -34,6 +34,8 @@ Implementado:
 - Bucle explícito de tool calling con cancelación, timeouts y límite de iteraciones.
 - Metadatos de impacto y confirmación de herramientas.
 - Perfiles multidimensionales de riesgo y filtrado de herramientas no autorizadas.
+- Conversaciones autenticadas vinculadas al principal que las creó; las anónimas son
+  públicas y efímeras.
 - Auditoría local en memoria de decisiones y ejecuciones de herramientas, sin
   argumentos ni resultados.
 - Errores de herramienta separados entre el detalle para el proveedor y el mensaje
@@ -265,7 +267,8 @@ debía invocar la herramienta. La media fue 11,9 segundos por turno y la mediana
 - Las confirmaciones de herramientas retienen en el servidor la llamada exacta,
   caducan y se consumen una vez. Cuando la llamada procede de un principal
   autenticado, solo ese principal puede resolverla; aún no hay gestión de usuarios
-  ni propiedad de conversaciones.
+  ni propiedad durable de conversaciones. La propiedad actual vive solo en memoria;
+  las conversaciones anónimas no son privadas.
 - La auditoría actual se pierde al reiniciar y no es un registro durable ni
   consultable. La confirmación de un único uso no sustituye una clave de idempotencia
   para futuras herramientas con cambios de estado o coste.

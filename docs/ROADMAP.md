@@ -11,7 +11,7 @@ habitaciones.
   núcleo conversacional, fake, Ollama, herramientas locales, confirmación exacta,
   política de riesgo, egreso controlado, identidad local opcional, auditoría local y
   exposición segura de errores; la fase 4 comienza con identidad de instalación con
-  propietario único.
+  propietario único y propiedad de conversaciones autenticadas en memoria.
 - **Próximo incremento:** definir una operación idempotente al incorporar la primera
   herramienta real que cambie estado o produzca coste.
 - **Horizonte cercano:** tutor de inglés escrito con role-play, correcciones e
@@ -123,9 +123,9 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
 **Capacidades incluidas:**
 
 - Elegir almacenamiento tras medir el patrón de acceso.
-- Definir un concepto mínimo de `User` o `Principal` y el alcance de propiedad y
-  acceso antes de persistir memoria personal; no usar conversación, dispositivo o
-  habitación como identidad implícita.
+- [x] Definir un principal mínimo y vincular las conversaciones autenticadas a su
+  propiedad en memoria; no usar conversación, dispositivo o habitación como identidad
+  implícita. Las conversaciones anónimas siguen siendo públicas y efímeras.
 - [x] Introducir la identidad de instalación y un bootstrap de un solo propietario,
   invalidado tras la configuración inicial y sin credenciales predeterminadas.
 - Sustituir la API key educativa por autenticación adecuada para las interfaces

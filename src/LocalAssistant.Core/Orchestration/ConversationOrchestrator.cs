@@ -34,19 +34,24 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         var id = request.ConversationId ?? Guid.NewGuid();
         OrchestrationLog.TurnStarted(_logger, id);
         using var lease = await _locks.AcquireAsync(id, ct);
+        var policyContext = _toolPolicyContextAccessor.GetCurrent();
+        var metadata = await _store.GetOrCreateMetadataAsync(id, policyContext.PrincipalId, ct);
+        if (!CanAccess(metadata, policyContext.PrincipalId)) return Result(id, null, [], 0, TimeSpan.Zero, TimeSpan.Zero, new("conversation_not_found", "The conversation was not found."));
         if (await _confirmations.GetAsync(id, ct) is not null) return Result(id, null, [], 0, TimeSpan.Zero, TimeSpan.Zero, new("confirmation_pending", "A tool confirmation is already pending."));
         await _store.AppendAsync(id, new(ConversationRole.User, request.Message), ct);
-        return await ContinueAsync(id, provider, _toolPolicyContextAccessor.GetCurrent(), [], 0, TimeSpan.Zero, ct);
+        return await ContinueAsync(id, provider, policyContext, [], 0, TimeSpan.Zero, ct);
     }
 
     public async Task<ConversationTurnResult> ResolveConfirmationAsync(Guid id, Guid confirmationId, bool approved, ILanguageProvider provider, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(provider);
         using var lease = await _locks.AcquireAsync(id, ct);
+        var policyContext = _toolPolicyContextAccessor.GetCurrent();
+        var metadata = await _store.GetMetadataAsync(id, ct);
+        if (metadata is null || !CanAccess(metadata, policyContext.PrincipalId)) return Result(id, null, [], 0, TimeSpan.Zero, TimeSpan.Zero, new("conversation_not_found", "The conversation was not found."));
         var pending = await _confirmations.GetAsync(id, ct);
         if (pending is null || pending.ConfirmationId != confirmationId) return Result(id, null, [], 0, TimeSpan.Zero, TimeSpan.Zero, new("confirmation_not_found", "The confirmation was not found."));
         if (!StringComparer.Ordinal.Equals(pending.ProviderName, provider.Name)) return Result(id, null, [], 0, TimeSpan.Zero, TimeSpan.Zero, new("confirmation_provider_mismatch", "The confirmation must use its original provider."));
-        var policyContext = _toolPolicyContextAccessor.GetCurrent();
         if (!StringComparer.Ordinal.Equals(pending.PrincipalId, policyContext.PrincipalId))
         {
             await WriteAuditAsync(CreateAuditEvent(ToolAuditEventType.ConfirmationAccessDenied, id, policyContext.PrincipalId, pending.ProviderName, pending.ToolCall, "confirmation_principal_mismatch", pending.ConfirmationId), ct);
@@ -128,6 +133,9 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
     private static ToolExecutionTrace Failed(ToolCall call, string code, TimeSpan elapsed = default) => new(call.Id, call.Name, false, elapsed.TotalMilliseconds, code);
     private static OrchestrationError ToolPolicyError(ToolCall call, ToolPolicyDecision decision) =>
         new(decision.Code ?? "tool_policy_denied", "The requested tool is not authorized.", call.Name);
+    private static bool CanAccess(ConversationMetadata metadata, string? principalId) =>
+        metadata.OwnerPrincipalId is null ||
+        StringComparer.Ordinal.Equals(metadata.OwnerPrincipalId, principalId);
     private ToolDefinition[] GetAvailableDefinitions(ToolPolicyContext context) =>
         _tools.Definitions.Where(definition =>
             _toolRiskPolicy.Evaluate(definition.Metadata, context).Kind != ToolPolicyDecisionKind.Denied).ToArray();

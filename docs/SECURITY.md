@@ -31,11 +31,15 @@ exacta que requiere confirmación: herramienta, argumentos, proveedor, principal
 caducidad. La decisión posterior solo puede aprobar o rechazar esa llamada; es de un
 único uso y no permite sustituir argumentos desde HTTP. Si la llamada se originó con
 un principal autenticado, otro principal no puede consumirla. El almacenamiento actual
-es en RAM: se pierde al reiniciar y no incorpora gestión de usuarios, autorización
-durable ni propiedad de conversaciones. Existe una auditoría local en memoria de
-solicitudes, decisiones, confirmaciones y ejecuciones, pero tampoco sobrevive un
-reinicio ni debe tratarse como registro productivo. La confirmación tampoco sustituye
-la autorización para leer un dato sensible.
+es en RAM: se pierde al reiniciar y no incorpora gestión de usuarios ni autorización
+durable. Una conversación iniciada por el principal autenticado se vincula a ese
+principal en memoria; otro principal o un cliente anónimo recibe el mismo resultado
+que ante una conversación inexistente. Las conversaciones anónimas no tienen
+propietario, se consideran públicas y efímeras, y no podrán persistirse como datos
+privados sin un vínculo explícito. Existe una auditoría local en memoria de solicitudes,
+decisiones, confirmaciones y ejecuciones, pero tampoco sobrevive un reinicio ni debe
+tratarse como registro productivo. La confirmación tampoco sustituye la autorización
+para leer un dato sensible.
 
 ## Amenazas relevantes
 
@@ -91,11 +95,13 @@ HTTPS, cuotas, límites de concurrencia y rate limiting.
 
 ## Persistencia privada futura
 
-Una conversación no es una identidad y conocer su identificador no concederá acceso
-a memoria personal. Del mismo modo, autenticar un dispositivo o asociarlo a una
-habitación no identifica automáticamente a la persona presente. Antes de persistir
-conversaciones privadas, memoria, documentos o trazas deberá existir un concepto
-mínimo de `User` o `Principal`, propiedad y alcance de acceso.
+Una conversación no es una identidad y conocer su identificador no concede acceso a
+una conversación que ya pertenezca a otro principal. Del mismo modo, autenticar un
+dispositivo o asociarlo a una habitación no identifica automáticamente a la persona
+presente. La vinculación actual solo cubre el principal único de la API key y existe
+en memoria; antes de persistir conversaciones privadas, memoria, documentos o trazas
+deberá evolucionar a un concepto mínimo de `User` o `Principal`, propiedad y alcance
+de acceso durables.
 
 La persistencia privada no se considerará completa hasta definir retención, borrado
 selectivo, control de acceso, protección en reposo, auditoría y consecuencias de

@@ -60,6 +60,12 @@ paths:
           description: A supplied local API key was invalid, or a tool required authentication.
         "403":
           description: The authenticated principal was not authorized for a requested tool.
+        "404":
+          description: The requested conversation was not found or is not accessible to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationResponse"
         "409":
           description: The provider response was invalid or the iteration limit was reached.
           content:
@@ -109,7 +115,7 @@ paths:
       responses:
         "200": { description: The decision was processed. }
         "401": { description: A supplied local API key was invalid. }
-        "404": { description: The confirmation was not found. }
+        "404": { description: The confirmation or its conversation was not found or is not accessible to the caller. }
         "409": { description: The provider does not match the pending confirmation. }
         "410": { description: The confirmation expired. }
         "502":
