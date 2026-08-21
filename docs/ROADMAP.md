@@ -122,7 +122,8 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
 
 **Capacidades incluidas:**
 
-- Elegir almacenamiento tras medir el patrón de acceso.
+- [x] Elegir almacenamiento tras medir el patrón de acceso: SQLite local para el
+  primer vertical slice de conversaciones y trazas, según ADR 0024.
 - [x] Definir un principal mínimo y vincular las conversaciones autenticadas a su
   propiedad en memoria; no usar conversación, dispositivo o habitación como identidad
   implícita. Las conversaciones anónimas siguen siendo públicas y efímeras.

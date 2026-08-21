@@ -91,6 +91,12 @@ confianza. La evolución sustituirá estos adaptadores en el límite de entrada 
 trasladar SDKs de identidad al núcleo ni permitir que el cliente o el LLM creen
 permisos.
 
+La persistencia local de conversaciones se implementará con SQLite, elegida para el
+patrón actual de recuperación por conversación, propiedad y anexado ordenado de
+mensajes. El adaptador permanecerá fuera del núcleo y las conversaciones anónimas no
+se convertirán por ello en datos privados persistentes. La decisión y sus límites de
+protección en reposo se recogen en el [ADR 0024](adr/0024-use-sqlite-for-local-conversation-persistence.md).
+
 Las decisiones se recogen en [ADR 0017](adr/0017-combine-roles-capabilities-context-and-risk-for-authorization.md),
 [ADR 0018](adr/0018-treat-voice-as-context-not-strong-authentication.md),
 [ADR 0019](adr/0019-authorize-memory-before-retrieval.md) y
