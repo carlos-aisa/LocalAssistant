@@ -302,15 +302,16 @@ Las pruebas futuras cubrirán tanto la decisión lógica como la imposibilidad t
 de saltarse estas fronteras. La auditoría conservará destino, categorías, propósito
 y resultado, pero no copiará automáticamente el payload ni el contenido recuperado.
 
-## Dirección futura: búsqueda de documentos locales
+## Base actual y dirección futura: búsqueda de documentos locales
 
-Una abstracción futura `LocalDocumentSource` localizará documentos exclusivamente
-dentro de fuentes configuradas y permitidas. La primera fuente será la carpeta
-Documentos real del usuario,
-resuelta mediante el sistema operativo; no se fijará un nombre de usuario ni una
-ruta absoluta. Añadir otra carpeta requerirá configuración explícita. Discos
-completos, perfil entero, `AppData`, directorios del sistema y repositorios no serán
-fuentes implícitas.
+`ILocalDocumentRoot` representa la única raíz documental permitida. Por defecto se
+resuelve como la carpeta Documentos real del usuario mediante el sistema operativo,
+sin fijar un nombre de usuario ni una ruta. La configuración
+`LocalAssistant:DocumentSources:DocumentsRoot` puede sustituirla solo por una ruta
+absoluta existente. El arranque rechaza una ruta relativa o no disponible y no
+explora ni lee la carpeta. Añadir otra carpeta requerirá una capacidad y
+configuración explícitas. Discos completos, perfil entero, `AppData`, directorios
+del sistema y repositorios no son fuentes implícitas.
 
 El LLM no recibirá una herramienta genérica de archivos ni producirá comandos. El
 orquestador expondrá operaciones estructuradas de descubrimiento y lectura a través

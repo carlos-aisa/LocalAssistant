@@ -103,6 +103,18 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
     }
 
     [Fact]
+    public void RelativeDocumentsRootPreventsTheApplicationFromStarting()
+    {
+        using var factory = new LocalAssistantApiFactory()
+            .WithWebHostBuilder(builder =>
+                builder.UseSetting("LocalAssistant:DocumentSources:DocumentsRoot", "documents"));
+
+        var exception = Assert.Throws<OptionsValidationException>(() => factory.CreateClient());
+
+        Assert.Contains("Configured documents root must be an existing absolute directory.", exception.Message);
+    }
+
+    [Fact]
     public async Task UnknownProviderReturnsValidationProblem()
     {
         using var response = await _client.PostAsJsonAsync(
