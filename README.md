@@ -282,13 +282,14 @@ debía invocar la herramienta. La media fue 11,9 segundos por turno y la mediana
 
 ## Límites importantes
 
-- Las conversaciones se pierden al reiniciar y no soportan coordinación entre
-  varias instancias de la API.
+- Las conversaciones anónimas se pierden al reiniciar. Los turnos de una misma
+  conversación se serializan dentro de un proceso de API, pero no existe
+  coordinación entre varias instancias ni se conservan las confirmaciones pendientes.
 - Las confirmaciones de herramientas retienen en el servidor la llamada exacta,
   caducan y se consumen una vez. Cuando la llamada procede de un principal
-  autenticado, solo ese principal puede resolverla; aún no hay gestión de usuarios
-  ni propiedad durable de conversaciones. La propiedad actual vive solo en memoria;
-  las conversaciones anónimas no son privadas.
+  autenticado, solo ese principal puede resolverla; aún no hay gestión de usuarios.
+  Las conversaciones autenticadas persistidas conservan su propiedad; las
+  conversaciones anónimas no son privadas.
 - La auditoría actual se pierde al reiniciar y no es un registro durable ni
   consultable. La confirmación de un único uso no sustituye una clave de idempotencia
   para futuras herramientas con cambios de estado o coste.

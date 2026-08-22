@@ -143,7 +143,9 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
 - [x] Persistir conversaciones autenticadas en SQLite, manteniendo las anónimas
   efímeras en memoria, con retención configurable y borrado selectivo por propietario.
   Las trazas durables siguen pendientes.
-- Resolver concurrencia de turnos sobre una misma conversación.
+- [x] Resolver concurrencia de turnos sobre una misma conversación dentro de un
+  proceso mediante un bloqueo por conversación; una espera cancelada no modifica el
+  historial ni llama al proveedor. La coordinación entre procesos sigue pendiente.
 - Definir fuentes documentales locales mediante allowlist. La primera resolverá la
   carpeta Documentos configurada por el sistema operativo, sin hardcodear usuario o
   ruta y sin explorar discos, perfil completo, `AppData`, sistema o repositorios.

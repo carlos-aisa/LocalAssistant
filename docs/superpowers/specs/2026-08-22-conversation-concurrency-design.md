@@ -1,42 +1,42 @@
-# Conversation concurrency design
+# Diseño de concurrencia de conversaciones
 
-## Goal
+## Objetivo
 
-Complete the phase 4 concurrency requirement by validating the existing
-per-conversation in-process serialization and documenting its boundary.
+Completar el requisito de concurrencia de la fase 4 validando la serialización por
+conversación dentro del proceso ya existente y documentando su límite.
 
-## Scope
+## Alcance
 
-`ConversationOrchestrator` already obtains an
-`IConversationExecutionLock` before accessing conversation metadata or history.
-This increment does not change that production behavior or the HTTP contract.
+`ConversationOrchestrator` ya obtiene un `IConversationExecutionLock` antes de
+acceder a los metadatos o al historial. Este incremento no modifica ese
+comportamiento de producción ni el contrato HTTP.
 
-Two deterministic orchestrator tests will be added:
+Se añadirán dos pruebas deterministas del orquestador:
 
-1. Two turns for the same conversation are serialized. The second provider call
-   cannot start until the first turn releases its provider response, and the
-   second call receives the history written by the first turn.
-2. A waiting second turn can be cancelled. It does not call its provider and it
-   does not append a user message to the conversation.
+1. Dos turnos de la misma conversación se serializan. La segunda llamada al
+   proveedor no puede iniciarse hasta que el primer turno libera su respuesta y
+   recibe el historial escrito por el primero.
+2. Un segundo turno que espera el bloqueo puede cancelarse. No llama a su proveedor
+   ni añade su mensaje de usuario a la conversación.
 
-The tests use task-completion synchronization instead of elapsed-time assertions
-so they are deterministic and do not depend on the real clock.
+Las pruebas usan sincronización de tareas en lugar de aserciones sobre tiempo
+transcurrido, por lo que son deterministas y no dependen del reloj real.
 
-## Non-goals
+## Fuera de alcance
 
-- No durable, cross-process, or distributed lock.
-- No queue, retry, or new persistence schema.
-- No change to authorization, ownership, provider selection, or API responses.
+- Bloqueo durable, entre procesos o distribuido.
+- Cola, reintentos o un nuevo esquema de persistencia.
+- Cambios en autorización, propiedad, selección de proveedor o respuestas de API.
 
-## Documentation
+## Documentación
 
-The roadmap will mark phase 4 turn concurrency as complete. The README will state
-that serialization is scoped to a single application process, so deployment with
-multiple processes requires a future coordination mechanism.
+El roadmap marcará como completada la concurrencia de turnos de la fase 4. El README
+indicará que la serialización se limita a un proceso de aplicación, por lo que un
+despliegue con varios procesos requerirá un mecanismo futuro de coordinación.
 
-## Acceptance criteria
+## Criterios de aceptación
 
-- Release build succeeds without warnings.
-- The full deterministic test suite passes.
-- The two concurrency behaviors above are covered by tests.
-- Documentation matches the in-process boundary.
+- La compilación Release finaliza sin advertencias.
+- Pasa la suite determinista completa.
+- Las dos conductas de concurrencia descritas están cubiertas por pruebas.
+- La documentación coincide con el límite dentro de proceso.
