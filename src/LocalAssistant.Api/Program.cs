@@ -3,10 +3,12 @@ using LocalAssistant.Api.Fakes;
 using LocalAssistant.Api.LanguageModels;
 using LocalAssistant.Api.Security;
 using LocalAssistant.Core.Conversations;
+using LocalAssistant.Core.Documents;
 using LocalAssistant.Core.Orchestration;
 using LocalAssistant.Core.Security.ToolRisk;
 using LocalAssistant.Core.Tools;
 using LocalAssistant.Infrastructure.Conversations;
+using LocalAssistant.Infrastructure.Documents;
 using LocalAssistant.Infrastructure.LanguageModels.Ollama;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
@@ -21,6 +23,8 @@ if (bootstrapRequested && args.Length != 1)
 var builder = WebApplication.CreateBuilder(bootstrapRequested ? [] : args);
 
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<ISystemDocumentsPathProvider, SystemDocumentsPathProvider>();
+builder.Services.AddSingleton<ILocalDocumentRoot, ConfiguredLocalDocumentRoot>();
 builder.Services.AddSingleton<InMemoryConversationStore>();
 builder.Services.AddSingleton<SqliteConversationStore>();
 builder.Services.AddSingleton<IConversationStore>(services =>
@@ -90,6 +94,13 @@ builder.Services.AddOptions<SqliteConversationStoreOptions>()
     .Validate(
         options => string.IsNullOrWhiteSpace(options.DatabasePath) || Path.IsPathFullyQualified(options.DatabasePath),
         "Conversation database path must be an absolute path.")
+    .ValidateOnStart();
+builder.Services.AddOptions<LocalDocumentSourceOptions>()
+    .Bind(builder.Configuration.GetSection(LocalDocumentSourceOptions.SectionName))
+    .Validate(
+        options => string.IsNullOrWhiteSpace(options.DocumentsRoot) ||
+            (Path.IsPathFullyQualified(options.DocumentsRoot) && Directory.Exists(options.DocumentsRoot)),
+        "Configured documents root must be an existing absolute directory.")
     .ValidateOnStart();
 
 if (bootstrapRequested)

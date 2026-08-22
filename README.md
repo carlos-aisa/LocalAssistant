@@ -124,6 +124,23 @@ Las conversaciones anónimas no se escriben en SQLite. El archivo y sus copias d
 seguridad contienen datos privados y deben protegerse mediante permisos y controles
 del sistema operativo.
 
+### Raíz documental local
+
+La primera fuente documental permitida es la carpeta Documentos resuelta por el
+sistema operativo. No se explora ni se lee durante el arranque, y todavía no está
+expuesta mediante una herramienta, endpoint o búsqueda.
+
+Para usar una carpeta distinta, configura una ruta absoluta existente antes de
+arrancar la API:
+
+```powershell
+$env:LocalAssistant__DocumentSources__DocumentsRoot = "C:\LocalAssistant\Documents"
+```
+
+No se aceptan rutas relativas. Configurar esta raíz no concede acceso a discos,
+`AppData`, repositorios ni otras carpetas; una capacidad futura deberá usarla de
+forma explícita.
+
 ### Bootstrap de instalación y identidad local
 
 Para inicializar una instalación local con un único propietario, ejecuta este comando

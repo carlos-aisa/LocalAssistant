@@ -146,9 +146,10 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
 - [x] Resolver concurrencia de turnos sobre una misma conversación dentro de un
   proceso mediante un bloqueo por conversación; una espera cancelada no modifica el
   historial ni llama al proveedor. La coordinación entre procesos sigue pendiente.
-- Definir fuentes documentales locales mediante allowlist. La primera resolverá la
-  carpeta Documentos configurada por el sistema operativo, sin hardcodear usuario o
-  ruta y sin explorar discos, perfil completo, `AppData`, sistema o repositorios.
+- [x] Definir una fuente documental local mediante allowlist. La única raíz actual
+  resuelve la carpeta Documentos configurada por el sistema operativo o una ruta
+  absoluta existente configurada, sin hardcodear usuario ni explorar discos, perfil
+  completo, `AppData`, sistema o repositorios.
 - Implementar como primer vertical slice búsqueda directa por nombre, extensión,
   ruta relativa y fechas o metadatos básicos, sin índice persistente si el corpus y
   rendimiento no lo justifican.
