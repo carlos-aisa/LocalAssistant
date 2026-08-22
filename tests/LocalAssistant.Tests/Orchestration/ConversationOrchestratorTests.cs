@@ -85,6 +85,79 @@ public sealed class ConversationOrchestratorTests
     }
 
     [Fact]
+    public async Task SerializesTurnsForTheSameConversation()
+    {
+        var store = new InMemoryConversationStore();
+        var sut = CreateOrchestrator(store: store);
+        var firstProvider = new GateProvider("First answer");
+        var secondProvider = new ScriptedLanguageProvider(
+        [
+            request =>
+            {
+                Assert.Collection(
+                    request.Messages,
+                    message => Assert.Equal("First message", message.Content),
+                    message => Assert.Equal("First answer", message.Content),
+                    message => Assert.Equal("Second message", message.Content));
+                return LanguageProviderResponse.Final("Second answer");
+            },
+        ]);
+        var conversationId = Guid.NewGuid();
+
+        var firstTurn = sut.ProcessAsync(
+            new ConversationTurnRequest("First message", conversationId),
+            firstProvider,
+            CancellationToken.None);
+        await firstProvider.WaitUntilCalledAsync();
+
+        var secondTurn = sut.ProcessAsync(
+            new ConversationTurnRequest("Second message", conversationId),
+            secondProvider,
+            CancellationToken.None);
+
+        Assert.Equal(0, secondProvider.CallCount);
+        firstProvider.Complete();
+
+        Assert.True((await firstTurn).IsSuccess);
+        Assert.True((await secondTurn).IsSuccess);
+        Assert.Equal(1, secondProvider.CallCount);
+    }
+
+    [Fact]
+    public async Task CancellingATurnWaitingForTheConversationLockDoesNotAppendOrCallProvider()
+    {
+        var store = new InMemoryConversationStore();
+        var sut = CreateOrchestrator(store: store);
+        var firstProvider = new GateProvider("First answer");
+        var secondProvider = new ScriptedLanguageProvider([]);
+        var conversationId = Guid.NewGuid();
+
+        var firstTurn = sut.ProcessAsync(
+            new ConversationTurnRequest("First message", conversationId),
+            firstProvider,
+            CancellationToken.None);
+        await firstProvider.WaitUntilCalledAsync();
+
+        using var cancellation = new CancellationTokenSource();
+        var cancelledTurn = sut.ProcessAsync(
+            new ConversationTurnRequest("Second message", conversationId),
+            secondProvider,
+            cancellation.Token);
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelledTurn);
+        firstProvider.Complete();
+        Assert.True((await firstTurn).IsSuccess);
+        Assert.Equal(0, secondProvider.CallCount);
+
+        var messages = await store.GetMessagesAsync(conversationId, CancellationToken.None);
+        Assert.Collection(
+            messages,
+            message => Assert.Equal("First message", message.Content),
+            message => Assert.Equal("First answer", message.Content));
+    }
+
+    [Fact]
     public async Task ExecutesTimeToolAndReturnsItsResultToProvider()
     {
         var timeProvider = new ManualTimeProvider(FixedUtcNow);
@@ -702,6 +775,27 @@ public sealed class ConversationOrchestratorTests
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             return LanguageProviderResponse.Final("unreachable");
+        }
+    }
+
+    private sealed class GateProvider(string response) : ILanguageProvider
+    {
+        private readonly TaskCompletionSource _called = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public string Name => "gate";
+
+        public Task WaitUntilCalledAsync() => _called.Task;
+
+        public void Complete() => _release.TrySetResult();
+
+        public async Task<LanguageProviderResponse> GetResponseAsync(
+            LanguageProviderRequest request,
+            CancellationToken cancellationToken)
+        {
+            _called.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            return LanguageProviderResponse.Final(response);
         }
     }
 
