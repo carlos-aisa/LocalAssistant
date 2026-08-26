@@ -65,6 +65,51 @@ EF Core rules are intentionally absent until those technologies exist here.
 - Never commit or log secrets, tokens, prompts, tool arguments, or sensitive tool
   results indiscriminately.
 
+## Code readability and formatting
+
+Generated code must prioritize human readability and maintainability over
+compactness.
+
+### Formatting
+
+- Follow standard C# formatting conventions.
+- Opening and closing braces must normally be placed on their own lines.
+- Do not compress multiple statements onto the same line.
+- Do not write single-line `if`, `for`, `foreach`, `try`, `catch`, `using`,
+  or similar control-flow blocks when their body contains more than one
+  statement.
+- Avoid excessively long lines. Break method calls and argument lists across
+  multiple lines when this improves readability.
+- Nested calls should be formatted so that their structure is visually clear.
+- Code should remain easy to scan, debug with breakpoints, and review in a
+  normal IDE window without horizontal scrolling.
+
+### Maintainability
+
+- Prefer clear intermediate variables over deeply nested expressions when they
+  make intent easier to understand.
+- Prefer descriptive names over compact expressions.
+- Methods should expose their high-level control flow clearly.
+- Extract private methods when a block represents a distinct responsibility
+  and extraction improves readability.
+- Do not extract methods merely to reduce line count.
+- Do not introduce abstractions solely for stylistic reasons.
+
+### Before completing a change
+
+Review all modified code as if it were being submitted for human code review.
+If formatting or expression density makes the code unnecessarily difficult to
+read, refactor it before considering the task complete.
+
+### Existing code
+
+When modifying an existing file, preserve or improve its readability.
+Do not introduce compressed formatting even if compressed formatting already
+exists elsewhere in the file.
+
+If a touched section contains clearly compressed or poorly formatted code,
+reformat that section when it can be done safely without changing behavior.
+
 ## Tests and documentation
 
 - Behavior changes require deterministic tests at the appropriate level.
