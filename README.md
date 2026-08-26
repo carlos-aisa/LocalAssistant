@@ -195,6 +195,25 @@ al proveedor y se denegará antes de ejecutarse. Esta implementación admite un 
 principal configurado y no sustituye gestión de usuarios, HTTPS ni propiedad de
 conversaciones.
 
+### Búsqueda documental por metadatos
+
+`GET /api/documents` busca exclusivamente bajo la raíz documental configurada. Exige
+una API key válida con el scope `documents.search`; no acepta rutas absolutas y nunca
+devuelve contenido de archivos. Los filtros opcionales son `name`, `extension`,
+`relativePath`, `modifiedAfterUtc`, `modifiedBeforeUtc` y `limit` (máximo 100).
+
+```powershell
+$env:LocalAssistant__Identity__Scopes__0 = "documents.search"
+$headers = @{ "X-LocalAssistant-Api-Key" = $apiKey }
+Invoke-RestMethod -Method Get `
+  -Uri "http://localhost:5100/api/documents?extension=.txt&limit=20" `
+  -Headers $headers
+```
+
+La respuesta incluye identificador opaco, nombre, extensión, ruta relativa, tamaño y
+fecha de modificación. Leer el contenido de un archivo sigue siendo una capacidad
+distinta y no está implementado.
+
 ### Escenario 1: respuesta directa
 
 En otra terminal de PowerShell:

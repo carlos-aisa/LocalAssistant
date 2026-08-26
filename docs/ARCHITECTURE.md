@@ -313,10 +313,11 @@ explora ni lee la carpeta. Añadir otra carpeta requerirá una capacidad y
 configuración explícitas. Discos completos, perfil entero, `AppData`, directorios
 del sistema y repositorios no son fuentes implícitas.
 
-El LLM no recibirá una herramienta genérica de archivos ni producirá comandos. El
-orquestador expondrá operaciones estructuradas de descubrimiento y lectura a través
-de una herramienta local, mientras un servicio documental impondrá las raíces
-permitidas independientemente de los argumentos del modelo.
+El LLM no recibe una herramienta genérica de archivos ni produce comandos. La API
+expone actualmente `GET /api/documents` para descubrimiento explícito por metadatos,
+protegido por el scope `documents.search`. `FileSystemDocumentSearch` resuelve solo
+rutas relativas bajo `ILocalDocumentRoot`, omite enlaces y no devuelve contenido ni
+rutas absolutas. Una futura lectura seguirá siendo una capacidad separada.
 
 ```mermaid
 flowchart LR
@@ -326,12 +327,11 @@ flowchart LR
     Sources --> Documents[Documentos del usuario]
 ```
 
-Descubrir y leer serán capacidades diferentes. El primer vertical slice recorrerá
-directamente la fuente permitida y buscará nombre, extensión, ruta relativa, fechas
-y metadatos básicos sin índice persistente. Una búsqueda podrá devolver referencias
-controladas por el servicio sin abrir el contenido completo. Leer requerirá una
-selección explícita y validará de nuevo que el destino resuelto sigue dentro de una
-raíz permitida.
+Descubrir y leer son capacidades diferentes. El primer vertical slice recorre la
+fuente permitida y busca nombre, extensión, ruta relativa, fechas y metadatos básicos
+sin índice persistente. Devuelve referencias controladas sin abrir el contenido.
+Leer requerirá una selección explícita y validará de nuevo que el destino resuelto
+sigue dentro de una raíz permitida.
 
 La extracción textual llegará después para formatos comunes seleccionados. `.txt`,
 `.md`, `.pdf` y `.docx` son candidatos, no una lista comprometida. Tipo, tamaño y

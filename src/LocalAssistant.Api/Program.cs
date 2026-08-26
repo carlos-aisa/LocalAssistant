@@ -25,6 +25,7 @@ var builder = WebApplication.CreateBuilder(bootstrapRequested ? [] : args);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ISystemDocumentsPathProvider, SystemDocumentsPathProvider>();
 builder.Services.AddSingleton<ILocalDocumentRoot, ConfiguredLocalDocumentRoot>();
+builder.Services.AddSingleton<ILocalDocumentSearch, FileSystemDocumentSearch>();
 builder.Services.AddSingleton<InMemoryConversationStore>();
 builder.Services.AddSingleton<SqliteConversationStore>();
 builder.Services.AddSingleton<IConversationStore>(services =>
@@ -163,6 +164,7 @@ app.Use(async (context, next) =>
 });
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapConversationEndpoints();
+app.MapDocumentEndpoints();
 
 app.Run();
 
