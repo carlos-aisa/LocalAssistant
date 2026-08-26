@@ -24,6 +24,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+  /api/documents:
+    get:
+      operationId: searchDocuments
+      summary: Search the authorized local documents root by metadata only.
+      security:
+        - LocalApiKey: []
+      parameters:
+        - name: name
+          in: query
+          schema: { type: string }
+        - name: extension
+          in: query
+          description: File extension including the leading period.
+          schema: { type: string, example: .txt }
+        - name: relativePath
+          in: query
+          description: Directory path relative to the configured documents root.
+          schema: { type: string }
+        - name: modifiedAfterUtc
+          in: query
+          schema: { type: string, format: date-time }
+        - name: modifiedBeforeUtc
+          in: query
+          schema: { type: string, format: date-time }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Matching document metadata. File content and absolute paths are omitted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentSearchResponse"
+        "400":
+          description: One or more query parameters are invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ValidationProblem"
+        "401": { description: A local API key is required. }
+        "403": { description: The authenticated principal lacks the documents.search scope. }
   /api/conversations/messages:
     post:
       operationId: sendConversationMessage
@@ -147,6 +189,24 @@ components:
         status:
           type: string
           example: ok
+    DocumentSearchResponse:
+      type: object
+      required: [documents]
+      properties:
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentSearchResult"
+    DocumentSearchResult:
+      type: object
+      required: [id, name, extension, relativePath, sizeBytes, lastModifiedUtc]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        extension: { type: string }
+        relativePath: { type: string }
+        sizeBytes: { type: integer, format: int64, minimum: 0 }
+        lastModifiedUtc: { type: string, format: date-time }
     SendMessageRequest:
       type: object
       required: [message]

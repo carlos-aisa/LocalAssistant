@@ -150,11 +150,12 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
   resuelve la carpeta Documentos configurada por el sistema operativo o una ruta
   absoluta existente configurada, sin hardcodear usuario ni explorar discos, perfil
   completo, `AppData`, sistema o repositorios.
-- Implementar como primer vertical slice búsqueda directa por nombre, extensión,
-  ruta relativa y fechas o metadatos básicos, sin índice persistente si el corpus y
-  rendimiento no lo justifican.
-- Separar búsqueda de documentos y lectura de contenido como capacidades y permisos
-  distintos; localizar un archivo por metadatos no requerirá abrirlo completo.
+- [x] Implementar como primer vertical slice búsqueda directa por nombre, extensión,
+  ruta relativa y fechas o metadatos básicos, sin índice persistente. Requiere el
+  scope `documents.search`, limita resultados y no devuelve contenido ni rutas
+  absolutas.
+- [x] Separar búsqueda de documentos y lectura de contenido como capacidades y
+  permisos distintos; localizar un archivo por metadatos no requiere abrirlo completo.
 - Añadir después lectura explícita de un documento seleccionado y extracción textual
   limitada a formatos soportados, tamaños y recursos acotados. Los formatos no
   admitidos fallarán de forma explícita.

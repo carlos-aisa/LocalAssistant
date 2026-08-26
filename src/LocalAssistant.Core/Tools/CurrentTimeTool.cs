@@ -15,17 +15,19 @@ public sealed class CurrentTimeTool : ITool
 
     private readonly TimeProvider _timeProvider;
 
+    private static readonly ToolMetadata _toolMetadata = 
+        new(ToolName,
+            "Returns the current UTC date and time.",
+            ToolRiskProfile.PublicLocalRead);
+
+    public ToolDefinition Definition {get;} =  new(
+                _toolMetadata,
+                EmptyObjectSchema);
+
     public CurrentTimeTool(TimeProvider timeProvider)
     {
         _timeProvider = timeProvider;
     }
-
-    public ToolDefinition Definition { get; } = new(
-        new ToolMetadata(
-            ToolName,
-            "Returns the current UTC date and time.",
-            ToolRiskProfile.PublicLocalRead),
-        EmptyObjectSchema);
 
     public ValueTask<ToolExecutionResult> ExecuteAsync(
         JsonElement arguments,
