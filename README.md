@@ -127,8 +127,9 @@ del sistema operativo.
 ### Raíz documental local
 
 La primera fuente documental permitida es la carpeta Documentos resuelta por el
-sistema operativo. No se explora ni se lee durante el arranque, y todavía no está
-expuesta mediante una herramienta, endpoint o búsqueda.
+sistema operativo. No se explora ni se lee durante el arranque. Solo los endpoints
+documentales explícitos pueden buscar metadatos o leer contenido limitado bajo esta
+raíz.
 
 Para usar una carpeta distinta, configura una ruta absoluta existente antes de
 arrancar la API:
@@ -138,8 +139,8 @@ $env:LocalAssistant__DocumentSources__DocumentsRoot = "C:\LocalAssistant\Documen
 ```
 
 No se aceptan rutas relativas. Configurar esta raíz no concede acceso a discos,
-`AppData`, repositorios ni otras carpetas; una capacidad futura deberá usarla de
-forma explícita.
+`AppData`, repositorios ni otras carpetas; cada capacidad documental la usa de forma
+explícita.
 
 ### Bootstrap de instalación y identidad local
 
@@ -212,7 +213,18 @@ Invoke-RestMethod -Method Get `
 
 La respuesta incluye identificador opaco, nombre, extensión, ruta relativa, tamaño y
 fecha de modificación. Leer el contenido de un archivo sigue siendo una capacidad
-distinta y no está implementado.
+distinta y requiere su propio permiso.
+
+### Lectura documental limitada
+
+`GET /api/documents/{id}/content` lee un documento seleccionado por el identificador
+opaco devuelto por la búsqueda. Exige el scope `documents.read`, incluso cuando el
+principal ya tiene `documents.search`. La referencia caduca en quince minutos y no
+admite rutas proporcionadas por el cliente.
+
+Solo admite `.txt`, `.md`, `.json` y `.csv`, con un tamaño máximo de 1 MiB. Formatos
+no admitidos o archivos mayores producen un error explícito; no hay truncado
+silencioso. Esta API todavía no entrega el contenido al LLM ni crea un índice.
 
 ### Escenario 1: respuesta directa
 

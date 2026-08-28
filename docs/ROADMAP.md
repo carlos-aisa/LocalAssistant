@@ -156,9 +156,10 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
   absolutas.
 - [x] Separar búsqueda de documentos y lectura de contenido como capacidades y
   permisos distintos; localizar un archivo por metadatos no requiere abrirlo completo.
-- Añadir después lectura explícita de un documento seleccionado y extracción textual
-  limitada a formatos soportados, tamaños y recursos acotados. Los formatos no
-  admitidos fallarán de forma explícita.
+- [x] Añadir lectura explícita de un documento seleccionado y extracción textual
+  limitada a `.txt`, `.md`, `.json` y `.csv`, con el scope `documents.read`, referencia
+  protegida de quince minutos y límite de 1 MiB. Los formatos no admitidos y archivos
+  mayores fallan de forma explícita.
 - Incorporar búsqueda textual en contenido solo cuando aporte valor y evaluar índice
   local, embeddings locales y búsqueda semántica después de medir corpus, latencia y
   calidad; no introducir todavía base vectorial, watcher ni worker.

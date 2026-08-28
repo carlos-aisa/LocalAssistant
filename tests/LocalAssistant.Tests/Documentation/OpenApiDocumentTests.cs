@@ -16,6 +16,7 @@ public sealed class OpenApiDocumentTests
         Assert.Equal("0.1.0", document.Info.Version);
         Assert.Contains("/health", document.Paths.Keys);
         Assert.Contains("/api/documents", document.Paths.Keys);
+        Assert.Contains("/api/documents/{id}/content", document.Paths.Keys);
         Assert.Contains("/api/conversations/messages", document.Paths.Keys);
     }
 }

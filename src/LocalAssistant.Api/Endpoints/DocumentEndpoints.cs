@@ -7,6 +7,7 @@ namespace LocalAssistant.Api.Endpoints;
 public static class DocumentEndpoints
 {
     private const string SearchScope = "documents.search";
+    private const string ReadScope = "documents.read";
 
     public static IEndpointRouteBuilder MapDocumentEndpoints(
         this IEndpointRouteBuilder endpoints)
@@ -14,6 +15,9 @@ public static class DocumentEndpoints
         endpoints.MapGet("/api/documents", SearchAsync)
             .WithName("SearchDocuments")
             .WithSummary("Searches the authorized local documents root by metadata only.");
+        endpoints.MapGet("/api/documents/{id}/content", ReadContentAsync)
+            .WithName("ReadDocumentContent")
+            .WithSummary("Reads bounded text content from an authorized local document.");
 
         return endpoints;
     }
@@ -57,5 +61,41 @@ public static class DocumentEndpoints
 
         var results = await documentSearch.SearchAsync(query, cancellationToken);
         return Results.Ok(DocumentSearchResponse.FromResults(results));
+    }
+
+    private static async Task<IResult> ReadContentAsync(
+        string id,
+        HttpContext httpContext,
+        ILocalDocumentContentReader documentContentReader,
+        CancellationToken cancellationToken)
+    {
+        if (httpContext.User.Identity?.IsAuthenticated != true)
+        {
+            return Results.Unauthorized();
+        }
+
+        if (!httpContext.User.HasClaim(
+                LocalApiKeyAuthenticationDefaults.ScopeClaimType,
+                ReadScope))
+        {
+            return Results.Forbid();
+        }
+
+        var outcome = await documentContentReader.ReadAsync(id, cancellationToken);
+        if (outcome.Document is not null)
+        {
+            return Results.Ok(DocumentContentResponse.FromDocument(outcome.Document));
+        }
+
+        return outcome.Failure switch
+        {
+            DocumentContentReadFailure.UnsupportedFormat => Results.Problem(
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                title: "The document format is not supported."),
+            DocumentContentReadFailure.TooLarge => Results.Problem(
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                title: "The document exceeds the maximum supported size."),
+            _ => Results.NotFound(),
+        };
     }
 }

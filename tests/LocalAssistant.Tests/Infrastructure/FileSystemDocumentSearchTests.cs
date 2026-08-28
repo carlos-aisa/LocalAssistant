@@ -13,7 +13,7 @@ public sealed class FileSystemDocumentSearchTests
         File.WriteAllText(Path.Combine(directory.Path, "budget.txt"), "private content");
         File.WriteAllText(Path.Combine(directory.Path, "budget.md"), "private content");
         File.WriteAllText(Path.Combine(nestedDirectory.FullName, "budget.txt"), "private content");
-        var search = new FileSystemDocumentSearch(new StaticLocalDocumentRoot(directory.Path));
+        var search = CreateSearch(directory.Path);
 
         var results = await search.SearchAsync(
             new DocumentSearchQuery(name: "budget", extension: ".txt", relativePath: "nested"),
@@ -31,7 +31,7 @@ public sealed class FileSystemDocumentSearchTests
     public async Task DoesNotSearchOutsideTheConfiguredRoot()
     {
         using var directory = new TemporaryDirectory();
-        var search = new FileSystemDocumentSearch(new StaticLocalDocumentRoot(directory.Path));
+        var search = CreateSearch(directory.Path);
 
         var results = await search.SearchAsync(
             new DocumentSearchQuery(relativePath: ".."),
@@ -46,7 +46,7 @@ public sealed class FileSystemDocumentSearchTests
         using var directory = new TemporaryDirectory();
         File.WriteAllText(Path.Combine(directory.Path, "first.txt"), "one");
         File.WriteAllText(Path.Combine(directory.Path, "second.txt"), "two");
-        var search = new FileSystemDocumentSearch(new StaticLocalDocumentRoot(directory.Path));
+        var search = CreateSearch(directory.Path);
 
         var results = await search.SearchAsync(
             new DocumentSearchQuery(extension: ".txt", limit: 1),
@@ -58,6 +58,27 @@ public sealed class FileSystemDocumentSearchTests
     private sealed class StaticLocalDocumentRoot(string path) : ILocalDocumentRoot
     {
         public string Path { get; } = path;
+    }
+
+    private static FileSystemDocumentSearch CreateSearch(string documentsRoot)
+    {
+        return new FileSystemDocumentSearch(
+            new StaticLocalDocumentRoot(documentsRoot),
+            new TestDocumentReferenceProtector());
+    }
+
+    private sealed class TestDocumentReferenceProtector : IDocumentReferenceProtector
+    {
+        public string Protect(string relativePath)
+        {
+            return relativePath;
+        }
+
+        public bool TryUnprotect(string documentReference, out string relativePath)
+        {
+            relativePath = documentReference;
+            return true;
+        }
     }
 
     private sealed class TemporaryDirectory : IDisposable

@@ -82,6 +82,103 @@ public sealed class DocumentEndpointTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Fact]
+    public async Task SearchScopeAloneCannotReadDocumentContent()
+    {
+        using var directory = new TemporaryDirectory();
+        using var factory = CreateFactory(directory.Path, ["documents.search"]);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(LocalApiKeyAuthenticationDefaults.HeaderName, ApiKey);
+
+        using var response = await client.GetAsync(
+            "/api/documents/invalid/content",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task AnonymousClientCannotReadDocumentContent()
+    {
+        using var directory = new TemporaryDirectory();
+        using var factory = CreateFactory(directory.Path, ["documents.read"]);
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/api/documents/invalid/content",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task AuthorizedClientCanReadContentUsingAReferenceFromSearch()
+    {
+        using var directory = new TemporaryDirectory();
+        File.WriteAllText(Path.Combine(directory.Path, "budget.txt"), "private content");
+        using var factory = CreateFactory(directory.Path, ["documents.search", "documents.read"]);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(LocalApiKeyAuthenticationDefaults.HeaderName, ApiKey);
+
+        var documentReference = await SearchForDocumentReferenceAsync(client);
+        using var response = await client.GetAsync(
+            $"/api/documents/{Uri.EscapeDataString(documentReference)}/content",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = await JsonDocument.ParseAsync(
+            await response.Content.ReadAsStreamAsync(CancellationToken.None),
+            cancellationToken: CancellationToken.None);
+        Assert.Equal("budget.txt", body.RootElement.GetProperty("name").GetString());
+        Assert.Equal("private content", body.RootElement.GetProperty("text").GetString());
+        Assert.False(body.RootElement.TryGetProperty("id", out _));
+    }
+
+    [Fact]
+    public async Task AlteredDocumentReferenceCannotBeRead()
+    {
+        using var directory = new TemporaryDirectory();
+        File.WriteAllText(Path.Combine(directory.Path, "budget.txt"), "private content");
+        using var factory = CreateFactory(directory.Path, ["documents.search", "documents.read"]);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(LocalApiKeyAuthenticationDefaults.HeaderName, ApiKey);
+
+        var documentReference = await SearchForDocumentReferenceAsync(client);
+        using var response = await client.GetAsync(
+            $"/api/documents/{Uri.EscapeDataString(documentReference)}x/content",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UnsupportedDocumentFormatReturnsUnprocessableContent()
+    {
+        using var directory = new TemporaryDirectory();
+        File.WriteAllText(Path.Combine(directory.Path, "budget.pdf"), "not a real PDF");
+        using var factory = CreateFactory(directory.Path, ["documents.search", "documents.read"]);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(LocalApiKeyAuthenticationDefaults.HeaderName, ApiKey);
+
+        var documentReference = await SearchForDocumentReferenceAsync(client);
+        using var response = await client.GetAsync(
+            $"/api/documents/{Uri.EscapeDataString(documentReference)}/content",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+    }
+
+    private static async Task<string> SearchForDocumentReferenceAsync(HttpClient client)
+    {
+        using var response = await client.GetAsync("/api/documents", CancellationToken.None);
+        response.EnsureSuccessStatusCode();
+        using var body = await JsonDocument.ParseAsync(
+            await response.Content.ReadAsStreamAsync(CancellationToken.None),
+            cancellationToken: CancellationToken.None);
+        var document = Assert.Single(body.RootElement.GetProperty("documents").EnumerateArray());
+        return Assert.IsType<string>(document.GetProperty("id").GetString());
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(
         string documentsRoot,
         string[] scopes)

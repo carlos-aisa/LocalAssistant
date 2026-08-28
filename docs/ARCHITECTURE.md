@@ -314,10 +314,12 @@ configuración explícitas. Discos completos, perfil entero, `AppData`, director
 del sistema y repositorios no son fuentes implícitas.
 
 El LLM no recibe una herramienta genérica de archivos ni produce comandos. La API
-expone actualmente `GET /api/documents` para descubrimiento explícito por metadatos,
-protegido por el scope `documents.search`. `FileSystemDocumentSearch` resuelve solo
-rutas relativas bajo `ILocalDocumentRoot`, omite enlaces y no devuelve contenido ni
-rutas absolutas. Una futura lectura seguirá siendo una capacidad separada.
+expone `GET /api/documents` para descubrimiento explícito por metadatos, protegido
+por el scope `documents.search`, y `GET /api/documents/{id}/content` para lectura
+explícita, protegida por `documents.read`. La búsqueda devuelve una referencia opaca
+protegida durante quince minutos. `FileSystemDocumentSearch` y
+`FileSystemDocumentContentReader` resuelven solo rutas relativas bajo
+`ILocalDocumentRoot`, omiten enlaces y revalidan el destino antes de abrirlo.
 
 ```mermaid
 flowchart LR
@@ -329,9 +331,10 @@ flowchart LR
 
 Descubrir y leer son capacidades diferentes. El primer vertical slice recorre la
 fuente permitida y busca nombre, extensión, ruta relativa, fechas y metadatos básicos
-sin índice persistente. Devuelve referencias controladas sin abrir el contenido.
-Leer requerirá una selección explícita y validará de nuevo que el destino resuelto
-sigue dentro de una raíz permitida.
+sin índice persistente. Devuelve referencias controladas sin abrir el contenido. La
+lectura inicial exige seleccionar una referencia válida, vuelve a validar que el
+destino resuelto sigue dentro de la raíz permitida y limita a 1 MiB los formatos de
+texto `.txt`, `.md`, `.json` y `.csv`.
 
 La extracción textual llegará después para formatos comunes seleccionados. `.txt`,
 `.md`, `.pdf` y `.docx` son candidatos, no una lista comprometida. Tipo, tamaño y
