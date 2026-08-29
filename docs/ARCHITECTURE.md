@@ -118,6 +118,13 @@ principal autenticado y no exponen dicho propietario. La persistencia desactivad
 responde `503`; las notas no se registran como herramientas ni se incorporan al
 orquestador, contexto del modelo o proveedores.
 
+El archivo de identidad creado por bootstrap usa el esquema 2 e incluye de forma
+explícita los scopes `memory.personal.read` y `memory.personal.write`. Al cargar un
+archivo válido de esquema 1, `FileInstallationIdentityStore` conserva identidad, hash
+y fecha, añade solo esos scopes y publica el esquema 2 de forma atómica. Esto no da a
+`installation.owner` significado de comodín ni amplía documentos, recordatorios o
+capacidades futuras.
+
 Las decisiones se recogen en [ADR 0017](adr/0017-combine-roles-capabilities-context-and-risk-for-authorization.md),
 [ADR 0018](adr/0018-treat-voice-as-context-not-strong-authentication.md),
 [ADR 0019](adr/0019-authorize-memory-before-retrieval.md) y

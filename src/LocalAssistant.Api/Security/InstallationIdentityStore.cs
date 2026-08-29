@@ -36,7 +36,10 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
 {
     private const string StateFileName = "installation-identity.json";
     private const string OwnerScope = "installation.owner";
-    private const int CurrentSchemaVersion = 1;
+    private const string PersonalMemoryReadScope = "memory.personal.read";
+    private const string PersonalMemoryWriteScope = "memory.personal.write";
+    private const int LegacySchemaVersion = 1;
+    private const int CurrentSchemaVersion = 2;
     private readonly InstallationIdentityOptions _options;
     private readonly TimeProvider _clock;
 
@@ -57,17 +60,32 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
             return null;
         }
 
-        await using var stream = new FileStream(
+        StoredInstallationIdentity? state;
+        await using (var stream = new FileStream(
             stateFilePath,
             FileMode.Open,
             FileAccess.Read,
-            FileShare.Read,
+            FileShare.Read | FileShare.Delete,
             bufferSize: 4096,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
-        var state = await JsonSerializer.DeserializeAsync<StoredInstallationIdentity>(
-            stream,
-            cancellationToken: cancellationToken);
-        return Validate(state);
+            FileOptions.Asynchronous | FileOptions.SequentialScan))
+        {
+            state = await JsonSerializer.DeserializeAsync<StoredInstallationIdentity>(
+                stream,
+                cancellationToken: cancellationToken);
+        }
+
+        var validatedState = Validate(state);
+        if (validatedState.SchemaVersion == LegacySchemaVersion)
+        {
+            validatedState = MigrateLegacyState(validatedState);
+            await WriteStateAsync(
+                stateFilePath,
+                validatedState,
+                overwrite: true,
+                cancellationToken);
+        }
+
+        return ToIdentity(validatedState);
     }
 
     public async ValueTask<InstallationBootstrapResult> BootstrapAsync(CancellationToken cancellationToken)
@@ -90,31 +108,21 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
             Guid.NewGuid().ToString("N"),
             ownerPrincipalId,
             Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey))),
-            [OwnerScope],
+            OwnerScopes,
             _clock.GetUtcNow());
-        var temporaryFilePath = Path.Combine(
-            stateDirectory,
-            $".{StateFileName}.{Guid.NewGuid():N}.tmp");
 
         try
         {
-            await File.WriteAllBytesAsync(
-                temporaryFilePath,
-                JsonSerializer.SerializeToUtf8Bytes(state, SerializerOptions),
+            await WriteStateAsync(
+                stateFilePath,
+                state,
+                overwrite: false,
                 cancellationToken);
-            File.Move(temporaryFilePath, stateFilePath, overwrite: false);
             return new(InstallationBootstrapStatus.Created, ownerPrincipalId, apiKey);
         }
         catch (IOException) when (File.Exists(stateFilePath))
         {
             return new(InstallationBootstrapStatus.AlreadyInitialized, null, null);
-        }
-        finally
-        {
-            if (File.Exists(temporaryFilePath))
-            {
-                File.Delete(temporaryFilePath);
-            }
         }
     }
 
@@ -136,9 +144,10 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
         return Path.Combine(Path.GetFullPath(stateDirectory), StateFileName);
     }
 
-    private static InstallationIdentity Validate(StoredInstallationIdentity? state)
+    private static StoredInstallationIdentity Validate(StoredInstallationIdentity? state)
     {
-        if (state is null || state.SchemaVersion != CurrentSchemaVersion ||
+        if (state is null ||
+            state.SchemaVersion is not (LegacySchemaVersion or CurrentSchemaVersion) ||
             !Guid.TryParseExact(state.InstallationId, "N", out _) ||
             !IsValidPrincipalId(state.OwnerPrincipalId) ||
             !IsSha256Hash(state.ApiKeySha256) ||
@@ -150,11 +159,53 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
             throw new InvalidOperationException("The installation identity state is invalid.");
         }
 
-        return new(
-            state.InstallationId,
-            state.OwnerPrincipalId,
-            state.ApiKeySha256,
-            new HashSet<string>(state.GrantedScopes, StringComparer.Ordinal));
+        return state;
+    }
+
+    private static StoredInstallationIdentity MigrateLegacyState(
+        StoredInstallationIdentity state) => state with
+        {
+            SchemaVersion = CurrentSchemaVersion,
+            GrantedScopes = state.GrantedScopes
+            .Append(PersonalMemoryReadScope)
+            .Append(PersonalMemoryWriteScope)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray(),
+        };
+
+    private static InstallationIdentity ToIdentity(StoredInstallationIdentity state) => new(
+        state.InstallationId,
+        state.OwnerPrincipalId,
+        state.ApiKeySha256,
+        new HashSet<string>(state.GrantedScopes, StringComparer.Ordinal));
+
+    private static async Task WriteStateAsync(
+        string stateFilePath,
+        StoredInstallationIdentity state,
+        bool overwrite,
+        CancellationToken cancellationToken)
+    {
+        var stateDirectory = Path.GetDirectoryName(stateFilePath)
+            ?? throw new InvalidOperationException("The installation state directory is invalid.");
+        var temporaryFilePath = Path.Combine(
+            stateDirectory,
+            $".{StateFileName}.{Guid.NewGuid():N}.tmp");
+
+        try
+        {
+            await File.WriteAllBytesAsync(
+                temporaryFilePath,
+                JsonSerializer.SerializeToUtf8Bytes(state, SerializerOptions),
+                cancellationToken);
+            File.Move(temporaryFilePath, stateFilePath, overwrite);
+        }
+        finally
+        {
+            if (File.Exists(temporaryFilePath))
+            {
+                File.Delete(temporaryFilePath);
+            }
+        }
     }
 
     private static bool IsValidPrincipalId(string? value) =>
@@ -173,6 +224,13 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
     }
 
     private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = true };
+
+    private static readonly string[] OwnerScopes =
+    [
+        OwnerScope,
+        PersonalMemoryReadScope,
+        PersonalMemoryWriteScope,
+    ];
 
     private sealed record StoredInstallationIdentity(
         int SchemaVersion,
