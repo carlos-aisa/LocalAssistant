@@ -121,6 +121,15 @@ selectivo transaccional. Las conversaciones anónimas siguen fuera de SQLite. Ba
 y restauraciones conservan la misma propiedad, retención y requisitos de protección;
 no constituyen una excepción de acceso.
 
+Las notas de memoria personal son un recurso SQLite separado de las conversaciones,
+pero usan la misma activación explícita y retención configurada. Solo un principal
+autenticado con `memory.personal.read` puede listarlas, y solo uno con
+`memory.personal.write` puede crearlas o borrar las propias. Las consultas y borrados
+se condicionan también por propietario; una nota ajena se comporta como inexistente.
+No se registra, recupera para el modelo, entrega a herramientas ni transmite a un
+proveedor. SQLite y sus backups siguen sin aportar cifrado propio y deben protegerse
+como datos privados del principal.
+
 ## Identidad, autorización y acceso de invitados futuros
 
 El bootstrap actual crea un único propietario desde una consola local y se invalida

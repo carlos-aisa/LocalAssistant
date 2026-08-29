@@ -108,6 +108,16 @@ protección en reposo se recogen en el [ADR 0024](adr/0024-use-sqlite-for-local-
 El ciclo de vida, retención y borrado selectivo de estos datos se definen en el
 [ADR 0025](adr/0025-define-private-storage-lifecycle.md).
 
+La primera memoria personal persistente es una nota de texto creada expresamente por
+el cliente. `IPersonalMemoryStore` mantiene el contrato en el núcleo y
+`SqlitePersonalMemoryStore` la guarda en la tabla `PersonalMemories`, independiente de
+las conversaciones aunque comparta archivo SQLite y retención configurada. Los
+endpoints `POST`, `GET` y `DELETE /api/memories/personal` aplican los scopes separados
+`memory.personal.write` y `memory.personal.read`, obtienen la propiedad desde el
+principal autenticado y no exponen dicho propietario. La persistencia desactivada
+responde `503`; las notas no se registran como herramientas ni se incorporan al
+orquestador, contexto del modelo o proveedores.
+
 Las decisiones se recogen en [ADR 0017](adr/0017-combine-roles-capabilities-context-and-risk-for-authorization.md),
 [ADR 0018](adr/0018-treat-voice-as-context-not-strong-authentication.md),
 [ADR 0019](adr/0019-authorize-memory-before-retrieval.md) y

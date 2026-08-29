@@ -129,6 +129,12 @@ the branch diff. Treat it as a complement to tests: it must inspect scope drift,
 trust boundaries, concurrency, contracts, documentation staleness, and other
 structural risks that tests may not reveal.
 
+For this repository, the shared review checklist lives at
+`D:\Programacion\gstack\review\checklist.md` when the repository does not vendor
+gstack under `.agents/skills/gstack`. A missing vendored copy is not a reason to
+skip the review; use that shared checklist and report if neither location is
+available.
+
 - Apply clear mechanical corrections found by the review, then repeat the affected
   verification commands before committing and publishing.
 - Escalate findings that change public behavior, authorization, security policy,

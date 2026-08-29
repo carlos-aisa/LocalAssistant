@@ -147,6 +147,15 @@ No se aceptan rutas relativas. Configurar esta raíz no concede acceso a discos,
 `AppData`, repositorios ni otras carpetas; cada capacidad documental la usa de forma
 explícita.
 
+### Notas de memoria personal
+
+La misma configuración de persistencia privada habilita las notas personales y su
+retención. Una nota solo puede crearse o borrarse con `memory.personal.write`, y solo
+puede listarse con `memory.personal.read`. Cada nota pertenece al principal
+autenticado, no se incorpora al contexto de conversación ni se transmite a un
+proveedor. El archivo SQLite y sus copias de seguridad siguen siendo datos privados y
+deben protegerse mediante permisos y controles del sistema operativo.
+
 ### Bootstrap de instalación y identidad local
 
 Para inicializar una instalación local con un único propietario, ejecuta este comando
