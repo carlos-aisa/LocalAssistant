@@ -1,5 +1,6 @@
 using LocalAssistant.Core.Conversations;
 using LocalAssistant.Core.LanguageModels;
+using LocalAssistant.Core.Profiles;
 using LocalAssistant.Core.Security.ToolRisk;
 using LocalAssistant.Core.Tools;
 using Microsoft.Extensions.Logging;
@@ -11,6 +12,7 @@ namespace LocalAssistant.Core.Orchestration;
 public sealed class ConversationOrchestrator : IConversationOrchestrator
 {
     private readonly IConversationStore _store;
+    private readonly IAssistantProfileStore _profiles;
     private readonly IToolRegistry _tools;
     private readonly IToolRiskPolicy _toolRiskPolicy;
     private readonly IToolPolicyContextAccessor _toolPolicyContextAccessor;
@@ -22,6 +24,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
     private readonly ILogger<ConversationOrchestrator> _logger;
 
     public ConversationOrchestrator(IConversationStore store,
+                                    IAssistantProfileStore profiles,
                                     IToolRegistry tools,
                                     IToolRiskPolicy toolRiskPolicy,
                                     IToolPolicyContextAccessor toolPolicyContextAccessor,
@@ -33,6 +36,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
                                     ILogger<ConversationOrchestrator> logger)
     {
         _store = store;
+        _profiles = profiles;
         _tools = tools;
         _toolRiskPolicy = toolRiskPolicy;
         _toolPolicyContextAccessor = toolPolicyContextAccessor;
@@ -180,7 +184,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeout.CancelAfter(_options.ProviderTimeout);
                 response = await provider.GetResponseAsync(new(id,
-                                                              await _store.GetMessagesAsync(id, ct),
+                                                              await GetProviderMessagesAsync(id, ct),
                                                               GetAvailableDefinitions(policyContext)),
                                                           timeout.Token);
             }
@@ -219,6 +223,22 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
             }
         }
         return Result(id, null, traces, _options.MaxIterations, providerTime, toolsTime, new("iteration_limit_reached", "The maximum number of orchestration iterations was reached."));
+    }
+
+    private async ValueTask<IReadOnlyList<ConversationMessage>> GetProviderMessagesAsync(
+        Guid conversationId,
+        CancellationToken cancellationToken)
+    {
+        var profile = await _profiles.GetAsync(cancellationToken);
+        var history = await _store.GetMessagesAsync(conversationId, cancellationToken);
+        var messages = new List<ConversationMessage>(history.Count + 1)
+        {
+            new(
+                ConversationRole.System,
+                $"The assistant's configured display name for this installation is '{profile.DisplayName}'."),
+        };
+        messages.AddRange(history);
+        return messages;
     }
 
     private async Task<(OrchestrationError? Error, ToolConfirmationRequest? Confirmation)> HandleAsync(Guid id,

@@ -2,6 +2,7 @@ using System.Text.Json;
 using LocalAssistant.Core.Conversations;
 using LocalAssistant.Core.LanguageModels;
 using LocalAssistant.Core.Orchestration;
+using LocalAssistant.Core.Profiles;
 using LocalAssistant.Core.Security.ToolRisk;
 using LocalAssistant.Core.Tools;
 using LocalAssistant.Tests.TestDoubles;
@@ -43,6 +44,142 @@ public sealed class ConversationOrchestratorTests
             messages,
             message => Assert.Equal(ConversationRole.User, message.Role),
             message => Assert.Equal(ConversationRole.Assistant, message.Role));
+    }
+
+    [Fact]
+    public async Task SendsTheCurrentAssistantProfileAsNonPersistedSystemContextOnEveryProviderCall()
+    {
+        var profiles = new MutableAssistantProfileStore("Jarvis");
+        var provider = new ScriptedLanguageProvider(
+        [
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.RequestTools(
+                new ToolCall("call-1", CurrentTimeTool.ToolName, EmptyArguments()))),
+            request =>
+            {
+                var systemMessage = Assert.Single(
+                    request.Messages,
+                    message => message.Role == ConversationRole.System);
+                Assert.Contains("Jarvis", systemMessage.Content, StringComparison.Ordinal);
+                return LanguageProviderResponse.Final("It is 14:30 UTC.");
+            },
+        ]);
+        var store = new InMemoryConversationStore();
+        var sut = CreateOrchestrator(store: store, profiles: profiles);
+
+        var result = await sut.ProcessAsync(
+            new ConversationTurnRequest("What time is it?"),
+            provider,
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var storedMessages = await store.GetMessagesAsync(result.ConversationId, CancellationToken.None);
+        Assert.DoesNotContain(storedMessages, message => message.Role == ConversationRole.System);
+    }
+
+    [Fact]
+    public async Task RefreshesTheAssistantProfileAfterAnApprovedNameChange()
+    {
+        var profiles = new MutableAssistantProfileStore(AssistantProfile.DefaultDisplayName);
+        var policyContext = new ToolPolicyContext(
+            "owner",
+            new HashSet<string>(StringComparer.Ordinal) { "installation.owner" });
+        var toolCall = new ToolCall(
+            "set-name",
+            SetAssistantNameTool.ToolName,
+            JsonSerializer.SerializeToElement(new { displayName = "Jarvis" }));
+        var provider = new ScriptedLanguageProvider(
+        [
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.RequestTools(toolCall)),
+            request =>
+            {
+                var systemMessage = Assert.Single(
+                    request.Messages,
+                    message => message.Role == ConversationRole.System);
+                Assert.Contains("Jarvis", systemMessage.Content, StringComparison.Ordinal);
+                return LanguageProviderResponse.Final("My name is Jarvis.");
+            },
+        ]);
+        var sut = CreateOrchestrator(
+            tools: [new SetAssistantNameTool(profiles)],
+            toolPolicyContextAccessor: new MutableToolPolicyContextAccessor(policyContext),
+            profiles: profiles);
+
+        var pending = await sut.ProcessAsync(
+            new ConversationTurnRequest("Call yourself Jarvis."),
+            provider,
+            CancellationToken.None);
+        var completed = await sut.ResolveConfirmationAsync(
+            pending.ConversationId,
+            pending.Confirmation!.ConfirmationId,
+            approved: true,
+            provider,
+            CancellationToken.None);
+
+        Assert.True(completed.IsSuccess);
+        Assert.Equal("Jarvis", (await profiles.GetAsync(CancellationToken.None)).DisplayName);
+    }
+
+    [Fact]
+    public async Task RejectingAnAssistantNameChangeKeepsTheExistingProfile()
+    {
+        var profiles = new MutableAssistantProfileStore(AssistantProfile.DefaultDisplayName);
+        var policyContext = new ToolPolicyContext(
+            "owner",
+            new HashSet<string>(StringComparer.Ordinal) { "installation.owner" });
+        var toolCall = new ToolCall(
+            "set-name",
+            SetAssistantNameTool.ToolName,
+            JsonSerializer.SerializeToElement(new { displayName = "Jarvis" }));
+        var provider = new ScriptedLanguageProvider(
+        [
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.RequestTools(toolCall)),
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.Final("No change was made.")),
+        ]);
+        var sut = CreateOrchestrator(
+            tools: [new SetAssistantNameTool(profiles)],
+            toolPolicyContextAccessor: new MutableToolPolicyContextAccessor(policyContext),
+            profiles: profiles);
+
+        var pending = await sut.ProcessAsync(
+            new ConversationTurnRequest("Call yourself Jarvis."),
+            provider,
+            CancellationToken.None);
+        var result = await sut.ResolveConfirmationAsync(
+            pending.ConversationId,
+            pending.Confirmation!.ConfirmationId,
+            approved: false,
+            provider,
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(AssistantProfile.DefaultDisplayName, (await profiles.GetAsync(CancellationToken.None)).DisplayName);
+    }
+
+    [Fact]
+    public async Task DenyingAssistantNameScopeKeepsTheExistingProfile()
+    {
+        var profiles = new MutableAssistantProfileStore(AssistantProfile.DefaultDisplayName);
+        var toolCall = new ToolCall(
+            "set-name",
+            SetAssistantNameTool.ToolName,
+            JsonSerializer.SerializeToElement(new { displayName = "Jarvis" }));
+        var provider = new ScriptedLanguageProvider(
+        [
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.RequestTools(toolCall)),
+        ]);
+        var sut = CreateOrchestrator(
+            tools: [new SetAssistantNameTool(profiles)],
+            toolPolicyContextAccessor: new MutableToolPolicyContextAccessor(
+                new ToolPolicyContext("authenticated-user", new HashSet<string>(StringComparer.Ordinal))),
+            profiles: profiles);
+
+        var result = await sut.ProcessAsync(
+            new ConversationTurnRequest("Call yourself Jarvis."),
+            provider,
+            CancellationToken.None);
+
+        Assert.Equal("scope_not_granted", result.Error?.Code);
+        Assert.Equal(AssistantProfile.DefaultDisplayName, (await profiles.GetAsync(CancellationToken.None)).DisplayName);
     }
 
     [Fact]
@@ -96,6 +233,7 @@ public sealed class ConversationOrchestratorTests
             {
                 Assert.Collection(
                     request.Messages,
+                    message => Assert.Equal(ConversationRole.System, message.Role),
                     message => Assert.Equal("First message", message.Content),
                     message => Assert.Equal("First answer", message.Content),
                     message => Assert.Equal("Second message", message.Content));
@@ -736,13 +874,15 @@ public sealed class ConversationOrchestratorTests
         InMemoryConversationStore? store = null,
         OrchestrationOptions? options = null,
         IToolPolicyContextAccessor? toolPolicyContextAccessor = null,
-        IToolAuditSink? auditSink = null)
+        IToolAuditSink? auditSink = null,
+        IAssistantProfileStore? profiles = null)
     {
         timeProvider ??= new ManualTimeProvider(FixedUtcNow);
         tools ??= [new CurrentTimeTool(timeProvider)];
 
         return new ConversationOrchestrator(
             store ?? new InMemoryConversationStore(),
+            profiles ?? new MutableAssistantProfileStore(AssistantProfile.DefaultDisplayName),
             new ToolRegistry(tools),
             new DefaultToolRiskPolicy(),
             toolPolicyContextAccessor ?? new AnonymousToolPolicyContextAccessor(),
@@ -752,6 +892,26 @@ public sealed class ConversationOrchestratorTests
             timeProvider,
             Options.Create(options ?? new OrchestrationOptions()),
             NullLogger<ConversationOrchestrator>.Instance);
+    }
+
+    private sealed class MutableAssistantProfileStore(string displayName) : IAssistantProfileStore
+    {
+        private AssistantProfile _profile = AssistantProfile.Create(displayName);
+
+        public ValueTask<AssistantProfile> GetAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(_profile);
+        }
+
+        public ValueTask<AssistantProfile> SetDisplayNameAsync(
+            string displayName,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _profile = AssistantProfile.Create(displayName);
+            return ValueTask.FromResult(_profile);
+        }
     }
 
     private static ScriptedLanguageProvider ProviderRequesting(ToolCall call)

@@ -41,6 +41,13 @@ decisiones, confirmaciones y ejecuciones, pero tampoco sobrevive un reinicio ni 
 tratarse como registro productivo. La confirmación tampoco sustituye la autorización
 para leer un dato sensible.
 
+El perfil del asistente es configuración global separada del historial. La única
+herramienta actual que puede modificarlo, `set_assistant_name`, exige el scope
+`installation.owner` y confirmación exacta. El nombre se entrega al proveedor como
+mensaje de sistema transitorio y no se persiste en conversaciones ni notas. No existe
+un mecanismo que extraiga preferencias automáticamente desde texto de usuario ni un
+mapa genérico de valores que pueda modificar el modelo.
+
 ## Amenazas relevantes
 
 - **Prompt injection:** texto del usuario, documentos o conectores pueden intentar
@@ -106,14 +113,13 @@ en memoria; antes de persistir conversaciones privadas, memoria, documentos o tr
 deberá evolucionar a un concepto mínimo de `User` o `Principal`, propiedad y alcance
 de acceso durables.
 
-La persistencia privada no se considerará completa hasta definir retención, borrado
-selectivo, control de acceso, protección en reposo, auditoría y consecuencias de
-backup y restauración. La elección podrá combinar permisos del sistema operativo,
-cifrado de disco, capacidades de la base de datos o protección de aplicación según
-el almacenamiento y despliegue reales. El primer almacén elegido es SQLite local
-(ADR 0024), que no cifra datos por sí mismo: el adaptador persiste solo
-conversaciones autenticadas y debe tratar el archivo, sus backups y sus permisos
-como datos privados.
+La primera persistencia privada define retención, borrado selectivo, control de acceso
+y las consecuencias operativas de la protección en reposo, backups y restauración. El
+primer almacén elegido es SQLite local (ADR 0024), que no cifra datos por sí mismo. La
+[guía operativa](OPERATIONS.md) delimita los controles del despliegue: cuenta de
+ejecución, permisos de archivos, cifrado del volumen y custodia de las copias. La
+aplicación persiste solo conversaciones autenticadas y notas personales, y no crea
+ACLs, backups ni restauraciones automáticas.
 
 El ciclo de vida aprobado en el ADR 0025 clasifica las conversaciones autenticadas
 como datos personales del principal, con retención inicial de 30 días y borrado
@@ -132,7 +138,7 @@ autenticado con `memory.personal.read` puede listarlas, y solo uno con
 se condicionan también por propietario; una nota ajena se comporta como inexistente.
 No se registra, recupera para el modelo, entrega a herramientas ni transmite a un
 proveedor. SQLite y sus backups siguen sin aportar cifrado propio y deben protegerse
-como datos privados del principal.
+como datos privados del principal según la guía operativa.
 
 El bootstrap de instalación concede explícitamente `memory.personal.read` y
 `memory.personal.write` al propietario local para que pueda acceder a sus propias
