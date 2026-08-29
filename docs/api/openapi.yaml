@@ -130,6 +130,71 @@ paths:
         "400": { description: The content search query is invalid. }
         "401": { description: A local API key is required. }
         "403": { description: The authenticated principal lacks the documents.content.search scope. }
+  /api/memories/personal:
+    post:
+      operationId: createPersonalMemory
+      summary: Create an explicit personal memory note.
+      security:
+        - LocalApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePersonalMemoryRequest"
+      responses:
+        "201":
+          description: The personal memory note was created.
+          headers:
+            Location:
+              description: URI assigned to the created personal memory note.
+              schema: { type: string, format: uri-reference }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonalMemoryResponse"
+        "400": { description: The personal memory text is invalid. }
+        "401": { description: A local API key is required. }
+        "403": { description: The authenticated principal lacks the memory.personal.write scope. }
+        "503": { description: Personal memory persistence is disabled. }
+    get:
+      operationId: listPersonalMemories
+      summary: List the authenticated principal's active personal memory notes.
+      security:
+        - LocalApiKey: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Active personal memory notes owned by the authenticated principal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonalMemoryListResponse"
+        "400": { description: The list query is invalid. }
+        "401": { description: A local API key is required. }
+        "403": { description: The authenticated principal lacks the memory.personal.read scope. }
+        "503": { description: Personal memory persistence is disabled. }
+  /api/memories/personal/{memoryId}:
+    delete:
+      operationId: deletePersonalMemory
+      summary: Delete an explicit personal memory note owned by the authenticated principal.
+      security:
+        - LocalApiKey: []
+      parameters:
+        - name: memoryId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: The personal memory note was deleted. }
+        "400": { description: The personal memory identifier is invalid. }
+        "401": { description: A local API key is required. }
+        "403": { description: The authenticated principal lacks the memory.personal.write scope. }
+        "404": { description: The personal memory note was not found or is not owned by the caller. }
+        "503": { description: Personal memory persistence is disabled. }
   /api/conversations/messages:
     post:
       operationId: sendConversationMessage
@@ -253,6 +318,31 @@ components:
         status:
           type: string
           example: ok
+    CreatePersonalMemoryRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    PersonalMemoryResponse:
+      type: object
+      required: [id, text, createdAtUtc, modifiedAtUtc, expiresAtUtc]
+      properties:
+        id: { type: string, format: uuid }
+        text: { type: string }
+        createdAtUtc: { type: string, format: date-time }
+        modifiedAtUtc: { type: string, format: date-time }
+        expiresAtUtc: { type: string, format: date-time }
+    PersonalMemoryListResponse:
+      type: object
+      required: [memories]
+      properties:
+        memories:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonalMemoryResponse"
     DocumentSearchResponse:
       type: object
       required: [documents]

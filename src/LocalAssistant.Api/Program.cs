@@ -4,6 +4,7 @@ using LocalAssistant.Api.LanguageModels;
 using LocalAssistant.Api.Security;
 using LocalAssistant.Core.Conversations;
 using LocalAssistant.Core.Documents;
+using LocalAssistant.Core.Memory;
 using LocalAssistant.Core.Orchestration;
 using LocalAssistant.Core.Reminders;
 using LocalAssistant.Core.Security.ToolRisk;
@@ -11,6 +12,7 @@ using LocalAssistant.Core.Tools;
 using LocalAssistant.Infrastructure.Conversations;
 using LocalAssistant.Infrastructure.Documents;
 using LocalAssistant.Infrastructure.LanguageModels.Ollama;
+using LocalAssistant.Infrastructure.Memory;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
@@ -33,6 +35,7 @@ builder.Services.AddSingleton<ILocalDocumentContentSearch, FileSystemDocumentCon
 builder.Services.AddSingleton<ILocalDocumentContentReader, FileSystemDocumentContentReader>();
 builder.Services.AddSingleton<InMemoryConversationStore>();
 builder.Services.AddSingleton<SqliteConversationStore>();
+builder.Services.AddSingleton<IPersonalMemoryStore, SqlitePersonalMemoryStore>();
 builder.Services.AddSingleton<IConversationStore>(services =>
 {
     var options = services.GetRequiredService<IOptions<SqliteConversationStoreOptions>>().Value;
@@ -172,6 +175,7 @@ app.Use(async (context, next) =>
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapConversationEndpoints();
 app.MapDocumentEndpoints();
+app.MapPersonalMemoryEndpoints();
 
 app.Run();
 
