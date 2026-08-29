@@ -5,6 +5,7 @@ using LocalAssistant.Api.Security;
 using LocalAssistant.Core.Conversations;
 using LocalAssistant.Core.Documents;
 using LocalAssistant.Core.Orchestration;
+using LocalAssistant.Core.Reminders;
 using LocalAssistant.Core.Security.ToolRisk;
 using LocalAssistant.Core.Tools;
 using LocalAssistant.Infrastructure.Conversations;
@@ -43,6 +44,7 @@ builder.Services.AddSingleton<IConversationStore>(services =>
 builder.Services.AddSingleton<IToolConfirmationStore, InMemoryToolConfirmationStore>();
 builder.Services.AddSingleton<IConversationExecutionLock, InMemoryConversationExecutionLock>();
 builder.Services.AddSingleton<IToolAuditSink, InMemoryToolAuditSink>();
+builder.Services.AddSingleton<IReminderStore, InMemoryReminderStore>();
 builder.Services.AddSingleton<IToolRiskPolicy, DefaultToolRiskPolicy>();
 builder.Services.AddSingleton<IInstallationIdentityStore, FileInstallationIdentityStore>();
 builder.Services.AddHttpContextAccessor();
@@ -53,6 +55,7 @@ builder.Services.AddAuthentication(LocalApiKeyAuthenticationDefaults.SchemeName)
 builder.Services.AddSingleton<IToolPolicyContextAccessor, HttpContextToolPolicyContextAccessor>();
 builder.Services.AddSingleton<ITool, CurrentTimeTool>();
 builder.Services.AddSingleton<ITool, TemperatureConversionTool>();
+builder.Services.AddSingleton<ITool, CreateReminderTool>();
 builder.Services.AddSingleton<IToolRegistry>(services =>
     new ToolRegistry(services.GetServices<ITool>()));
 builder.Services.AddSingleton<FakeLanguageProviderFactory>();

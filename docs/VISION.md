@@ -146,6 +146,14 @@ objetivos, errores, vocabulario, fluidez y ejercicios conservarán evidencias
 temporales por usuario: una inferencia o una mala sesión no se convertirá
 silenciosamente en una característica permanente.
 
+La conversación será el canal lógico e historial que une turnos de texto o voz; una
+práctica de inglés será una actividad conversacional con identidad, objetivo y ciclo
+de vida propios. Mientras esté activa, el sistema la resolverá y dirigirá al tutor
+antes de pedir una respuesta al modelo general. Así se conserva el contexto de la
+práctica sin convertir al tutor completo en una herramienta ni permitir que el modelo
+decida por sí mismo quién es el propietario, qué actividad continúa o cuándo cambia
+su estado.
+
 La evolución por voz permitirá ajustar velocidad, interrupciones y momento de las
 correcciones, pero no confundirá transcripción con pronunciación. El análisis
 fonético preciso requerirá evidencia de audio y tecnología específica todavía no

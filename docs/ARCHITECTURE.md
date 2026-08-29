@@ -71,6 +71,15 @@ conservan ese propietario en memoria y solo él puede continuarlas o resolver su
 confirmaciones. Las conversaciones anónimas permanecen sin propietario, públicas y
 efímeras; no se convertirán automáticamente en conversaciones privadas persistentes.
 
+La primera operación local que cambia estado es `create_reminder`. Requiere el scope
+`reminders.write` y una confirmación retenida por el servidor. Al crear esa
+confirmación, el orquestador asigna un identificador de operación interno y lo entrega
+a la herramienta únicamente después de aprobarla. El almacén de recordatorios en
+memoria obtiene o crea el resultado por principal e identificador de operación, de
+forma que una repetición no produzca un segundo recordatorio. Esta garantía no
+sobrevive a reinicios, no cubre varios procesos y no convierte el componente en una
+agenda ni en un planificador de avisos.
+
 El fake usa una cola de funciones de respuesta. Cada llamada consume exactamente
 un paso, por lo que una prueba declara de forma visible la secuencia esperada.
 
@@ -487,6 +496,91 @@ identidad, persistencia, memoria, trabajos, voz y dispositivos como servicios de
 plataforma. Su forma final —módulo, skill acompañada de estado u otra composición—
 se decidirá después de estabilizar el modelo de extensiones; el núcleo no conocerá
 entrevistas, ejercicios, errores gramaticales ni niveles de inglés.
+
+### Conversación, actividad y herramienta
+
+Una conversación es el canal lógico de mensajes e historial identificado por
+`ConversationId`; puede recorrer varios turnos y usar texto o voz antes o después de
+una actividad. No identifica al usuario: su principal y su autorización se resuelven
+por separado, como establece el [ADR 0022](adr/0022-bind-authenticated-conversations-to-principals.md).
+
+Una actividad conversacional es un trabajo con estado dentro de una conversación. De
+forma conceptual conservará su propia identidad, tipo, propietario, conversación,
+objetivo, configuración, fechas, contexto mínimo, retención y resultado. Una misma
+conversación podrá tener varias actividades a lo largo del tiempo; terminar una no
+eliminará ni invalidará la conversación. Esta separación permite que texto, voz y
+dispositivos sean canales de una misma actividad sin convertir el canal en identidad.
+
+Una herramienta seguirá siendo una operación acotada solicitada por el modelo y
+sujeta al bucle explícito y a sus confirmaciones. El tutor completo no será una única
+herramienta. Alguna transición podrá representarse más adelante como una acción o
+herramienta estructurada, pero el servidor conservará el estado y validará siempre
+sus efectos.
+
+### Frontera común y enrutamiento de actividad
+
+Todo mensaje entrante seguirá una frontera común antes de alcanzar un proveedor:
+
+```text
+autenticación y autorización
+  -> conversación autorizada
+  -> actividad activa, si existe
+  -> controles universales
+  -> handler y perfil de proveedor
+  -> ejecución
+  -> persistencia de respuesta y transición
+  -> respuesta al canal
+```
+
+El núcleo resolverá la actividad activa con estado validado por el servidor. Si hay
+una práctica de inglés activa, el turno se dirigirá directamente a su handler y
+perfil conversacional; no requerirá que un LLM general redescubra en cada turno qué
+módulo debe atenderlo. Los controles universales —por ejemplo cancelar, suspender,
+reanudar o terminar— seguirán disponibles antes de ese handler. El diseño reservará
+además el tratamiento de actividades administrativas, de emergencia o de mayor
+prioridad sin delegar su autorización al tutor.
+
+La activación podrá empezar en la conversación general mediante detección de
+intención y una propuesta estructurada, o iniciarse explícitamente desde la interfaz.
+El servidor comprobará principal, autorización, tipo, configuración y concurrencia
+antes de crear la actividad y emitir su primer turno. El modelo podrá proponer, pero
+no crear actividades arbitrarias ni modificar por sí mismo el enrutamiento, el
+propietario o el estado.
+
+### Ciclo de vida conceptual
+
+Una actividad podrá pasar conceptualmente por `Requested` o `Starting`, `Active`,
+`Ending`, `Completed`, `Suspended`, `Cancelled`, `Expired` y `Failed`. Los nombres,
+protocolo, almacenamiento y APIs se decidirán en el vertical slice que la implemente;
+esta arquitectura solo exige que el servidor valide las transiciones, que las
+repetibles sean idempotentes y que la concurrencia no produzca dos transiciones
+incompatibles.
+
+Terminar será una intención explícita, equivalente conceptualmente a `/end`, sin
+imponer todavía un comando real. El handler podrá devolver una señal conceptual como
+`RequestEndSession`, que el servidor validará antes de pasar a `Ending` o
+`Completed`; no es todavía un contrato. Una frase ambigua como pedir la traducción de
+una expresión no cerrará la práctica. Suspensión, reinicio, inactividad, fallo de
+proveedor, informe tardío y actividad incompatible requerirán políticas de
+recuperación y retención; no se introduce todavía un worker para resolverlos.
+
+### Perfiles de proveedor y evaluación diferida
+
+Una responsabilidad lógica no equivale a un modelo instalado, residente ni ejecutado
+en paralelo. Los perfiles y políticas elegirán proveedor o modelo autorizado según
+privacidad, herramientas permitidas, latencia, calidad, hardware, memoria, coste,
+concurrencia y categorías de contenido. Al principio un mismo modelo podrá atender
+varias responsabilidades. Esta decisión no impone dos modelos, instancias permanentes
+en GPU, offload ni un planificador.
+
+El cierre de la práctica y el análisis pedagógico posterior seguirán separados según
+el [ADR 0010](adr/0010-separate-live-conversation-from-language-evaluation.md). El
+usuario podrá continuar en la conversación mientras se completa un informe o una
+propuesta de actualización de perfil. Ninguna inferencia se confirmará ni se aplicará
+automáticamente como hecho del usuario.
+
+Estas reglas de enrutamiento y ciclo de vida se recogen en el
+[ADR 0026](adr/0026-route-active-conversational-activities-with-server-held-state.md).
 
 Una sesión de práctica mantendrá modo, objetivo, tema, duración, dificultad,
 velocidad y política de corrección. La política distinguirá corrección inmediata,

@@ -271,9 +271,9 @@ components:
           description: Language provider used for this turn.
         scenario:
           type: string
-          enum: [direct, time, temperature]
+          enum: [direct, time, temperature, reminder]
           default: direct
-          description: Development-only scenario, used only when provider is fake.
+          description: Development-only scenario, used only when provider is fake. The reminder scenario requires the reminders.write scope and confirmation.
     ResolveToolConfirmationRequest:
       type: object
       required: [approved]

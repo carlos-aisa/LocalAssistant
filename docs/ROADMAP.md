@@ -12,8 +12,9 @@ habitaciones.
   política de riesgo, egreso controlado, identidad local opcional, auditoría local y
   exposición segura de errores; la fase 4 comienza con identidad de instalación con
   propietario único y propiedad de conversaciones autenticadas en memoria.
-- **Próximo incremento:** definir una operación idempotente al incorporar la primera
-  herramienta real que cambie estado o produzca coste.
+- **Próximo incremento:** completado con `create_reminder`: una operación local
+  privada, confirmada e idempotente en memoria. La siguiente herramienta con efecto
+  deberá ampliar esta garantía según su almacenamiento o destino real.
 - **Horizonte cercano:** tutor de inglés escrito con role-play, correcciones e
   informe; persistencia e identidad de la fase 4; capacidad mínima de módulos,
   `Controlled Local Resources`, migración preparada y `BatchCooking` MVP. Home
@@ -103,9 +104,10 @@ confirmación y auditoría vinculadas a su solicitud.
   confirmación y ejecución, sin argumentos ni resultados de herramienta.
 - [x] Separar el detalle de fallo que recibe el proveedor del mensaje seguro que se
   expone al cliente HTTP.
-- Definir y probar una clave de idempotencia por operación con la primera herramienta
-  real que cambie estado o produzca coste. La confirmación actual es de un único uso,
-  pero todavía no es una garantía de idempotencia distribuida.
+- [x] Definir y probar una clave de operación interna con `create_reminder`, la
+  primera herramienta real que cambia estado. El almacén en memoria crea el resultado
+  de forma atómica por principal y operación; no es una garantía distribuida ni
+  durable.
 
 **Capacidades excluidas:** un sistema completo de roles, acceso general a archivos y
 acciones domésticas de escritura no justificadas por el vertical slice.
@@ -443,6 +445,11 @@ entrevista técnica en inglés y recibe un informe revisable.
 y daily meeting como primeros modos; dificultad y velocidad conceptuales; corrección
 inmediata, por turno, solo crítica o al final; clasificación de gramática,
 vocabulario, naturalidad, claridad y estilo; puntos fuertes y ejercicios posteriores.
+El incremento incorporará la actividad de práctica con identidad distinta de la
+conversación, activación explícita o propuesta validada por servidor, enrutamiento
+directo mientras esté activa y cierre explícito no ambiguo. Sus controles universales,
+transiciones idempotentes y concurrencia se validarán sin fijar todavía endpoint,
+tabla, protocolo ni worker.
 
 **Excluye:** voz, pronunciación, perfil persistente, certificación oficial y todos
 los modos de role-play previstos.
@@ -463,6 +470,9 @@ contexto, corrección, tipo, repeticiones y evolución; reglas inspeccionables p
 detectar tendencias sin confirmarlas como rasgos permanentes. Se añadirán de forma
 incremental entrevistas de recursos humanos, refinamiento, presentaciones, clientes,
 incidentes, negociación y vocabulario técnico.
+También definirá retención y recuperación de actividades suspendidas, expiradas o
+afectadas por un fallo de proveedor, manteniendo su propiedad y relación con la
+conversación sin retener datos más allá de la política aplicable.
 
 **Excluye:** puntuaciones equivalentes a certificaciones, grabaciones y adaptación
 opaca del perfil.

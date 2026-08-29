@@ -31,6 +31,8 @@ Implementado:
 - Adaptador HTTP de Ollama, configurable y desacoplado del dominio.
 - Registro cerrado de herramientas.
 - Herramienta determinista de fecha y hora UTC basada en `TimeProvider`.
+- Primer cambio de estado local: creación confirmada e idempotente de recordatorios
+  privados en memoria.
 - Bucle explícito de tool calling con cancelación, timeouts y límite de iteraciones.
 - Metadatos de impacto y confirmación de herramientas.
 - Perfiles multidimensionales de riesgo y filtrado de herramientas no autorizadas.
@@ -57,7 +59,8 @@ Implementado:
 
 No implementado: detección automática de capacidades por modelo, acceso real a
 Internet, proveedores cloud, retención y auditoría durable, gestión de usuarios, voz, wake word,
-RAG, Home Assistant, MQTT, MCP, interfaz gráfica ni ejecución de comandos.
+RAG, agenda durable o notificaciones, Home Assistant, MQTT, MCP, interfaz gráfica ni
+ejecución de comandos.
 
 ## Arquitectura actual
 
@@ -237,6 +240,33 @@ Invoke-RestMethod -Method Post `
   -ContentType application/json `
   -Body $body
 ```
+
+### Recordatorio local confirmado
+
+El escenario fake `reminder` demuestra la primera operación local que cambia estado.
+Requiere una API key válida con el scope `reminders.write` y devuelve una confirmación
+antes de crear el recordatorio. Al aprobar la llamada, el servidor genera y conserva
+una clave de operación interna; repetir esa operación durante la vida del proceso
+devuelve el mismo recordatorio sin crear otro.
+
+```powershell
+$env:LocalAssistant__Identity__Scopes__0 = "reminders.write"
+$headers = @{ "X-LocalAssistant-Api-Key" = $apiKey }
+$pending = Invoke-RestMethod -Method Post `
+  -Uri http://localhost:5100/api/conversations/messages `
+  -Headers $headers `
+  -ContentType application/json `
+  -Body (@{ message = "Recuérdame revisar el diseño"; scenario = "reminder" } | ConvertTo-Json)
+
+Invoke-RestMethod -Method Post `
+  -Uri "http://localhost:5100/api/conversations/$($pending.conversationId)/tool-confirmations/$($pending.confirmation.confirmationId)/decisions" `
+  -Headers $headers `
+  -ContentType application/json `
+  -Body (@{ approved = $true; scenario = "reminder" } | ConvertTo-Json)
+```
+
+Los recordatorios actuales existen solo en memoria: se pierden al reiniciar y no hay
+listado, edición, borrado, aviso programado ni integración con dispositivos.
 
 El fake responderá `Fake response: Hola` en una iteración y sin herramientas.
 

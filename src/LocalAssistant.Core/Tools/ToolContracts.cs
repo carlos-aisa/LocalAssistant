@@ -54,6 +54,11 @@ public sealed record ToolExecutionResult(
         new(false, providerContent, errorCode, clientMessage);
 }
 
+public sealed record ToolExecutionContext(
+    Guid ConversationId,
+    string? PrincipalId,
+    Guid? OperationId);
+
 public interface ITool
 {
     ToolDefinition Definition { get; }
@@ -61,6 +66,11 @@ public interface ITool
     ValueTask<ToolExecutionResult> ExecuteAsync(
         JsonElement arguments,
         CancellationToken cancellationToken);
+
+    ValueTask<ToolExecutionResult> ExecuteAsync(
+        ToolExecutionContext context,
+        JsonElement arguments,
+        CancellationToken cancellationToken) => ExecuteAsync(arguments, cancellationToken);
 }
 
 public interface IToolRegistry
