@@ -33,6 +33,21 @@ public sealed class FileAssistantProfileStoreTests
     }
 
     [Fact]
+    public async Task SetDisplayNamePersistsAcrossStoreInstances()
+    {
+        using var stateDirectory = new TemporaryInstallationStateDirectory();
+        using (var writer = CreateStore(stateDirectory.Path))
+        {
+            await writer.SetDisplayNameAsync("Jarvis", CancellationToken.None);
+        }
+
+        using var reader = CreateStore(stateDirectory.Path);
+        var profile = await reader.GetAsync(CancellationToken.None);
+
+        Assert.Equal("Jarvis", profile.DisplayName);
+    }
+
+    [Fact]
     public async Task RejectsInvalidPersistedProfile()
     {
         using var stateDirectory = new TemporaryInstallationStateDirectory();

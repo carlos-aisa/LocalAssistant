@@ -41,6 +41,24 @@ public sealed class SetAssistantNameToolTests
     }
 
     [Fact]
+    public async Task RejectsInvalidDisplayNamesWithoutChangingTheCurrentProfile()
+    {
+        var profiles = new InMemoryAssistantProfileStore();
+        var tool = new SetAssistantNameTool(profiles);
+        await tool.ExecuteAsync(
+            JsonSerializer.SerializeToElement(new { displayName = "Jarvis" }),
+            CancellationToken.None);
+
+        var result = await tool.ExecuteAsync(
+            JsonSerializer.SerializeToElement(new { displayName = " " }),
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("invalid_tool_arguments", result.ErrorCode);
+        Assert.Equal("Jarvis", (await profiles.GetAsync(CancellationToken.None)).DisplayName);
+    }
+
+    [Fact]
     public void RequiresTheInstallationOwnerScopeAndConfirmation()
     {
         var tool = new SetAssistantNameTool(new InMemoryAssistantProfileStore());

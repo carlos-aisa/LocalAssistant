@@ -120,6 +120,69 @@ public sealed class ConversationOrchestratorTests
     }
 
     [Fact]
+    public async Task RejectingAnAssistantNameChangeKeepsTheExistingProfile()
+    {
+        var profiles = new MutableAssistantProfileStore(AssistantProfile.DefaultDisplayName);
+        var policyContext = new ToolPolicyContext(
+            "owner",
+            new HashSet<string>(StringComparer.Ordinal) { "installation.owner" });
+        var toolCall = new ToolCall(
+            "set-name",
+            SetAssistantNameTool.ToolName,
+            JsonSerializer.SerializeToElement(new { displayName = "Jarvis" }));
+        var provider = new ScriptedLanguageProvider(
+        [
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.RequestTools(toolCall)),
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.Final("No change was made.")),
+        ]);
+        var sut = CreateOrchestrator(
+            tools: [new SetAssistantNameTool(profiles)],
+            toolPolicyContextAccessor: new MutableToolPolicyContextAccessor(policyContext),
+            profiles: profiles);
+
+        var pending = await sut.ProcessAsync(
+            new ConversationTurnRequest("Call yourself Jarvis."),
+            provider,
+            CancellationToken.None);
+        var result = await sut.ResolveConfirmationAsync(
+            pending.ConversationId,
+            pending.Confirmation!.ConfirmationId,
+            approved: false,
+            provider,
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(AssistantProfile.DefaultDisplayName, (await profiles.GetAsync(CancellationToken.None)).DisplayName);
+    }
+
+    [Fact]
+    public async Task DenyingAssistantNameScopeKeepsTheExistingProfile()
+    {
+        var profiles = new MutableAssistantProfileStore(AssistantProfile.DefaultDisplayName);
+        var toolCall = new ToolCall(
+            "set-name",
+            SetAssistantNameTool.ToolName,
+            JsonSerializer.SerializeToElement(new { displayName = "Jarvis" }));
+        var provider = new ScriptedLanguageProvider(
+        [
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.RequestTools(toolCall)),
+        ]);
+        var sut = CreateOrchestrator(
+            tools: [new SetAssistantNameTool(profiles)],
+            toolPolicyContextAccessor: new MutableToolPolicyContextAccessor(
+                new ToolPolicyContext("authenticated-user", new HashSet<string>(StringComparer.Ordinal))),
+            profiles: profiles);
+
+        var result = await sut.ProcessAsync(
+            new ConversationTurnRequest("Call yourself Jarvis."),
+            provider,
+            CancellationToken.None);
+
+        Assert.Equal("scope_not_granted", result.Error?.Code);
+        Assert.Equal(AssistantProfile.DefaultDisplayName, (await profiles.GetAsync(CancellationToken.None)).DisplayName);
+    }
+
+    [Fact]
     public async Task DoesNotContinueOwnedConversationForAnotherPrincipal()
     {
         var owner = new ToolPolicyContext(
