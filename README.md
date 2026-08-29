@@ -170,6 +170,12 @@ por defecto en `%LOCALAPPDATA%\LocalAssistant\installation-identity.json`; conti
 solo el hash SHA-256 de la clave. Una segunda ejecución se rechaza. Después inicia la
 API normalmente y envía la clave con `X-LocalAssistant-Api-Key`.
 
+El propietario creado por bootstrap recibe además `memory.personal.read` y
+`memory.personal.write`, por lo que puede usar sus notas personales cuando la
+persistencia privada está activada. Las instalaciones anteriores se actualizan
+localmente al leer su estado; no se genera una clave nueva ni se conceden scopes de
+documentos, recordatorios o capacidades futuras.
+
 La variable `LocalAssistant__Installation__StateDirectory` permite elegir una ruta
 absoluta distinta para ese estado. No combines este bootstrap con la configuración
 `LocalAssistant__Identity__Enabled=true`.

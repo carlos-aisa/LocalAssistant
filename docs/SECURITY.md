@@ -130,6 +130,12 @@ No se registra, recupera para el modelo, entrega a herramientas ni transmite a u
 proveedor. SQLite y sus backups siguen sin aportar cifrado propio y deben protegerse
 como datos privados del principal.
 
+El bootstrap de instalación concede explícitamente `memory.personal.read` y
+`memory.personal.write` al propietario local para que pueda acceder a sus propias
+notas. El estado anterior se migra una vez al esquema 2, preservando identidad y hash
+de la clave. `installation.owner` no sustituye los scopes concretos y la migración no
+concede acceso documental, recordatorios ni permisos futuros.
+
 ## Identidad, autorización y acceso de invitados futuros
 
 El bootstrap actual crea un único propietario desde una consola local y se invalida

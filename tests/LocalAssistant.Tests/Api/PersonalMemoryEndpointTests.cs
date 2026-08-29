@@ -4,7 +4,9 @@ using System.Security.Cryptography;
 using System.Text;
 using LocalAssistant.Api.Contracts;
 using LocalAssistant.Api.Security;
+using LocalAssistant.Tests.TestDoubles;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Options;
 
 namespace LocalAssistant.Tests.Api;
 
@@ -197,6 +199,43 @@ public sealed class PersonalMemoryEndpointTests
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.False(File.Exists(directory.DatabasePath));
+    }
+
+    [Fact]
+    public async Task BootstrapOwnerCanCreateAndListPersonalMemories()
+    {
+        using var directory = new TemporaryDirectory();
+        var stateDirectory = Path.Combine(directory.Path, "installation-state");
+        var bootstrapStore = new FileInstallationIdentityStore(
+            Options.Create(new InstallationIdentityOptions { StateDirectory = stateDirectory }),
+            new ManualTimeProvider(new DateTimeOffset(2026, 8, 29, 10, 0, 0, TimeSpan.Zero)));
+        var bootstrap = await bootstrapStore.BootstrapAsync(CancellationToken.None);
+        using var factory = new LocalAssistantApiFactory().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("LocalAssistant:Installation:StateDirectory", stateDirectory);
+            builder.UseSetting("LocalAssistant:ConversationPersistence:Enabled", "true");
+            builder.UseSetting(
+                "LocalAssistant:ConversationPersistence:DatabasePath",
+                directory.DatabasePath);
+        });
+        using var client = CreateAuthenticatedClient(
+            factory,
+            Assert.IsType<string>(bootstrap.ApiKey));
+
+        using var createResponse = await client.PostAsJsonAsync(
+            "/api/memories/personal",
+            new CreatePersonalMemoryRequest("Created by bootstrap."),
+            CancellationToken.None);
+        using var listResponse = await client.GetAsync(
+            "/api/memories/personal",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        var list = await listResponse.Content.ReadFromJsonAsync<PersonalMemoryListResponse>(
+            cancellationToken: CancellationToken.None);
+        Assert.NotNull(list);
+        Assert.Equal("Created by bootstrap.", Assert.Single(list.Memories).Text);
     }
 
     private static async Task<Guid> CreateMemoryAsync(HttpClient client, string text)

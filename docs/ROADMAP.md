@@ -131,6 +131,9 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
   implícita. Las conversaciones anónimas siguen siendo públicas y efímeras.
 - [x] Introducir la identidad de instalación y un bootstrap de un solo propietario,
   invalidado tras la configuración inicial y sin credenciales predeterminadas.
+- [x] Migrar de forma compatible la identidad de instalación para conceder al
+  propietario los scopes personales de memoria ya implementados, sin crear un bypass
+  de autorización ni ampliar otros permisos.
 - Sustituir la API key educativa por autenticación adecuada para las interfaces
   escritas cuando exista el primer dato privado persistente; no elegir proveedor de
   identidad antes de concretar el despliegue.
