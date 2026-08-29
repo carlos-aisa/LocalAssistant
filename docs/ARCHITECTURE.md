@@ -46,6 +46,15 @@ orquestador solo puede resolverla contra `IToolRegistry`.
 
 ## Contratos principales
 
+El perfil global del asistente contiene por ahora solo `DisplayName`. El orquestador
+lo obtiene antes de cada llamada al proveedor y lo antepone como mensaje de sistema
+transitorio; no lo incorpora a `IConversationStore` ni a SQLite. La herramienta
+confirmada `set_assistant_name` requiere `installation.owner`; después de aprobarla,
+la continuación de ese mismo turno vuelve a leer el perfil. El archivo independiente
+`assistant-profile.json` comparte el directorio privado de estado de instalación, no
+el ciclo de vida de una conversación. La decisión se fija en el
+[ADR 0027](adr/0027-store-installation-assistant-profile-separately.md).
+
 - `ILanguageProvider` recibe mensajes y definiciones de herramientas.
 - `ITool` declara metadatos, esquema de entrada y ejecución cancelable.
 - `IToolRegistry` constituye la allowlist de capacidades disponibles.

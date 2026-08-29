@@ -117,7 +117,12 @@ public sealed class OllamaLanguageProvider : ILanguageProvider
             }
 
             mapped.Add(new OllamaMessage(
-                message.Role == ConversationRole.User ? "user" : "assistant",
+                message.Role switch
+                {
+                    ConversationRole.System => "system",
+                    ConversationRole.User => "user",
+                    _ => "assistant",
+                },
                 message.Content ?? string.Empty));
         }
 

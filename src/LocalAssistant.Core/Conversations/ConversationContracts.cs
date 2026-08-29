@@ -4,9 +4,10 @@ namespace LocalAssistant.Core.Conversations;
 
 public enum ConversationRole
 {
-    User,
-    Assistant,
-    Tool,
+    User = 0,
+    Assistant = 1,
+    Tool = 2,
+    System = 3,
 }
 
 public sealed record ToolCall(string Id, string Name, JsonElement Arguments);

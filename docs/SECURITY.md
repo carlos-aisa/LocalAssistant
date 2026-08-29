@@ -41,6 +41,13 @@ decisiones, confirmaciones y ejecuciones, pero tampoco sobrevive un reinicio ni 
 tratarse como registro productivo. La confirmación tampoco sustituye la autorización
 para leer un dato sensible.
 
+El perfil del asistente es configuración global separada del historial. La única
+herramienta actual que puede modificarlo, `set_assistant_name`, exige el scope
+`installation.owner` y confirmación exacta. El nombre se entrega al proveedor como
+mensaje de sistema transitorio y no se persiste en conversaciones ni notas. No existe
+un mecanismo que extraiga preferencias automáticamente desde texto de usuario ni un
+mapa genérico de valores que pueda modificar el modelo.
+
 ## Amenazas relevantes
 
 - **Prompt injection:** texto del usuario, documentos o conectores pueden intentar

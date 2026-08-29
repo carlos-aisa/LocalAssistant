@@ -143,6 +143,30 @@ public sealed class OllamaLanguageProviderTests
     }
 
     [Fact]
+    public async Task GetResponseAsyncMapsSystemContextToSystemRole()
+    {
+        using var handler = CreateHandler("""
+            { "message": { "role": "assistant", "content": "Hello." } }
+            """);
+        using var httpClient = new HttpClient(handler);
+        var provider = CreateProvider(httpClient);
+        var request = new LanguageProviderRequest(
+            Guid.NewGuid(),
+            [
+                new ConversationMessage(ConversationRole.System, "Your name is Jarvis."),
+                new ConversationMessage(ConversationRole.User, "Hello"),
+            ],
+            []);
+
+        await provider.GetResponseAsync(request, CancellationToken.None);
+
+        using var body = JsonDocument.Parse(Assert.IsType<string>(handler.Body));
+        var messages = body.RootElement.GetProperty("messages").EnumerateArray().ToArray();
+        Assert.Equal("system", messages[0].GetProperty("role").GetString());
+        Assert.Equal("Your name is Jarvis.", messages[0].GetProperty("content").GetString());
+    }
+
+    [Fact]
     public async Task GetResponseAsyncPropagatesHttpFailure()
     {
         using var handler = new RecordingHttpMessageHandler(

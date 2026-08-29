@@ -13,6 +13,12 @@ de estado configurado debe ser absoluto. Aunque el archivo no guarda la API key 
 texto claro, contiene la identidad del propietario, los scopes concedidos y el hash de
 la API key; debe tratarse como dato privado.
 
+El perfil global del asistente se guarda por separado como
+`assistant-profile.json` en ese mismo directorio. Contiene actualmente su nombre de
+presentación; no incluye conversaciones ni notas, pero sigue siendo configuración
+privada de la instalación. Al restaurar una copia del directorio, el nombre vuelve al
+valor que contenía esa copia.
+
 El directorio que contiene la base, el archivo `conversations.db`, los posibles
 archivos auxiliares que SQLite cree junto a ella y
 `installation-identity.json` forman un único límite de almacenamiento privado. Una

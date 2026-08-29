@@ -44,6 +44,8 @@ Implementado:
   seguro expuesto por la API.
 - Bootstrap local de instalación con un único propietario y API key generada una sola
   vez; se conserva únicamente su hash.
+- Perfil global del asistente, con nombre configurable y separado del historial de
+  conversaciones.
 - Identidad local opcional mediante API key y scopes concedidos por el servidor para
   pruebas o configuración educativa.
 - Política de egreso denegada por defecto y pasarela de adaptadores externos sin
@@ -187,6 +189,16 @@ documentos, recordatorios o capacidades futuras.
 La variable `LocalAssistant__Installation__StateDirectory` permite elegir una ruta
 absoluta distinta para ese estado. No combines este bootstrap con la configuración
 `LocalAssistant__Identity__Enabled=true`.
+
+### Nombre global del asistente
+
+El perfil de instalación usa inicialmente el nombre `LocalAssistant` y lo guarda en
+`assistant-profile.json`, junto a `installation-identity.json` si se configuró el
+bootstrap. Un propietario autenticado puede pedir el cambio mediante la herramienta
+`set_assistant_name`; la API solicitará la confirmación exacta antes de modificarlo.
+El nombre se entrega al proveedor como contexto de sistema en cada llamada, pero no se
+guarda en conversaciones, notas personales ni SQLite. Protege el directorio de estado
+como almacenamiento privado y consulta el [ADR 0027](docs/adr/0027-store-installation-assistant-profile-separately.md).
 
 La API también funciona de forma anónima para herramientas públicas. Para pruebas o
 para configurar de forma educativa un principal local con scopes concedidos por el
