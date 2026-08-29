@@ -20,9 +20,9 @@ privada de la instalación. Al restaurar una copia del directorio, el nombre vue
 valor que contenía esa copia.
 
 El directorio que contiene la base, el archivo `conversations.db`, los posibles
-archivos auxiliares que SQLite cree junto a ella y
-`installation-identity.json` forman un único límite de almacenamiento privado. Una
-ruta configurada debe ser local y privada. No se debe usar una carpeta compartida,
+archivos auxiliares que SQLite cree junto a ella, `installation-identity.json` y
+`assistant-profile.json` forman un único límite de almacenamiento privado. Una ruta
+configurada debe ser local y privada. No se debe usar una carpeta compartida,
 temporal, extraíble o sincronizada por un tercero salvo que ese entorno proporcione
 controles de acceso, cifrado y retención equivalentes.
 
@@ -49,16 +49,18 @@ API expuesta sin una frontera de red y autenticación adecuada.
 ## Copias de seguridad y restauración
 
 Una copia de `conversations.db`, de cualquier archivo auxiliar de SQLite que exista en
-el mismo instante y de `installation-identity.json` es el mismo dato privado que los
-archivos activos. Los backups deben conservar controles de acceso, cifrado y retención
-equivalentes. LocalAssistant no crea, programa ni elimina esas copias.
+el mismo instante, de `installation-identity.json` y de `assistant-profile.json` es el
+mismo dato privado que los archivos activos. Los backups deben conservar controles de
+acceso, cifrado y retención equivalentes. LocalAssistant no crea, programa ni elimina
+esas copias.
 
 La restauración es una operación del operador. Para restaurar un punto de recuperación
 consistente debe:
 
 1. Detener la aplicación antes de manipular los archivos.
 2. Restaurar conjuntamente una copia consistente de la base SQLite, de sus archivos
-   auxiliares presentes en ese punto y del estado de identidad compatible.
+   auxiliares presentes en ese punto, del estado de identidad compatible y del perfil
+   de asistente que se quiera recuperar.
 3. Reiniciar la aplicación únicamente con una configuración válida que siga apuntando
    a rutas absolutas privadas.
 
