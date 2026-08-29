@@ -73,6 +73,20 @@ public sealed class DocumentEndpointTests
     }
 
     [Fact]
+    public async Task AnonymousClientCannotSearchDocumentContent()
+    {
+        using var directory = new TemporaryDirectory();
+        using var factory = CreateFactory(directory.Path, ["documents.content.search"]);
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/api/documents/content-search?text=match",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task ContentSearchRejectsAnInvalidQuery()
     {
         using var directory = new TemporaryDirectory();
@@ -82,6 +96,22 @@ public sealed class DocumentEndpointTests
 
         using var response = await client.GetAsync(
             "/api/documents/content-search?text=%20",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ContentSearchRejectsAnAbsoluteSearchPath()
+    {
+        using var directory = new TemporaryDirectory();
+        using var factory = CreateFactory(directory.Path, ["documents.content.search"]);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(LocalApiKeyAuthenticationDefaults.HeaderName, ApiKey);
+        var absolutePath = Uri.EscapeDataString(Path.GetTempPath());
+
+        using var response = await client.GetAsync(
+            $"/api/documents/content-search?text=match&relativePath={absolutePath}",
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

@@ -13,14 +13,6 @@ public sealed class FileSystemDocumentContentSearch : ILocalDocumentContentSearc
         ReturnSpecialDirectories = false,
     };
 
-    private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".csv",
-        ".json",
-        ".md",
-        ".txt",
-    };
-
     private readonly ILocalDocumentRoot _documentRoot;
     private readonly IDocumentReferenceProtector _documentReferenceProtector;
 
@@ -39,7 +31,7 @@ public sealed class FileSystemDocumentContentSearch : ILocalDocumentContentSearc
         ArgumentNullException.ThrowIfNull(query);
 
         var rootPath = Path.GetFullPath(_documentRoot.Path);
-        var searchPath = ResolveSearchPath(rootPath, query.RelativePath);
+        var searchPath = DocumentFilePolicy.ResolveSearchPath(rootPath, query.RelativePath);
         if (searchPath is null || !Directory.Exists(searchPath))
         {
             return [];
@@ -73,29 +65,6 @@ public sealed class FileSystemDocumentContentSearch : ILocalDocumentContentSearc
         return results;
     }
 
-    private static string? ResolveSearchPath(string rootPath, string? relativePath)
-    {
-        if (string.IsNullOrWhiteSpace(relativePath))
-        {
-            return rootPath;
-        }
-
-        var searchPath = Path.GetFullPath(Path.Combine(rootPath, relativePath));
-        if (!IsWithinRoot(rootPath, searchPath) || !Directory.Exists(searchPath))
-        {
-            return null;
-        }
-
-        try
-        {
-            return ContainsReparsePoint(rootPath, searchPath) ? null : searchPath;
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
-    }
-
     private async ValueTask<DocumentSearchResult?> TryCreateResultAsync(
         string rootPath,
         string filePath,
@@ -105,7 +74,7 @@ public sealed class FileSystemDocumentContentSearch : ILocalDocumentContentSearc
         try
         {
             var fullPath = Path.GetFullPath(filePath);
-            if (!IsAuthorizedFile(rootPath, fullPath))
+            if (!DocumentFilePolicy.IsAuthorizedFile(rootPath, fullPath))
             {
                 return null;
             }
@@ -117,7 +86,7 @@ public sealed class FileSystemDocumentContentSearch : ILocalDocumentContentSearc
                 return null;
             }
 
-            var text = await ReadBoundedTextAsync(fullPath, cancellationToken);
+            var text = await DocumentFilePolicy.ReadBoundedTextAsync(fullPath, cancellationToken);
             if (text is null ||
                 !text.Contains(query.Text, StringComparison.OrdinalIgnoreCase))
             {
@@ -143,21 +112,13 @@ public sealed class FileSystemDocumentContentSearch : ILocalDocumentContentSearc
         }
     }
 
-    private static bool IsAuthorizedFile(string rootPath, string filePath)
-    {
-        return IsWithinRoot(rootPath, filePath) &&
-            File.Exists(filePath) &&
-            !ContainsReparsePoint(rootPath, filePath) &&
-            (File.GetAttributes(filePath) & FileAttributes.ReparsePoint) == 0;
-    }
-
     private static bool MatchesMetadata(
         FileInfo file,
         DateTimeOffset lastModifiedUtc,
         DocumentContentSearchQuery query)
     {
-        if (!SupportedExtensions.Contains(file.Extension) ||
-            file.Length > FileSystemDocumentContentReader.MaximumFileSizeBytes)
+        if (!DocumentFilePolicy.IsSupportedTextFormat(file) ||
+            !DocumentFilePolicy.IsWithinMaximumSize(file))
         {
             return false;
         }
@@ -176,76 +137,4 @@ public sealed class FileSystemDocumentContentSearch : ILocalDocumentContentSearc
         return query.ModifiedBeforeUtc is null || lastModifiedUtc <= query.ModifiedBeforeUtc;
     }
 
-    private static async ValueTask<string?> ReadBoundedTextAsync(
-        string filePath,
-        CancellationToken cancellationToken)
-    {
-        await using var fileStream = new FileStream(
-            filePath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            bufferSize: 81920,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
-        await using var buffer = new MemoryStream();
-        var readBuffer = new byte[81920];
-
-        while (true)
-        {
-            var bytesRead = await fileStream.ReadAsync(readBuffer, cancellationToken);
-            if (bytesRead == 0)
-            {
-                break;
-            }
-
-            if (buffer.Length + bytesRead > FileSystemDocumentContentReader.MaximumFileSizeBytes)
-            {
-                return null;
-            }
-
-            await buffer.WriteAsync(readBuffer.AsMemory(0, bytesRead), cancellationToken);
-        }
-
-        buffer.Position = 0;
-        using var reader = new StreamReader(
-            buffer,
-            Encoding.UTF8,
-            detectEncodingFromByteOrderMarks: true,
-            leaveOpen: false);
-        return await reader.ReadToEndAsync(cancellationToken);
-    }
-
-    private static bool IsWithinRoot(string rootPath, string candidatePath)
-    {
-        var rootWithSeparator = rootPath.EndsWith(Path.DirectorySeparatorChar)
-            ? rootPath
-            : rootPath + Path.DirectorySeparatorChar;
-
-        return candidatePath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase) ||
-            StringComparer.OrdinalIgnoreCase.Equals(rootPath, candidatePath);
-    }
-
-    private static bool ContainsReparsePoint(string rootPath, string candidatePath)
-    {
-        var relativePath = Path.GetRelativePath(rootPath, candidatePath);
-        var currentPath = rootPath;
-
-        foreach (var segment in relativePath.Split(
-                     Path.DirectorySeparatorChar,
-                     Path.AltDirectorySeparatorChar))
-        {
-            if (string.IsNullOrWhiteSpace(segment) || segment == ".")
-            {
-                continue;
-            }
-
-            currentPath = Path.Combine(currentPath, segment);
-            if ((File.GetAttributes(currentPath) & FileAttributes.ReparsePoint) != 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }

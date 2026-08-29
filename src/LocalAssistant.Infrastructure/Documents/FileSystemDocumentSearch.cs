@@ -30,7 +30,7 @@ public sealed class FileSystemDocumentSearch : ILocalDocumentSearch
         ArgumentNullException.ThrowIfNull(query);
 
         var rootPath = Path.GetFullPath(_documentRoot.Path);
-        var searchPath = ResolveSearchPath(rootPath, query.RelativePath);
+        var searchPath = DocumentFilePolicy.ResolveSearchPath(rootPath, query.RelativePath);
         if (searchPath is null || !Directory.Exists(searchPath))
         {
             return ValueTask.FromResult<IReadOnlyList<DocumentSearchResult>>([]);
@@ -64,29 +64,6 @@ public sealed class FileSystemDocumentSearch : ILocalDocumentSearch
         return ValueTask.FromResult<IReadOnlyList<DocumentSearchResult>>(results);
     }
 
-    private static string? ResolveSearchPath(string rootPath, string? relativePath)
-    {
-        if (string.IsNullOrWhiteSpace(relativePath))
-        {
-            return rootPath;
-        }
-
-        var path = Path.GetFullPath(Path.Combine(rootPath, relativePath));
-        if (!IsWithinRoot(rootPath, path) || !Directory.Exists(path))
-        {
-            return null;
-        }
-
-        try
-        {
-            return ContainsReparsePoint(rootPath, path) ? null : path;
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
-    }
-
     private static bool TryCreateResult(
         string rootPath,
         string filePath,
@@ -99,9 +76,7 @@ public sealed class FileSystemDocumentSearch : ILocalDocumentSearch
         try
         {
             var fullPath = Path.GetFullPath(filePath);
-            if (!IsWithinRoot(rootPath, fullPath) ||
-                ContainsReparsePoint(rootPath, fullPath) ||
-                (File.GetAttributes(fullPath) & FileAttributes.ReparsePoint) != 0)
+            if (!DocumentFilePolicy.IsAuthorizedFile(rootPath, fullPath))
             {
                 return false;
             }
@@ -154,35 +129,4 @@ public sealed class FileSystemDocumentSearch : ILocalDocumentSearch
         return query.ModifiedBeforeUtc is null || lastModifiedUtc <= query.ModifiedBeforeUtc;
     }
 
-    private static bool IsWithinRoot(string rootPath, string candidatePath)
-    {
-        var rootWithSeparator = rootPath.EndsWith(Path.DirectorySeparatorChar)
-            ? rootPath
-            : rootPath + Path.DirectorySeparatorChar;
-
-        return candidatePath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase) ||
-            StringComparer.OrdinalIgnoreCase.Equals(rootPath, candidatePath);
-    }
-
-    private static bool ContainsReparsePoint(string rootPath, string candidatePath)
-    {
-        var relativePath = Path.GetRelativePath(rootPath, candidatePath);
-        var currentPath = rootPath;
-
-        foreach (var segment in relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
-        {
-            if (string.IsNullOrWhiteSpace(segment) || segment == ".")
-            {
-                continue;
-            }
-
-            currentPath = Path.Combine(currentPath, segment);
-            if ((File.GetAttributes(currentPath) & FileAttributes.ReparsePoint) != 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }

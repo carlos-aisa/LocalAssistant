@@ -121,6 +121,23 @@ reformat that section when it can be done safely without changing behavior.
   documentation updates.
 - Run formatting, Release build, and relevant tests before completion.
 
+## Pre-PR review
+
+Before creating a pull request for a behavior, API contract, security,
+persistence, filesystem, or CI change, run the available `review` skill against
+the branch diff. Treat it as a complement to tests: it must inspect scope drift,
+trust boundaries, concurrency, contracts, documentation staleness, and other
+structural risks that tests may not reveal.
+
+- Apply clear mechanical corrections found by the review, then repeat the affected
+  verification commands before committing and publishing.
+- Escalate findings that change public behavior, authorization, security policy,
+  data semantics, or architecture for explicit user approval.
+- Use the frontend design checklist only when the diff changes frontend source.
+- Use external-review triage only when a pull request has external review comments.
+- A review is optional for documentation-only changes with no behavior or workflow
+  effect; record the reason when it is skipped.
+
 ## Completion
 
 A task is complete only when its scope is implemented, applicable tests pass,
