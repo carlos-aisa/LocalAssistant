@@ -162,9 +162,11 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
   limitada a `.txt`, `.md`, `.json` y `.csv`, con el scope `documents.read`, referencia
   protegida de quince minutos y límite de 1 MiB. Los formatos no admitidos y archivos
   mayores fallan de forma explícita.
-- Incorporar búsqueda textual en contenido solo cuando aporte valor y evaluar índice
-  local, embeddings locales y búsqueda semántica después de medir corpus, latencia y
-  calidad; no introducir todavía base vectorial, watcher ni worker.
+- [x] Incorporar búsqueda textual literal y acotada en los formatos textuales ya
+  permitidos, con el scope independiente `documents.content.search`. Devuelve solo
+  metadatos y no crea índice, embeddings ni retención de contenido.
+- Evaluar índice local, embeddings locales y búsqueda semántica después de medir
+  corpus, latencia y calidad; no introducir todavía base vectorial, watcher ni worker.
 - Mantener la ingesta RAG como una decisión separada y explícita: buscar o leer un
   archivo no lo convertirá automáticamente en conocimiento persistente.
 - Mantener repositorios y búsqueda de código fuera de las fuentes documentales; una

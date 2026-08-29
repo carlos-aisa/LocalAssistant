@@ -29,6 +29,7 @@ builder.Services.AddSingleton<ISystemDocumentsPathProvider, SystemDocumentsPathP
 builder.Services.AddSingleton<ILocalDocumentRoot, ConfiguredLocalDocumentRoot>();
 builder.Services.AddSingleton<IDocumentReferenceProtector, ProtectedDocumentReferenceProtector>();
 builder.Services.AddSingleton<ILocalDocumentSearch, FileSystemDocumentSearch>();
+builder.Services.AddSingleton<ILocalDocumentContentSearch, FileSystemDocumentContentSearch>();
 builder.Services.AddSingleton<ILocalDocumentContentReader, FileSystemDocumentContentReader>();
 builder.Services.AddSingleton<InMemoryConversationStore>();
 builder.Services.AddSingleton<SqliteConversationStore>();

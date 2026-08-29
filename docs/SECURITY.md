@@ -300,6 +300,12 @@ requerirá seleccionar un resultado permitido y volver a comprobar el destino. L
 metadatos también pueden revelar información privada y respetarán principal,
 propiedad y alcance de acceso.
 
+La búsqueda textual de contenido requiere además `documents.content.search`, que no
+queda concedido por `documents.search` ni `documents.read`. Puede abrir solo los
+formatos textuales permitidos y acotados a 1 MiB para decidir una coincidencia
+literal, pero no devuelve ni registra contenido o fragmentos. Esta operación no crea
+índices, embeddings, memoria derivada ni egreso a proveedores.
+
 Toda ruta o referencia influida por el modelo se tratará como no confiable. El
 servicio validará el destino finalmente resuelto, no solo el texto de entrada, y
 evitará escapar de las raíces mediante `..`, rutas absolutas, representaciones
