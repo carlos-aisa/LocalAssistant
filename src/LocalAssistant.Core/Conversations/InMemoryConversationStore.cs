@@ -62,6 +62,31 @@ public sealed class InMemoryConversationStore : IConversationStore
         return ValueTask.CompletedTask;
     }
 
+    public ValueTask<bool> DeleteOwnedAsync(
+        Guid conversationId,
+        string ownerPrincipalId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!_conversations.TryGetValue(conversationId, out var state))
+        {
+            return ValueTask.FromResult(false);
+        }
+
+        lock (state.SyncRoot)
+        {
+            var isOwner = string.Equals(
+                state.Metadata.OwnerPrincipalId,
+                ownerPrincipalId,
+                StringComparison.Ordinal);
+            var deleted = isOwner && _conversations.TryRemove(
+                new KeyValuePair<Guid, ConversationState>(conversationId, state));
+
+            return ValueTask.FromResult(deleted);
+        }
+    }
+
     private sealed class ConversationState
     {
         public ConversationState(ConversationMetadata metadata)

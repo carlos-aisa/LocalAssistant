@@ -125,6 +125,13 @@ $env:LocalAssistant__ConversationPersistence__DatabasePath = "C:\LocalAssistant\
 $env:LocalAssistant__ConversationPersistence__RetentionDays = "30"
 ```
 
+Para borrar una conversación persistida, el propietario autenticado debe enviar
+`DELETE /api/conversations/{conversationId}` con exactamente una cabecera
+`X-LocalAssistant-Confirm-Delete: true`. El borrado elimina también sus mensajes y
+las confirmaciones de herramientas pendientes de esa conversación. Una conversación
+ajena, anónima o inexistente responde `404`; la operación no borra copias de seguridad
+ni otros recursos privados.
+
 Las conversaciones anónimas no se escriben en SQLite. El archivo y sus copias de
 seguridad contienen datos privados y deben protegerse mediante permisos y controles
 del sistema operativo.

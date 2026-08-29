@@ -195,6 +195,29 @@ paths:
         "403": { description: The authenticated principal lacks the memory.personal.write scope. }
         "404": { description: The personal memory note was not found or is not owned by the caller. }
         "503": { description: Personal memory persistence is disabled. }
+  /api/conversations/{conversationId}:
+    delete:
+      operationId: deleteConversation
+      summary: Delete one persisted conversation owned by the authenticated principal.
+      security:
+        - LocalApiKey: []
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: X-LocalAssistant-Confirm-Delete
+          in: header
+          required: true
+          description: Must be supplied exactly once with the value true.
+          schema: { type: string, enum: ["true"] }
+      responses:
+        "204": { description: The conversation and its persisted messages were deleted. }
+        "400":
+          description: The delete confirmation header is missing, repeated, or invalid.
+        "401": { description: A local API key is required. }
+        "404": { description: The conversation was not found or is not owned by the caller. }
+        "503": { description: Conversation persistence is disabled. }
   /api/conversations/messages:
     post:
       operationId: sendConversationMessage

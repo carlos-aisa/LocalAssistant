@@ -821,10 +821,12 @@ comportamiento y tests reales.
 
 `InMemoryConversationStore` conserva mensajes en un diccionario concurrente y
 copia cada historial bajo bloqueo. El orquestador añade además un bloqueo por
-conversación durante un turno o una resolución de confirmación, por lo que estas
-operaciones no se intercalan dentro del mismo proceso. Ese bloqueo y las
-confirmaciones están en memoria y no coordinan varias instancias ni sobreviven un
-reinicio; persistencia y coordinación distribuida siguen pendientes.
+conversación durante un turno o una resolución de confirmación. El endpoint de
+borrado adquiere el mismo bloqueo antes de eliminar una conversación persistida y,
+solo si el borrado condicionado por propietario tiene éxito, retira su confirmación
+pendiente. Así no puede ejecutarse una acción confirmada contra una conversación ya
+eliminada dentro del mismo proceso. Ese bloqueo y las confirmaciones están en memoria
+y no coordinan varias instancias ni sobreviven un reinicio.
 
 Antes de persistir información privada se definirán propiedad y alcance de acceso,
 retención, borrado selectivo, control de acceso, protección en reposo, auditoría y

@@ -20,6 +20,8 @@ public interface IToolConfirmationStore
     ValueTask CreateAsync(PendingToolConfirmation confirmation, CancellationToken cancellationToken);
 
     ValueTask<PendingToolConfirmation?> TakeAsync(Guid conversationId, Guid confirmationId, CancellationToken cancellationToken);
+
+    ValueTask<bool> RemoveAsync(Guid conversationId, CancellationToken cancellationToken);
 }
 
 public sealed class InMemoryToolConfirmationStore : IToolConfirmationStore
@@ -53,5 +55,11 @@ public sealed class InMemoryToolConfirmationStore : IToolConfirmationStore
         }
 
         return ValueTask.FromResult<PendingToolConfirmation?>(null);
+    }
+
+    public ValueTask<bool> RemoveAsync(Guid conversationId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(_confirmations.TryRemove(conversationId, out _));
     }
 }

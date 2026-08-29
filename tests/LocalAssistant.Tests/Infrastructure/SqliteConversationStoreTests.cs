@@ -64,6 +64,27 @@ public sealed class SqliteConversationStoreTests
     }
 
     [Fact]
+    public async Task AuthenticatedStoreDoesNotDeleteAnAnonymousConversation()
+    {
+        using var directory = new LocalAssistant.Tests.Api.TemporaryInstallationStateDirectory();
+        var persistentStore = CreateStore(Path.Combine(directory.Path, "conversations.db"));
+        var ephemeralStore = new InMemoryConversationStore();
+        var store = new AuthenticatedConversationStore(persistentStore, ephemeralStore);
+        var conversationId = Guid.NewGuid();
+        await store.GetOrCreateMetadataAsync(conversationId, null, CancellationToken.None);
+        await store.AppendAsync(
+            conversationId,
+            new ConversationMessage(ConversationRole.User, "Ephemeral message."),
+            CancellationToken.None);
+
+        Assert.False(await store.DeleteOwnedAsync(conversationId, "owner-a", CancellationToken.None));
+        Assert.NotNull(await ephemeralStore.GetMetadataAsync(conversationId, CancellationToken.None));
+        Assert.Equal(
+            "Ephemeral message.",
+            Assert.Single(await ephemeralStore.GetMessagesAsync(conversationId, CancellationToken.None)).Content);
+    }
+
+    [Fact]
     public async Task DeletesExpiredConversationsUsingTheInjectedClock()
     {
         using var directory = new LocalAssistant.Tests.Api.TemporaryInstallationStateDirectory();

@@ -137,6 +137,170 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
     }
 
     [Fact]
+    public async Task DeleteConversationDeletesTheAuthenticatedOwnersPersistedConversation()
+    {
+        using var directory = new TemporaryInstallationStateDirectory();
+        using var client = CreatePersistentIdentityClient(
+            Path.Combine(directory.Path, "conversations.db"),
+            "owner-a");
+        var conversationId = await CreateConversationAsync(client);
+
+        using var deleteRequest = CreateDeleteRequest(conversationId, "true");
+        using var deleteResponse = await client.SendAsync(deleteRequest, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("false")]
+    public async Task DeleteConversationRequiresTheExactConfirmationHeader(string? confirmationValue)
+    {
+        using var directory = new TemporaryInstallationStateDirectory();
+        using var client = CreatePersistentIdentityClient(
+            Path.Combine(directory.Path, "conversations.db"),
+            "owner-a");
+        var conversationId = await CreateConversationAsync(client);
+
+        using var request = CreateDeleteRequest(conversationId, confirmationValue);
+        using var response = await client.SendAsync(request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteConversationRejectsRepeatedConfirmationHeaders()
+    {
+        using var directory = new TemporaryInstallationStateDirectory();
+        using var client = CreatePersistentIdentityClient(
+            Path.Combine(directory.Path, "conversations.db"),
+            "owner-a");
+        var conversationId = await CreateConversationAsync(client);
+        using var request = CreateDeleteRequest(conversationId, "true", "true");
+
+        using var response = await client.SendAsync(request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteConversationRequiresAnAuthenticatedPrincipal()
+    {
+        using var directory = new TemporaryInstallationStateDirectory();
+        var databasePath = Path.Combine(directory.Path, "conversations.db");
+        using var configuredClient = CreatePersistentIdentityClient(databasePath, "owner-a");
+        var conversationId = await CreateConversationAsync(configuredClient);
+        configuredClient.DefaultRequestHeaders.Remove(LocalApiKeyAuthenticationDefaults.HeaderName);
+
+        using var request = CreateDeleteRequest(conversationId, "true");
+        using var response = await configuredClient.SendAsync(request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteConversationDoesNotRevealAnotherPrincipalsConversation()
+    {
+        using var directory = new TemporaryInstallationStateDirectory();
+        var databasePath = Path.Combine(directory.Path, "conversations.db");
+        using var ownerClient = CreatePersistentIdentityClient(databasePath, "owner-a");
+        var conversationId = await CreateConversationAsync(ownerClient);
+        using var otherOwnerClient = CreatePersistentIdentityClient(databasePath, "owner-b");
+        using var request = CreateDeleteRequest(conversationId, "true");
+
+        using var response = await otherOwnerClient.SendAsync(request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteConversationReturnsNotFoundForAnUnknownConversation()
+    {
+        using var directory = new TemporaryInstallationStateDirectory();
+        using var client = CreatePersistentIdentityClient(
+            Path.Combine(directory.Path, "conversations.db"),
+            "owner-a");
+        using var request = CreateDeleteRequest(Guid.NewGuid(), "true");
+
+        using var response = await client.SendAsync(request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteConversationReturnsNotFoundForAnAnonymousConversation()
+    {
+        using var directory = new TemporaryInstallationStateDirectory();
+        var databasePath = Path.Combine(directory.Path, "conversations.db");
+        using var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            ConfigurePersistentIdentity(builder, databasePath, "owner-a");
+        });
+        using var anonymousClient = factory.CreateClient();
+        var conversationId = await CreateConversationAsync(anonymousClient);
+        using var ownerClient = factory.CreateClient();
+        ownerClient.DefaultRequestHeaders.Add(
+            LocalApiKeyAuthenticationDefaults.HeaderName,
+            LocalApiKey);
+        using var request = CreateDeleteRequest(conversationId, "true");
+
+        using var response = await ownerClient.SendAsync(request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteConversationDoesNotCreateTheDatabaseWhenPersistenceIsDisabled()
+    {
+        using var directory = new TemporaryInstallationStateDirectory();
+        var databasePath = Path.Combine(directory.Path, "conversations.db");
+        using var client = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("LocalAssistant:ConversationPersistence:Enabled", "false");
+            builder.UseSetting("LocalAssistant:ConversationPersistence:DatabasePath", databasePath);
+        }).CreateClient();
+        using var request = CreateDeleteRequest(Guid.NewGuid(), "true");
+
+        using var response = await client.SendAsync(request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.False(File.Exists(databasePath));
+    }
+
+    [Fact]
+    public async Task DeleteConversationInvalidatesItsPendingConfirmation()
+    {
+        using var directory = new TemporaryInstallationStateDirectory();
+        using var client = CreatePersistentIdentityClient(
+            Path.Combine(directory.Path, "conversations.db"),
+            "owner-a",
+            ["reminders.write"]);
+        using var pendingResponse = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Remind me to review the design", scenario = "reminder" },
+            CancellationToken.None);
+        Assert.Equal(HttpStatusCode.Accepted, pendingResponse.StatusCode);
+        using var pendingBody = await JsonDocument.ParseAsync(
+            await pendingResponse.Content.ReadAsStreamAsync(CancellationToken.None),
+            cancellationToken: CancellationToken.None);
+        var conversationId = pendingBody.RootElement.GetProperty("conversationId").GetGuid();
+        var confirmationId = pendingBody.RootElement
+            .GetProperty("confirmation")
+            .GetProperty("confirmationId")
+            .GetGuid();
+
+        using var deleteRequest = CreateDeleteRequest(conversationId, "true");
+        using var deleteResponse = await client.SendAsync(deleteRequest, CancellationToken.None);
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+
+        using var decisionResponse = await client.PostAsJsonAsync(
+            $"/api/conversations/{conversationId}/tool-confirmations/{confirmationId}/decisions",
+            new { approved = true, scenario = "reminder" },
+            CancellationToken.None);
+        Assert.Equal(HttpStatusCode.NotFound, decisionResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task ConfiguredIdentityKeepsPublicRequestsAvailableToAnonymousClients()
     {
         using var client = CreateIdentityClient(["time.read"]);
@@ -457,6 +621,76 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
                 });
             }
         }).CreateClient();
+    }
+
+    private HttpClient CreatePersistentIdentityClient(
+        string databasePath,
+        string principalId,
+        string[]? scopes = null)
+    {
+        var client = _factory.WithWebHostBuilder(builder =>
+        {
+            ConfigurePersistentIdentity(builder, databasePath, principalId, scopes);
+        }).CreateClient();
+        client.DefaultRequestHeaders.Add(
+            LocalApiKeyAuthenticationDefaults.HeaderName,
+            LocalApiKey);
+        return client;
+    }
+
+    private static void ConfigurePersistentIdentity(
+        IWebHostBuilder builder,
+        string databasePath,
+        string principalId,
+        string[]? scopes = null)
+    {
+        builder.UseSetting("LocalAssistant:ConversationPersistence:Enabled", "true");
+        builder.UseSetting("LocalAssistant:ConversationPersistence:DatabasePath", databasePath);
+        builder.UseSetting("LocalAssistant:Identity:Enabled", "true");
+        builder.UseSetting("LocalAssistant:Identity:PrincipalId", principalId);
+        builder.UseSetting("LocalAssistant:Identity:ApiKeySha256", LocalApiKeyHash);
+
+        if (scopes is null)
+        {
+            return;
+        }
+
+        for (var index = 0; index < scopes.Length; index++)
+        {
+            builder.UseSetting($"LocalAssistant:Identity:Scopes:{index}", scopes[index]);
+        }
+    }
+
+    private static async Task<Guid> CreateConversationAsync(HttpClient client)
+    {
+        using var response = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Private message", scenario = "direct" },
+            CancellationToken.None);
+        response.EnsureSuccessStatusCode();
+        using var body = await JsonDocument.ParseAsync(
+            await response.Content.ReadAsStreamAsync(CancellationToken.None),
+            cancellationToken: CancellationToken.None);
+        return body.RootElement.GetProperty("conversationId").GetGuid();
+    }
+
+    private static HttpRequestMessage CreateDeleteRequest(
+        Guid conversationId,
+        params string?[] confirmationValues)
+    {
+        var request = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"/api/conversations/{conversationId}");
+
+        foreach (var confirmationValue in confirmationValues)
+        {
+            if (confirmationValue is not null)
+            {
+                request.Headers.Add("X-LocalAssistant-Confirm-Delete", confirmationValue);
+            }
+        }
+
+        return request;
     }
 }
 

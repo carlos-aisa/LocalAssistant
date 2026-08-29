@@ -46,4 +46,9 @@ public interface IConversationStore
         Guid conversationId,
         ConversationMessage message,
         CancellationToken cancellationToken);
+
+    ValueTask<bool> DeleteOwnedAsync(
+        Guid conversationId,
+        string ownerPrincipalId,
+        CancellationToken cancellationToken);
 }

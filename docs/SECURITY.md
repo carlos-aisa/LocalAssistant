@@ -117,8 +117,12 @@ como datos privados.
 
 El ciclo de vida aprobado en el ADR 0025 clasifica las conversaciones autenticadas
 como datos personales del principal, con retención inicial de 30 días y borrado
-selectivo transaccional. Las conversaciones anónimas siguen fuera de SQLite. Backups
-y restauraciones conservan la misma propiedad, retención y requisitos de protección;
+selectivo transaccional. El endpoint `DELETE /api/conversations/{conversationId}`
+exige un principal autenticado y una cabecera de confirmación exacta; las conversaciones
+ajenas, anónimas o inexistentes responden todas `404` y el borrado válido invalida la
+confirmación de herramienta pendiente bajo el mismo bloqueo de conversación. Las
+conversaciones anónimas siguen fuera de SQLite. Backups y restauraciones conservan la
+misma propiedad, retención y requisitos de protección;
 no constituyen una excepción de acceso.
 
 Las notas de memoria personal son un recurso SQLite separado de las conversaciones,
