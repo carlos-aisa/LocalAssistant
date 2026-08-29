@@ -106,14 +106,13 @@ en memoria; antes de persistir conversaciones privadas, memoria, documentos o tr
 deberá evolucionar a un concepto mínimo de `User` o `Principal`, propiedad y alcance
 de acceso durables.
 
-La persistencia privada no se considerará completa hasta definir retención, borrado
-selectivo, control de acceso, protección en reposo, auditoría y consecuencias de
-backup y restauración. La elección podrá combinar permisos del sistema operativo,
-cifrado de disco, capacidades de la base de datos o protección de aplicación según
-el almacenamiento y despliegue reales. El primer almacén elegido es SQLite local
-(ADR 0024), que no cifra datos por sí mismo: el adaptador persiste solo
-conversaciones autenticadas y debe tratar el archivo, sus backups y sus permisos
-como datos privados.
+La primera persistencia privada define retención, borrado selectivo, control de acceso
+y las consecuencias operativas de la protección en reposo, backups y restauración. El
+primer almacén elegido es SQLite local (ADR 0024), que no cifra datos por sí mismo. La
+[guía operativa](OPERATIONS.md) delimita los controles del despliegue: cuenta de
+ejecución, permisos de archivos, cifrado del volumen y custodia de las copias. La
+aplicación persiste solo conversaciones autenticadas y notas personales, y no crea
+ACLs, backups ni restauraciones automáticas.
 
 El ciclo de vida aprobado en el ADR 0025 clasifica las conversaciones autenticadas
 como datos personales del principal, con retención inicial de 30 días y borrado
@@ -121,9 +120,10 @@ selectivo transaccional. El endpoint `DELETE /api/conversations/{conversationId}
 exige un principal autenticado y una cabecera de confirmación exacta; las conversaciones
 ajenas, anónimas o inexistentes responden todas `404` y el borrado válido invalida la
 confirmación de herramienta pendiente bajo el mismo bloqueo de conversación. Las
-conversaciones anónimas siguen fuera de SQLite. Backups y restauraciones conservan la
-misma propiedad, retención y requisitos de protección;
-no constituyen una excepción de acceso.
+conversaciones anónimas siguen fuera de SQLite. Los backups requieren protección
+equivalente, y restaurar un punto histórico puede reintroducir sus datos sin
+recalcular propietarios, scopes o caducidades; no constituye una excepción de acceso
+ni una promesa de borrado global de copias ya existentes.
 
 Las notas de memoria personal son un recurso SQLite separado de las conversaciones,
 pero usan la misma activación explícita y retención configurada. Solo un principal
@@ -132,7 +132,7 @@ autenticado con `memory.personal.read` puede listarlas, y solo uno con
 se condicionan también por propietario; una nota ajena se comporta como inexistente.
 No se registra, recupera para el modelo, entrega a herramientas ni transmite a un
 proveedor. SQLite y sus backups siguen sin aportar cifrado propio y deben protegerse
-como datos privados del principal.
+como datos privados del principal según la guía operativa.
 
 El bootstrap de instalación concede explícitamente `memory.personal.read` y
 `memory.personal.write` al propietario local para que pueda acceder a sus propias

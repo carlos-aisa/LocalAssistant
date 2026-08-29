@@ -30,9 +30,12 @@ antes de actuar y no afectará a otras conversaciones ni a auditoría. La operac
 cabecera de confirmación visible, `X-LocalAssistant-Confirm-Delete: true`, enviada
 exactamente una vez. No habilita un borrado remoto genérico.
 
-Los backups se consideran copias del mismo dato privado: no amplían acceso ni
-retención, deben protegerse con controles del despliegue y su restauración debe
-preservar propiedad y caducidad. SQLite no aporta cifrado en reposo.
+Los backups se consideran copias del mismo dato privado: deben protegerse con
+controles equivalentes del despliegue. La restauración repone el estado histórico sin
+reasignar propiedad, scopes ni caducidad, y puede reintroducir datos de la copia. No
+elimina otras copias históricas ni convierte el borrado selectivo de la base activa en
+un borrado global. La política y el procedimiento operativo se describen en
+[OPERATIONS.md](../OPERATIONS.md). SQLite no aporta cifrado en reposo.
 
 ## Consecuencias
 

@@ -134,7 +134,8 @@ ni otros recursos privados.
 
 Las conversaciones anónimas no se escriben en SQLite. El archivo y sus copias de
 seguridad contienen datos privados y deben protegerse mediante permisos y controles
-del sistema operativo.
+del sistema operativo. Consulta la [guía operativa de almacenamiento privado](docs/OPERATIONS.md)
+antes de activar la persistencia en una instalación real.
 
 ### Raíz documental local
 

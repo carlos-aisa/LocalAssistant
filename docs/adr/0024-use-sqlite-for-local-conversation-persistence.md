@@ -31,15 +31,18 @@ orquestador. Las inserciones de metadatos y mensajes usarán transacciones y un 
 estable. Retención, borrado selectivo y auditoría durable se implementarán como
 incrementos explícitos sobre el mismo almacén.
 
-SQLite no se considerará cifrado en reposo: los permisos del sistema operativo,
-cifrado de disco, backup y restauración siguen siendo responsabilidades de despliegue
-hasta que se diseñe una protección adicional verificable.
+SQLite no se considera cifrado en reposo. Los permisos del sistema operativo, el
+cifrado de disco o volumen, los backups y la restauración son responsabilidades de
+despliegue. La política operativa verificable se documenta en
+[OPERATIONS.md](../OPERATIONS.md); una protección adicional requerirá una decisión e
+implementación separadas.
 
 ## Consecuencias
 
 El proyecto obtiene un almacén local transaccional, portable y fácil de probar sin
-Docker ni red. Deben definirse migraciones de esquema, límites de tamaño, retención,
-concurrencia entre procesos, protección del archivo y recuperación ante corrupción
-antes de declarar completa la memoria privada. PostgreSQL u otro almacén distribuido
-solo se evaluarán cuando aparezcan sincronización, varios procesos o carga que lo
-justifiquen.
+Docker ni red. Las rutas, los permisos, el cifrado de volumen y el procedimiento de
+copias y restauración quedan documentados para el despliegue actual. Siguen pendientes
+las migraciones de esquema, límites de tamaño, concurrencia entre procesos,
+recuperación automatizada ante corrupción, cifrado adicional y gestión de claves.
+PostgreSQL u otro almacén distribuido solo se evaluarán cuando aparezcan sincronización,
+varios procesos o carga que lo justifiquen.

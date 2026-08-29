@@ -107,6 +107,11 @@ se convertirán por ello en datos privados persistentes. La decisión y sus lím
 protección en reposo se recogen en el [ADR 0024](adr/0024-use-sqlite-for-local-conversation-persistence.md).
 El ciclo de vida, retención y borrado selectivo de estos datos se definen en el
 [ADR 0025](adr/0025-define-private-storage-lifecycle.md).
+La [guía operativa](OPERATIONS.md) concreta los controles que corresponden al
+despliegue: ruta privada, cuenta de ejecución, permisos, cifrado del volumen, copias y
+restauración. La aplicación mantiene el aislamiento por propietario, la retención y
+el borrado selectivo sobre la base activa; no cifra SQLite ni administra esos controles
+del sistema operativo.
 
 La primera memoria personal persistente es una nota de texto creada expresamente por
 el cliente. `IPersonalMemoryStore` mantiene el contrato en el núcleo y
@@ -828,11 +833,11 @@ pendiente. Así no puede ejecutarse una acción confirmada contra una conversaci
 eliminada dentro del mismo proceso. Ese bloqueo y las confirmaciones están en memoria
 y no coordinan varias instancias ni sobreviven un reinicio.
 
-Antes de persistir información privada se definirán propiedad y alcance de acceso,
-retención, borrado selectivo, control de acceso, protección en reposo, auditoría y
-consecuencias de backup y restauración. El mecanismo concreto dependerá del
-almacenamiento y despliegue elegidos; no se presupone cifrado de aplicación, base de
-datos concreta ni que el cifrado de disco resulte suficiente por sí solo.
+La primera persistencia privada ya define propiedad y alcance de acceso, retención,
+borrado selectivo y las consecuencias operativas de la protección en reposo, los
+backups y la restauración. La [guía operativa](OPERATIONS.md) separa las garantías de
+la aplicación de los controles que debe aplicar el despliegue. No presupone cifrado de
+aplicación ni considera suficiente por sí solo el cifrado de disco.
 
 ## Errores y timeouts
 

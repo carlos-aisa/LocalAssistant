@@ -147,8 +147,11 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
   con propiedad, scopes independientes, retención y borrado selectivo. No se
   recuperan para el modelo; memoria compartida, de módulo y administrativa siguen
   requiriendo sus propios contratos y autorización.
-- Evaluar protección en reposo y consecuencias de backup y restauración según el
-  almacenamiento y despliegue elegidos, sin fijar todavía un mecanismo de cifrado.
+- [x] Evaluar protección en reposo y consecuencias de backup y restauración según el
+  almacenamiento y despliegue elegidos. La política operativa exige controles del
+  despliegue para rutas, permisos, cifrado de volumen y copias, sin introducir todavía
+  cifrado de SQLite, gestión de claves, sincronización ni automatización de backup o
+  recuperación.
 - [x] Persistir conversaciones autenticadas en SQLite, manteniendo las anónimas
   efímeras en memoria, con retención configurable y borrado selectivo HTTP por
   propietario tras confirmación explícita. Las trazas durables siguen pendientes.
