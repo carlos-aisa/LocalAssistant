@@ -42,6 +42,52 @@ public sealed class DocumentEndpointTests
     }
 
     [Fact]
+    public async Task ContentSearchRequiresItsOwnScopeAndDoesNotReturnContent()
+    {
+        using var directory = new TemporaryDirectory();
+        File.WriteAllText(Path.Combine(directory.Path, "notes.txt"), "private launch phrase");
+        using var deniedFactory = CreateFactory(directory.Path, ["documents.search", "documents.read"]);
+        using var deniedClient = deniedFactory.CreateClient();
+        deniedClient.DefaultRequestHeaders.Add(LocalApiKeyAuthenticationDefaults.HeaderName, ApiKey);
+
+        using var deniedResponse = await deniedClient.GetAsync(
+            "/api/documents/content-search?text=launch%20phrase",
+            CancellationToken.None);
+        Assert.Equal(HttpStatusCode.Forbidden, deniedResponse.StatusCode);
+
+        using var allowedFactory = CreateFactory(directory.Path, ["documents.content.search"]);
+        using var allowedClient = allowedFactory.CreateClient();
+        allowedClient.DefaultRequestHeaders.Add(LocalApiKeyAuthenticationDefaults.HeaderName, ApiKey);
+        using var allowedResponse = await allowedClient.GetAsync(
+            "/api/documents/content-search?text=LAUNCH%20PHRASE",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, allowedResponse.StatusCode);
+        using var body = await JsonDocument.ParseAsync(
+            await allowedResponse.Content.ReadAsStreamAsync(CancellationToken.None),
+            cancellationToken: CancellationToken.None);
+        var document = Assert.Single(body.RootElement.GetProperty("documents").EnumerateArray());
+        Assert.Equal("notes.txt", document.GetProperty("name").GetString());
+        Assert.False(document.TryGetProperty("text", out _));
+        Assert.False(document.TryGetProperty("content", out _));
+    }
+
+    [Fact]
+    public async Task ContentSearchRejectsAnInvalidQuery()
+    {
+        using var directory = new TemporaryDirectory();
+        using var factory = CreateFactory(directory.Path, ["documents.content.search"]);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(LocalApiKeyAuthenticationDefaults.HeaderName, ApiKey);
+
+        using var response = await client.GetAsync(
+            "/api/documents/content-search?text=%20",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task AuthorizedClientReceivesMetadataWithoutContentOrAbsolutePaths()
     {
         using var directory = new TemporaryDirectory();

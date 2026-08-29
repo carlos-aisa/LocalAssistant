@@ -10,6 +10,14 @@ public sealed record SearchDocumentsRequest(
     DateTimeOffset? ModifiedBeforeUtc = null,
     int? Limit = null);
 
+public sealed record SearchDocumentContentRequest(
+    string Text,
+    string? Extension = null,
+    string? RelativePath = null,
+    DateTimeOffset? ModifiedAfterUtc = null,
+    DateTimeOffset? ModifiedBeforeUtc = null,
+    int? Limit = null);
+
 public sealed record DocumentSearchResponse(
     IReadOnlyList<DocumentSearchResult> Documents)
 {

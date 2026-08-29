@@ -94,6 +94,42 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
+  /api/documents/content-search:
+    get:
+      operationId: searchDocumentContent
+      summary: Search authorized local text documents without returning their content.
+      security:
+        - LocalApiKey: []
+      parameters:
+        - name: text
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: extension
+          in: query
+          schema: { type: string, example: .txt }
+        - name: relativePath
+          in: query
+          schema: { type: string }
+        - name: modifiedAfterUtc
+          in: query
+          schema: { type: string, format: date-time }
+        - name: modifiedBeforeUtc
+          in: query
+          schema: { type: string, format: date-time }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Matching document metadata without text fragments.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentSearchResponse"
+        "400": { description: The content search query is invalid. }
+        "401": { description: A local API key is required. }
+        "403": { description: The authenticated principal lacks the documents.content.search scope. }
   /api/conversations/messages:
     post:
       operationId: sendConversationMessage

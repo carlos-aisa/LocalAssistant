@@ -327,8 +327,16 @@ expone `GET /api/documents` para descubrimiento explícito por metadatos, proteg
 por el scope `documents.search`, y `GET /api/documents/{id}/content` para lectura
 explícita, protegida por `documents.read`. La búsqueda devuelve una referencia opaca
 protegida durante quince minutos. `FileSystemDocumentSearch` y
-`FileSystemDocumentContentReader` resuelven solo rutas relativas bajo
+`FileSystemDocumentContentReader` y `FileSystemDocumentContentSearch` resuelven solo
+rutas relativas bajo
 `ILocalDocumentRoot`, omiten enlaces y revalidan el destino antes de abrirlo.
+
+`GET /api/documents/content-search` es una tercera capacidad, protegida por el scope
+independiente `documents.content.search`. Abre únicamente los formatos de texto ya
+permitidos, de hasta 1 MiB, para comparar una frase literal sin distinción de
+mayúsculas. La respuesta es de metadatos seguros: no devuelve el texto, fragmentos
+ni rutas absolutas. Es una exploración directa sin índice, embeddings, retención ni
+tráfico a un proveedor.
 
 ```mermaid
 flowchart LR

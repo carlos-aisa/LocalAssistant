@@ -8,6 +8,7 @@ public static class DocumentEndpoints
 {
     private const string SearchScope = "documents.search";
     private const string ReadScope = "documents.read";
+    private const string ContentSearchScope = "documents.content.search";
 
     public static IEndpointRouteBuilder MapDocumentEndpoints(
         this IEndpointRouteBuilder endpoints)
@@ -18,8 +19,52 @@ public static class DocumentEndpoints
         endpoints.MapGet("/api/documents/{id}/content", ReadContentAsync)
             .WithName("ReadDocumentContent")
             .WithSummary("Reads bounded text content from an authorized local document.");
+        endpoints.MapGet("/api/documents/content-search", SearchContentAsync)
+            .WithName("SearchDocumentContent")
+            .WithSummary("Searches authorized local text documents without returning their content.");
 
         return endpoints;
+    }
+
+    private static async Task<IResult> SearchContentAsync(
+        [AsParameters] SearchDocumentContentRequest request,
+        HttpContext httpContext,
+        ILocalDocumentContentSearch documentContentSearch,
+        CancellationToken cancellationToken)
+    {
+        if (httpContext.User.Identity?.IsAuthenticated != true)
+        {
+            return Results.Unauthorized();
+        }
+
+        if (!httpContext.User.HasClaim(
+                LocalApiKeyAuthenticationDefaults.ScopeClaimType,
+                ContentSearchScope))
+        {
+            return Results.Forbid();
+        }
+
+        DocumentContentSearchQuery query;
+        try
+        {
+            query = new DocumentContentSearchQuery(
+                request.Text,
+                request.Extension,
+                request.RelativePath,
+                request.ModifiedAfterUtc,
+                request.ModifiedBeforeUtc,
+                request.Limit ?? DocumentSearchQuery.DefaultLimit);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [exception.ParamName ?? "query"] = [exception.Message],
+            });
+        }
+
+        var results = await documentContentSearch.SearchAsync(query, cancellationToken);
+        return Results.Ok(DocumentSearchResponse.FromResults(results));
     }
 
     private static async Task<IResult> SearchAsync(

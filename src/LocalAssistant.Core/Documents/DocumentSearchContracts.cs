@@ -102,6 +102,80 @@ public interface ILocalDocumentSearch
         CancellationToken cancellationToken);
 }
 
+public sealed record DocumentContentSearchQuery
+{
+    public const int MaximumTextLength = 200;
+
+    public DocumentContentSearchQuery(
+        string text,
+        string? extension = null,
+        string? relativePath = null,
+        DateTimeOffset? modifiedAfterUtc = null,
+        DateTimeOffset? modifiedBeforeUtc = null,
+        int limit = DocumentSearchQuery.DefaultLimit)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            throw new ArgumentException("The search text is required.", nameof(text));
+        }
+
+        var trimmedText = text.Trim();
+        if (trimmedText.Length > MaximumTextLength)
+        {
+            throw new ArgumentOutOfRangeException(nameof(text));
+        }
+
+        if (limit is <= 0 or > DocumentSearchQuery.MaximumLimit)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit));
+        }
+
+        if (!string.IsNullOrWhiteSpace(extension) && extension[0] != '.')
+        {
+            throw new ArgumentException("The extension must start with a period.", nameof(extension));
+        }
+
+        if (modifiedAfterUtc is not null &&
+            modifiedBeforeUtc is not null &&
+            modifiedAfterUtc > modifiedBeforeUtc)
+        {
+            throw new ArgumentException("The modification date range is invalid.", nameof(modifiedAfterUtc));
+        }
+
+        if (!string.IsNullOrWhiteSpace(relativePath) &&
+            (Path.IsPathRooted(relativePath) || Path.IsPathFullyQualified(relativePath)))
+        {
+            throw new ArgumentException("The document path must be relative.", nameof(relativePath));
+        }
+
+        Text = trimmedText;
+        Extension = string.IsNullOrWhiteSpace(extension) ? null : extension.Trim();
+        RelativePath = string.IsNullOrWhiteSpace(relativePath) ? null : relativePath.Trim();
+        ModifiedAfterUtc = modifiedAfterUtc;
+        ModifiedBeforeUtc = modifiedBeforeUtc;
+        Limit = limit;
+    }
+
+    public string Text { get; }
+
+    public string? Extension { get; }
+
+    public string? RelativePath { get; }
+
+    public DateTimeOffset? ModifiedAfterUtc { get; }
+
+    public DateTimeOffset? ModifiedBeforeUtc { get; }
+
+    public int Limit { get; }
+}
+
+public interface ILocalDocumentContentSearch
+{
+    ValueTask<IReadOnlyList<DocumentSearchResult>> SearchAsync(
+        DocumentContentSearchQuery query,
+        CancellationToken cancellationToken);
+}
+
 public interface IDocumentReferenceProtector
 {
     string Protect(string relativePath);
