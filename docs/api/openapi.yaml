@@ -66,6 +66,34 @@ paths:
                 $ref: "#/components/schemas/ValidationProblem"
         "401": { description: A local API key is required. }
         "403": { description: The authenticated principal lacks the documents.search scope. }
+  /api/documents/{id}/content:
+    get:
+      operationId: readDocumentContent
+      summary: Read bounded text content from an authorized local document.
+      security:
+        - LocalApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Protected document reference returned by the metadata search.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Text content and safe document metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentContentResponse"
+        "401": { description: A local API key is required. }
+        "403": { description: The authenticated principal lacks the documents.read scope. }
+        "404": { description: "The reference is invalid, expired, or no longer identifies an authorized file." }
+        "422":
+          description: The document format is unsupported or the file exceeds 1 MiB.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
   /api/conversations/messages:
     post:
       operationId: sendConversationMessage
@@ -207,6 +235,24 @@ components:
         relativePath: { type: string }
         sizeBytes: { type: integer, format: int64, minimum: 0 }
         lastModifiedUtc: { type: string, format: date-time }
+    DocumentContentResponse:
+      type: object
+      required: [name, extension, relativePath, sizeBytes, lastModifiedUtc, text]
+      properties:
+        name: { type: string }
+        extension: { type: string }
+        relativePath: { type: string }
+        sizeBytes: { type: integer, format: int64, minimum: 0, maximum: 1048576 }
+        lastModifiedUtc: { type: string, format: date-time }
+        text: { type: string }
+    ProblemDetails:
+      type: object
+      required: [title, status]
+      properties:
+        type: { type: string, format: uri, nullable: true }
+        title: { type: string }
+        status: { type: integer, format: int32 }
+        detail: { type: string, nullable: true }
     SendMessageRequest:
       type: object
       required: [message]

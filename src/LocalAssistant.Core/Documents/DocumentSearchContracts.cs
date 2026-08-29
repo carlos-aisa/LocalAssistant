@@ -65,9 +65,53 @@ public sealed record DocumentSearchResult(
     long SizeBytes,
     DateTimeOffset LastModifiedUtc);
 
+public sealed record DocumentContent(
+    string Name,
+    string Extension,
+    string RelativePath,
+    long SizeBytes,
+    DateTimeOffset LastModifiedUtc,
+    string Text);
+
+public enum DocumentContentReadFailure
+{
+    NotFound,
+    UnsupportedFormat,
+    TooLarge,
+}
+
+public sealed record DocumentContentReadOutcome(
+    DocumentContent? Document,
+    DocumentContentReadFailure? Failure)
+{
+    public static DocumentContentReadOutcome Found(DocumentContent document)
+    {
+        return new(document, null);
+    }
+
+    public static DocumentContentReadOutcome Failed(DocumentContentReadFailure failure)
+    {
+        return new(null, failure);
+    }
+}
+
 public interface ILocalDocumentSearch
 {
     ValueTask<IReadOnlyList<DocumentSearchResult>> SearchAsync(
         DocumentSearchQuery query,
+        CancellationToken cancellationToken);
+}
+
+public interface IDocumentReferenceProtector
+{
+    string Protect(string relativePath);
+
+    bool TryUnprotect(string documentReference, out string relativePath);
+}
+
+public interface ILocalDocumentContentReader
+{
+    ValueTask<DocumentContentReadOutcome> ReadAsync(
+        string documentReference,
         CancellationToken cancellationToken);
 }

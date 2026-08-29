@@ -23,9 +23,12 @@ if (bootstrapRequested && args.Length != 1)
 var builder = WebApplication.CreateBuilder(bootstrapRequested ? [] : args);
 
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddDataProtection();
 builder.Services.AddSingleton<ISystemDocumentsPathProvider, SystemDocumentsPathProvider>();
 builder.Services.AddSingleton<ILocalDocumentRoot, ConfiguredLocalDocumentRoot>();
+builder.Services.AddSingleton<IDocumentReferenceProtector, ProtectedDocumentReferenceProtector>();
 builder.Services.AddSingleton<ILocalDocumentSearch, FileSystemDocumentSearch>();
+builder.Services.AddSingleton<ILocalDocumentContentReader, FileSystemDocumentContentReader>();
 builder.Services.AddSingleton<InMemoryConversationStore>();
 builder.Services.AddSingleton<SqliteConversationStore>();
 builder.Services.AddSingleton<IConversationStore>(services =>

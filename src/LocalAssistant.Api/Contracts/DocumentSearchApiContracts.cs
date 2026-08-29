@@ -16,3 +16,23 @@ public sealed record DocumentSearchResponse(
     public static DocumentSearchResponse FromResults(
         IReadOnlyList<DocumentSearchResult> results) => new(results);
 }
+
+public sealed record DocumentContentResponse(
+    string Name,
+    string Extension,
+    string RelativePath,
+    long SizeBytes,
+    DateTimeOffset LastModifiedUtc,
+    string Text)
+{
+    public static DocumentContentResponse FromDocument(DocumentContent document)
+    {
+        return new(
+            document.Name,
+            document.Extension,
+            document.RelativePath,
+            document.SizeBytes,
+            document.LastModifiedUtc,
+            document.Text);
+    }
+}

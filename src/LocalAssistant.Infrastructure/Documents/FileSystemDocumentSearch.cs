@@ -13,10 +13,14 @@ public sealed class FileSystemDocumentSearch : ILocalDocumentSearch
     };
 
     private readonly ILocalDocumentRoot _documentRoot;
+    private readonly IDocumentReferenceProtector _documentReferenceProtector;
 
-    public FileSystemDocumentSearch(ILocalDocumentRoot documentRoot)
+    public FileSystemDocumentSearch(
+        ILocalDocumentRoot documentRoot,
+        IDocumentReferenceProtector documentReferenceProtector)
     {
         _documentRoot = documentRoot;
+        _documentReferenceProtector = documentReferenceProtector;
     }
 
     public ValueTask<IReadOnlyList<DocumentSearchResult>> SearchAsync(
@@ -37,7 +41,12 @@ public sealed class FileSystemDocumentSearch : ILocalDocumentSearch
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!TryCreateResult(rootPath, filePath, query, out var result))
+            if (!TryCreateResult(
+                    rootPath,
+                    filePath,
+                    query,
+                    _documentReferenceProtector,
+                    out var result))
             {
                 continue;
             }
@@ -82,6 +91,7 @@ public sealed class FileSystemDocumentSearch : ILocalDocumentSearch
         string rootPath,
         string filePath,
         DocumentSearchQuery query,
+        IDocumentReferenceProtector documentReferenceProtector,
         out DocumentSearchResult result)
     {
         result = default!;
@@ -105,7 +115,7 @@ public sealed class FileSystemDocumentSearch : ILocalDocumentSearch
 
             var relativePath = Path.GetRelativePath(rootPath, fullPath);
             result = new DocumentSearchResult(
-                Guid.NewGuid().ToString("N"),
+                documentReferenceProtector.Protect(relativePath),
                 file.Name,
                 file.Extension,
                 relativePath,
