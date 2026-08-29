@@ -308,6 +308,43 @@ siguiente petición para permitir instalar o corregir el modelo sin reiniciar la
 Si `/api/show` publica un valor `*.context_length`, la configuración tampoco puede
 superarlo.
 
+### Cliente de terminal para pruebas manuales
+
+`scripts/Chat.ps1` es una herramienta de desarrollo para conversar manualmente con
+la API. No es la interfaz definitiva del producto, no guarda conversaciones ni
+credenciales y no sustituye una futura UI.
+
+En el equipo de sobremesa, la configuración recomendada actualmente para estas
+pruebas es `qwen3.5:9b`. Descarga el modelo e inicia la API desde la raíz:
+
+```powershell
+ollama pull qwen3.5:9b
+$env:LocalAssistant__Ollama__Model = "qwen3.5:9b"
+dotnet run --project src/LocalAssistant.Api -- --urls http://localhost:5100
+```
+
+En una segunda terminal, ejecuta el cliente:
+
+```powershell
+.\scripts\Chat.ps1 -Provider ollama
+```
+
+La API key es opcional para conversaciones anónimas. Si la necesitas, proporciónala
+sin guardarla en archivos mediante la variable de entorno de la sesión actual:
+
+```powershell
+$env:LOCALASSISTANT_API_KEY = $apiKey
+.\scripts\Chat.ps1 -Provider ollama
+```
+
+Alternativamente, `-PromptForApiKey` la solicita sin eco. No uses un argumento de
+la línea de comandos para la clave.
+
+Los comandos interactivos son `/help`, `/new`, `/provider fake`, `/provider ollama`,
+`/scenario <nombre>`, `/info` y `/exit`. El proveedor fake admite actualmente
+`direct`, `time` y `temperature`; el cliente muestra este modo de forma visible para
+evitar confundirlo con una conversación de Ollama.
+
 ### Validación local observada
 
 El 17 de agosto de 2026 se completó un smoke test real con Ollama `0.32.14`,
