@@ -210,4 +210,13 @@ public sealed class AuthenticatedConversationStore(IConversationStore persistent
 
         await ephemeralStore.AppendAsync(conversationId, message, cancellationToken);
     }
+
+    public ValueTask<bool> DeleteOwnedAsync(
+        Guid conversationId,
+        string ownerPrincipalId,
+        CancellationToken cancellationToken) =>
+        persistentStore.DeleteOwnedAsync(
+            conversationId,
+            ownerPrincipalId,
+            cancellationToken);
 }

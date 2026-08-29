@@ -150,8 +150,8 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
 - Evaluar protección en reposo y consecuencias de backup y restauración según el
   almacenamiento y despliegue elegidos, sin fijar todavía un mecanismo de cifrado.
 - [x] Persistir conversaciones autenticadas en SQLite, manteniendo las anónimas
-  efímeras en memoria, con retención configurable y borrado selectivo por propietario.
-  Las trazas durables siguen pendientes.
+  efímeras en memoria, con retención configurable y borrado selectivo HTTP por
+  propietario tras confirmación explícita. Las trazas durables siguen pendientes.
 - [x] Resolver concurrencia de turnos sobre una misma conversación dentro de un
   proceso mediante un bloqueo por conversación; una espera cancelada no modifica el
   historial ni llama al proveedor. La coordinación entre procesos sigue pendiente.

@@ -1,11 +1,17 @@
+using System.Security.Claims;
 using LocalAssistant.Api.Contracts;
 using LocalAssistant.Api.LanguageModels;
+using LocalAssistant.Core.Conversations;
 using LocalAssistant.Core.Orchestration;
+using LocalAssistant.Infrastructure.Conversations;
+using Microsoft.Extensions.Options;
 
 namespace LocalAssistant.Api.Endpoints;
 
 public static class ConversationEndpoints
 {
+    private const string DeleteConfirmationHeader = "X-LocalAssistant-Confirm-Delete";
+
     public static IEndpointRouteBuilder MapConversationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost("/api/conversations/messages", SendMessageAsync)
@@ -14,6 +20,9 @@ public static class ConversationEndpoints
         endpoints.MapPost("/api/conversations/{conversationId:guid}/tool-confirmations/{confirmationId:guid}/decisions", ResolveConfirmationAsync)
             .WithName("ResolveToolConfirmation")
             .WithSummary("Approves or rejects one server-held tool call.");
+        endpoints.MapDelete("/api/conversations/{conversationId:guid}", DeleteAsync)
+            .WithName("DeleteConversation")
+            .WithSummary("Deletes one authenticated principal's persisted conversation.");
 
         return endpoints;
     }
@@ -64,6 +73,61 @@ public static class ConversationEndpoints
         }
         var result = await orchestrator.ResolveConfirmationAsync(conversationId, confirmationId, request.Approved, selection.Provider, cancellationToken);
         return Results.Json(ConversationApiResponse.FromResult(result), statusCode: GetStatusCode(result));
+    }
+
+    private static async Task<IResult> DeleteAsync(
+        Guid conversationId,
+        HttpContext httpContext,
+        IOptions<SqliteConversationStoreOptions> persistenceOptions,
+        IConversationStore conversationStore,
+        IConversationExecutionLock conversationLock,
+        IToolConfirmationStore confirmationStore,
+        CancellationToken cancellationToken)
+    {
+        if (!persistenceOptions.Value.Enabled)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Conversation persistence is disabled.");
+        }
+
+        if (httpContext.User.Identity?.IsAuthenticated != true)
+        {
+            return Results.Unauthorized();
+        }
+
+        var ownerPrincipalId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(ownerPrincipalId))
+        {
+            return Results.Unauthorized();
+        }
+
+        var confirmationValues = httpContext.Request.Headers[DeleteConfirmationHeader];
+        if (confirmationValues.Count != 1 || !string.Equals(
+                confirmationValues[0],
+                "true",
+                StringComparison.Ordinal))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [DeleteConfirmationHeader] = ["The delete confirmation header must be exactly true."],
+            });
+        }
+
+        using var lockHandle = await conversationLock.AcquireAsync(
+            conversationId,
+            cancellationToken);
+        var deleted = await conversationStore.DeleteOwnedAsync(
+            conversationId,
+            ownerPrincipalId,
+            cancellationToken);
+        if (!deleted)
+        {
+            return Results.NotFound();
+        }
+
+        await confirmationStore.RemoveAsync(conversationId, cancellationToken);
+        return Results.NoContent();
     }
 
     private static int GetStatusCode(ConversationTurnResult result)
