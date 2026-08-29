@@ -5,6 +5,7 @@ namespace LocalAssistant.Core.Orchestration;
 
 public sealed record PendingToolConfirmation(
     Guid ConfirmationId,
+    Guid OperationId,
     Guid ConversationId,
     string ProviderName,
     string? PrincipalId,

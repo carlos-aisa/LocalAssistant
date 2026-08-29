@@ -15,12 +15,12 @@ public sealed class CurrentTimeTool : ITool
 
     private readonly TimeProvider _timeProvider;
 
-    private static readonly ToolMetadata _toolMetadata = 
+    private static readonly ToolMetadata _toolMetadata =
         new(ToolName,
             "Returns the current UTC date and time.",
             ToolRiskProfile.PublicLocalRead);
 
-    public ToolDefinition Definition {get;} =  new(
+    public ToolDefinition Definition { get; } = new(
                 _toolMetadata,
                 EmptyObjectSchema);
 

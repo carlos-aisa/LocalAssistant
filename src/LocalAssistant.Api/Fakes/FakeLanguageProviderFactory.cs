@@ -15,6 +15,11 @@ public sealed class FakeLanguageProviderFactory
         fromUnit = "celsius",
         toUnit = "fahrenheit",
     });
+    private static readonly JsonElement ReminderArguments = JsonSerializer.SerializeToElement(new
+    {
+        title = "Review the local reminder design",
+        dueAtUtc = "2026-09-01T09:00:00Z",
+    });
 
     public bool TryCreate(string scenario, out ILanguageProvider? provider)
     {
@@ -23,6 +28,7 @@ public sealed class FakeLanguageProviderFactory
             "direct" => CreateDirectProvider(),
             "time" => CreateTimeProvider(),
             "temperature" => CreateTemperatureProvider(),
+            "reminder" => CreateReminderProvider(),
             _ => null,
         };
 
@@ -92,5 +98,38 @@ public sealed class FakeLanguageProviderFactory
         var unit = document.RootElement.GetProperty("unit").GetString();
         return LanguageProviderResponse.Final(
             $"100 Celsius is {value.ToString("G29", CultureInfo.InvariantCulture)} {unit}.");
+    }
+
+    private static ScriptedLanguageProvider CreateReminderProvider()
+    {
+        return new ScriptedLanguageProvider(
+        [
+            ReminderResponse,
+            ReminderResponse,
+        ],
+        "fake-reminder");
+    }
+
+    private static LanguageProviderResponse ReminderResponse(LanguageProviderRequest request)
+    {
+        var toolMessage = request.Messages.LastOrDefault(
+            item => item.ToolResult?.ToolName == CreateReminderTool.ToolName);
+        var result = toolMessage?.ToolResult;
+        if (result is null)
+        {
+            return LanguageProviderResponse.RequestTools(new ToolCall(
+                "fake-reminder-call-1",
+                CreateReminderTool.ToolName,
+                ReminderArguments));
+        }
+
+        if (result.IsError)
+        {
+            return LanguageProviderResponse.Final("The reminder was not created.");
+        }
+
+        using var document = JsonDocument.Parse(result.Content);
+        var title = document.RootElement.GetProperty("title").GetString();
+        return LanguageProviderResponse.Final($"Reminder created: {title}.");
     }
 }

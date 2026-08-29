@@ -53,9 +53,12 @@ para leer un dato sensible.
   antes de comparar proveedores, y la falta de capacidad local no autoriza datos
   `DENY` para un LLM externo.
 - **Acciones repetidas:** la confirmación actual se consume una sola vez, pero no
-  aporta idempotencia distribuida. Las herramientas reales con cambios de estado o
-  coste deberán definir una clave de operación e idempotencia antes de conectarse a
-  dispositivos o servicios externos.
+  aporta idempotencia distribuida. `create_reminder` es el primer vertical slice:
+  genera una clave de operación interna al retener la confirmación y crea el resultado
+  de forma atómica por principal y clave dentro del proceso. La garantía no sobrevive
+  a un reinicio ni cubre varios procesos, dispositivos o servicios externos; cada
+  futura herramienta con efectos deberá definir su propia semántica antes de
+  conectarse a esos destinos.
 - **Denegación de servicio:** el límite de iteraciones y los timeouts reducen bucles
   y esperas, pero faltan cuotas, límites de tamaño y rate limiting.
 - **Memoria sensible:** las conversaciones permanecen en RAM hasta terminar el
@@ -392,6 +395,29 @@ Un error de transcripción no se atribuirá automáticamente al usuario, una ses
 fijará silenciosamente su nivel y las puntuaciones internas no se presentarán como
 certificaciones oficiales. El usuario podrá corregir, exportar y eliminar su perfil
 e historial bajo las reglas de retención y backup aplicables.
+
+### Actividades conversacionales con estado
+
+Una actividad activa pertenecerá a un principal y a una conversación autorizada, pero
+mantendrá identidad y estado distintos de ambos. Antes de recuperar su contexto o de
+entregar un turno al tutor, el servidor comprobará propiedad, autorización y ámbito;
+un `ConversationId` conocido no permitirá secuestrar una sesión ni acceder a su
+historial. Esta comprobación se aplicará también al continuar una práctica desde otro
+canal o dispositivo.
+
+El modelo no podrá cambiar el enrutamiento, el propietario ni el estado de una
+actividad. Solo podrá proponer acciones estructuradas; el servidor validará controles
+universales, transición, caducidad, concurrencia y efectos. Cancelar, suspender,
+reanudar o terminar seguirán accesibles aunque un módulo esté activo, y una petición
+ambigua no se interpretará como cierre.
+
+Los perfiles de proveedor limitarán las categorías de datos que cada modelo puede
+recibir. No se enviará automáticamente el perfil completo, el historial entero ni
+contenido de otro canal a un nuevo proveedor por conveniencia. La auditoría del ciclo
+de vida será proporcional: registrará la transición y su procedencia sin convertir
+argumentos, transcripciones o resultados sensibles en registros indiscriminados. Los
+límites de actividad, inactividad, cancelación, recuperación y retención se
+definirán antes de habilitar reintentos o procesamiento diferido duradero.
 
 ## Ciclo futuro de proyectos y agentes de programación
 

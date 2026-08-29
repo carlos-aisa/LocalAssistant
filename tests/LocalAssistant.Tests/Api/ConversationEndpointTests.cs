@@ -328,6 +328,45 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
     }
 
     [Fact]
+    public async Task ReminderScenarioCreatesOneConfirmedPrivateReminder()
+    {
+        using var client = CreateIdentityClient(["reminders.write"]);
+        client.DefaultRequestHeaders.Add(
+            LocalApiKeyAuthenticationDefaults.HeaderName,
+            LocalApiKey);
+
+        using var pendingResponse = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Remind me to review the design", scenario = "reminder" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Accepted, pendingResponse.StatusCode);
+        using var pendingBody = await JsonDocument.ParseAsync(
+            await pendingResponse.Content.ReadAsStreamAsync(CancellationToken.None),
+            cancellationToken: CancellationToken.None);
+        var conversationId = pendingBody.RootElement.GetProperty("conversationId").GetGuid();
+        var confirmation = pendingBody.RootElement.GetProperty("confirmation");
+        var confirmationId = confirmation.GetProperty("confirmationId").GetGuid();
+        Assert.Equal("create_reminder", confirmation.GetProperty("toolName").GetString());
+
+        using var decisionResponse = await client.PostAsJsonAsync(
+            $"/api/conversations/{conversationId}/tool-confirmations/{confirmationId}/decisions",
+            new { approved = true, scenario = "reminder" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, decisionResponse.StatusCode);
+        using var decisionBody = await JsonDocument.ParseAsync(
+            await decisionResponse.Content.ReadAsStreamAsync(CancellationToken.None),
+            cancellationToken: CancellationToken.None);
+        Assert.Equal(
+            "Reminder created: Review the local reminder design.",
+            decisionBody.RootElement.GetProperty("content").GetString());
+        var tool = Assert.Single(decisionBody.RootElement.GetProperty("tools").EnumerateArray());
+        Assert.Equal("create_reminder", tool.GetProperty("toolName").GetString());
+        Assert.True(tool.GetProperty("succeeded").GetBoolean());
+    }
+
+    [Fact]
     public async Task ToolFailureDoesNotExposeProviderContentToTheApiClient()
     {
         using var client = _factory.WithWebHostBuilder(builder =>
