@@ -3,7 +3,7 @@
 ## Punto de partida y decisiones confirmadas
 
 La especificación aprobada es
-`docs/superpowers/specs/2026-08-29-personal-memory-notes-design.md`. El repositorio
+`docs/specs/2026-08-29-personal-memory-notes-design.md`. El repositorio
 parte de un árbol limpio en `agent/add-personal-memory-notes`; no se incorporarán los
 cambios de la PR 31 mientras no estén integrados en `main`.
 

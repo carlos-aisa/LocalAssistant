@@ -3,7 +3,7 @@
 ## Alcance y compatibilidad
 
 Este plan implementa la especificación
-`docs/superpowers/specs/2026-08-29-bootstrap-personal-memory-scopes-design.md` dentro
+`docs/specs/2026-08-29-bootstrap-personal-memory-scopes-design.md` dentro
 de la PR de notas de memoria personal. Solo evoluciona el estado de identidad de
 instalación desde el esquema 1 al 2; no añade gestión de permisos ni cambia la
 identidad configurada mediante `LocalAssistant:Identity`.
