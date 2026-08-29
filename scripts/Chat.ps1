@@ -22,7 +22,9 @@ $conversationId = $null
 $apiKey = $null
 
 function Get-ApiKey {
-    if ($PromptForApiKey) {
+    $shouldPromptForApiKey =
+        $PromptForApiKey -or [string]::IsNullOrWhiteSpace($env:LOCALASSISTANT_API_KEY)
+    if ($shouldPromptForApiKey) {
         $secureApiKey = Read-Host "Local API key" -AsSecureString
         $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureApiKey)
 
@@ -332,6 +334,12 @@ try {
 
     $baseUri = $baseUrlUri.AbsoluteUri.TrimEnd("/")
     $apiKey = Get-ApiKey
+    if ([string]::IsNullOrWhiteSpace($apiKey)) {
+        Write-Host (
+            "No API key was provided. Continuing with an anonymous session; " +
+            "conversations will be ephemeral.") -ForegroundColor Yellow
+    }
+
     $httpClient = [System.Net.Http.HttpClient]::new()
 
     $health = Invoke-ApiRequest -Method GET -Path "/health"

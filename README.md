@@ -393,16 +393,21 @@ En una segunda terminal, ejecuta el cliente:
 .\scripts\Chat.ps1 -Provider ollama
 ```
 
-La API key es opcional para conversaciones anónimas. Si la necesitas, proporciónala
-sin guardarla en archivos mediante la variable de entorno de la sesión actual:
+La API key es opcional para conversaciones anónimas. Si
+`LOCALASSISTANT_API_KEY` no está definida, el cliente la solicita al iniciar sin
+mostrarla. Dejar la entrada vacía continúa de forma explícita con una sesión anónima y
+efímera, que no puede persistir conversaciones privadas.
+
+También puedes proporcionar la clave sin guardarla en archivos mediante la variable de
+entorno de la sesión actual:
 
 ```powershell
 $env:LOCALASSISTANT_API_KEY = $apiKey
 .\scripts\Chat.ps1 -Provider ollama
 ```
 
-Alternativamente, `-PromptForApiKey` la solicita sin eco. No uses un argumento de
-la línea de comandos para la clave.
+Usa `-PromptForApiKey` para solicitarla sin eco incluso si la variable de entorno está
+definida. No uses un argumento de la línea de comandos para la clave.
 
 Los comandos interactivos son `/help`, `/new`, `/provider fake`, `/provider ollama`,
 `/scenario <nombre>`, `/info` y `/exit`. El proveedor fake admite actualmente
