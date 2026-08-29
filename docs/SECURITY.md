@@ -127,10 +127,9 @@ selectivo transaccional. El endpoint `DELETE /api/conversations/{conversationId}
 exige un principal autenticado y una cabecera de confirmación exacta; las conversaciones
 ajenas, anónimas o inexistentes responden todas `404` y el borrado válido invalida la
 confirmación de herramienta pendiente bajo el mismo bloqueo de conversación. Las
-conversaciones anónimas siguen fuera de SQLite. Los backups requieren protección
-equivalente, y restaurar un punto histórico puede reintroducir sus datos sin
-recalcular propietarios, scopes o caducidades; no constituye una excepción de acceso
-ni una promesa de borrado global de copias ya existentes.
+conversaciones anónimas siguen fuera de SQLite. Backups y restauraciones conservan la
+misma propiedad, retención y requisitos de protección;
+no constituyen una excepción de acceso.
 
 Las notas de memoria personal son un recurso SQLite separado de las conversaciones,
 pero usan la misma activación explícita y retención configurada. Solo un principal
