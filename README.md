@@ -52,6 +52,8 @@ Implementado:
   siguen en memoria y son efímeras.
 - Retención configurable de conversaciones persistidas, inicialmente 30 días, y
   borrado selectivo interno protegido por propietario.
+- Raíz documental local permitida, con búsqueda por metadatos, lectura textual
+  limitada y búsqueda textual como capacidades y permisos independientes.
 - Logging estructurado sin contenido de conversación.
 - Pruebas unitarias y de integración HTTP.
 - Contratos de proveedor reutilizados por el fake y el adaptador de Ollama.
@@ -233,9 +235,10 @@ silencioso. Esta API todavía no entrega el contenido al LLM ni crea un índice.
 
 `GET /api/documents/content-search?text=...` busca texto literal, sin distinguir
 mayúsculas, en formatos permitidos de hasta 1 MiB. Admite los filtros de extensión,
-ruta relativa, fechas de modificación y límite de la búsqueda documental. Requiere el scope independiente
-`documents.content.search` y devuelve solo metadatos seguros; no devuelve fragmentos,
-contenido ni rutas absolutas. No crea índice, embeddings, RAG ni tráfico a un modelo.
+ruta relativa, fechas de modificación y límite de la búsqueda documental. Requiere el
+scope independiente `documents.content.search` y devuelve solo metadatos seguros; no
+devuelve fragmentos, contenido ni rutas absolutas. No crea índice, embeddings, RAG ni
+tráfico a un modelo.
 
 ### Escenario 1: respuesta directa
 
