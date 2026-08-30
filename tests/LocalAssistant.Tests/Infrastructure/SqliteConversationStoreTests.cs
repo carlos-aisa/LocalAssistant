@@ -260,6 +260,42 @@ public sealed class SqliteConversationStoreTests
         Assert.Equal(1, embeddingProvider.CallCount);
     }
 
+    [Fact]
+    public async Task DoesNotStoreAnIndexWhenTheConversationChangesDuringProcessing()
+    {
+        using var directory = new LocalAssistant.Tests.Api.TemporaryInstallationStateDirectory();
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 8, 30, 9, 0, 0, TimeSpan.Zero));
+        var store = CreateStore(
+            Path.Combine(directory.Path, "conversations.db"),
+            clock,
+            retrievalEnabled: true);
+        var conversationId = Guid.NewGuid();
+        await store.GetOrCreateMetadataAsync(conversationId, "owner-a", CancellationToken.None);
+        await store.AppendAsync(
+            conversationId,
+            new ConversationMessage(ConversationRole.User, "Plan weekly meals."),
+            CancellationToken.None);
+        clock.Advance(TimeSpan.FromMinutes(15));
+        var embeddingProvider = new CallbackEmbeddingProvider(async () =>
+        {
+            await store.AppendAsync(
+                conversationId,
+                new ConversationMessage(ConversationRole.Assistant, "Here are some ideas."),
+                CancellationToken.None);
+        });
+        var coordinator = new ConversationIndexingCoordinator(
+            store,
+            embeddingProvider,
+            new StaticSummaryProvider());
+
+        Assert.Equal(0, await coordinator.ProcessPendingAsync(CancellationToken.None));
+        Assert.Empty(await store.RetrieveByEmbeddingAsync(
+            "owner-a",
+            Guid.NewGuid(),
+            new TextEmbedding("test-model", [0.25f, -0.5f]),
+            CancellationToken.None));
+    }
+
     private static SqliteConversationStore CreateStore(
         string databasePath,
         TimeProvider? clock = null,
@@ -305,5 +341,16 @@ public sealed class SqliteConversationStoreTests
             CancellationToken cancellationToken) =>
             ValueTask.FromException<ConversationIndexSummary>(
                 new InvalidOperationException("The local chat model is unavailable."));
+    }
+
+    private sealed class CallbackEmbeddingProvider(Func<Task> callback) : ITextEmbeddingProvider
+    {
+        public async ValueTask<TextEmbedding> EmbedAsync(
+            string text,
+            CancellationToken cancellationToken)
+        {
+            await callback();
+            return new TextEmbedding("test-model", [0.25f, -0.5f]);
+        }
     }
 }
