@@ -18,6 +18,8 @@ public sealed class UntrustedDocumentEvidenceTests
     [InlineData("C:\\private\\note.md")]
     [InlineData("..\\note.md")]
     [InlineData("notes/../note.md")]
+    [InlineData("/private/note.md")]
+    [InlineData("\\\\server\\share\\note.md")]
     public void RejectsPathsOutsideTheDocumentSource(string relativePath)
     {
         Assert.Throws<ArgumentException>(() =>

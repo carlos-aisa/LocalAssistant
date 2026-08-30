@@ -9,11 +9,7 @@ public sealed record UntrustedDocumentEvidence
 
     public UntrustedDocumentEvidence(string relativePath, string excerpt)
     {
-        if (string.IsNullOrWhiteSpace(relativePath) ||
-            Path.IsPathRooted(relativePath) ||
-            Path.IsPathFullyQualified(relativePath) ||
-            relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                .Any(segment => StringComparer.Ordinal.Equals(segment, "..")))
+        if (!IsRelativePathWithinSource(relativePath))
         {
             throw new ArgumentException("The document path must be a relative path within its source.", nameof(relativePath));
         }
@@ -31,6 +27,26 @@ public sealed record UntrustedDocumentEvidence
 
     public string Excerpt { get; }
 
+    private static bool IsRelativePathWithinSource(string? relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath))
+        {
+            return false;
+        }
+
+        var normalizedPath = relativePath.Replace('\\', '/');
+        if (normalizedPath[0] == '/' ||
+            (normalizedPath.Length >= 3 &&
+             char.IsAsciiLetter(normalizedPath[0]) &&
+             normalizedPath[1] == ':' &&
+             normalizedPath[2] == '/'))
+        {
+            return false;
+        }
+
+        return normalizedPath.Split('/')
+            .All(segment => !StringComparer.Ordinal.Equals(segment, ".."));
+    }
 }
 
 public static class UntrustedDocumentEvidenceContextComposer
