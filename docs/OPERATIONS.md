@@ -60,6 +60,14 @@ envía de forma transitoria al proveedor y no se guarda como parte del historial
 Los límites `MaximumMatches` y `MaximumContextCharacters` restringen, respectivamente,
 el número de conversaciones y caracteres entregados al proveedor.
 
+Cuando también se configura `LocalAssistant:Ollama:EmbeddingModel`, un servicio alojado
+revisa al arrancar y con la frecuencia `IndexingPollInterval` las conversaciones que
+llevan inactivas al menos `IndexingDelay` (quince minutos por defecto). Genera su
+embedding mediante el Ollama local configurado. Si llega un mensaje durante el trabajo,
+la actualización se descarta y esa conversación vuelve a esperar el periodo completo.
+Un fallo de Ollama se registra sin contenido conversacional y se reintenta en el
+siguiente sondeo; la recuperación literal continúa disponible.
+
 El índice es dato privado derivado: comparte la ruta, permisos operativos, backup,
 retención y borrado de `conversations.db`. No deben registrarse consultas ni
 fragmentos recuperados en logs o auditoría.

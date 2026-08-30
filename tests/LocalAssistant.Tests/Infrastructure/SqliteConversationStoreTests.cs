@@ -141,6 +141,32 @@ public sealed class SqliteConversationStoreTests
         Assert.Contains("menus", match.Fragment, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task IndexesAnInactiveConversationOnlyAfterTheConfiguredDelay()
+    {
+        using var directory = new LocalAssistant.Tests.Api.TemporaryInstallationStateDirectory();
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 8, 30, 9, 0, 0, TimeSpan.Zero));
+        var store = CreateStore(
+            Path.Combine(directory.Path, "conversations.db"),
+            clock,
+            retrievalEnabled: true);
+        var provider = new CountingEmbeddingProvider();
+        var coordinator = new ConversationIndexingCoordinator(store, provider);
+        var conversationId = Guid.NewGuid();
+        await store.GetOrCreateMetadataAsync(conversationId, "owner-a", CancellationToken.None);
+        await store.AppendAsync(
+            conversationId,
+            new ConversationMessage(ConversationRole.User, "Plan weekly meals."),
+            CancellationToken.None);
+
+        Assert.Equal(0, await coordinator.ProcessPendingAsync(CancellationToken.None));
+        clock.Advance(TimeSpan.FromMinutes(15));
+
+        Assert.Equal(1, await coordinator.ProcessPendingAsync(CancellationToken.None));
+        Assert.Equal(1, provider.CallCount);
+        Assert.Equal(0, await coordinator.ProcessPendingAsync(CancellationToken.None));
+    }
+
     private static SqliteConversationStore CreateStore(
         string databasePath,
         TimeProvider? clock = null,
@@ -156,4 +182,17 @@ public sealed class SqliteConversationStoreTests
             Enabled = retrievalEnabled,
         }),
         clock ?? TimeProvider.System);
+
+    private sealed class CountingEmbeddingProvider : ITextEmbeddingProvider
+    {
+        public int CallCount { get; private set; }
+
+        public ValueTask<TextEmbedding> EmbedAsync(
+            string text,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return ValueTask.FromResult(new TextEmbedding("test-model", [0.25f, -0.5f]));
+        }
+    }
 }
