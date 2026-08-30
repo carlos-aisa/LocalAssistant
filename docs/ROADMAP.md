@@ -202,7 +202,10 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
   futura capacidad `LocalCodeSource` tendrá requisitos propios.
 - Conservar procedencia y frescura de evidencias externas sin retener páginas
   completas por defecto; decidir la caché después de medir el patrón de acceso.
-- Protección frente a prompt injection procedente de documentos.
+- [x] Preparar una frontera contractual frente a prompt injection procedente de
+  documentos: evidencia acotada, ruta relativa validada y delimitadores explícitos
+  para un futuro contexto del modelo. No habilita todavía RAG ni entrega documentos a
+  Jarvis; la autorización de herramientas continúa exclusivamente en el servidor.
 
 **Capacidades excluidas:** repositorios, escritura arbitraria, RAG automático, OCR,
 watchers, base vectorial y acceso de módulos a carpetas no registradas.

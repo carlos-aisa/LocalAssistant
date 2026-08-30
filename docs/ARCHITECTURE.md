@@ -419,6 +419,13 @@ seguros y puede incluir un extracto máximo de 280 caracteres, pero no devuelve 
 completo, vectores, puntuaciones ni rutas absolutas. Un fallo del embedding degrada
 la operación a la búsqueda literal existente.
 
+`UntrustedDocumentEvidence` prepara el único formato permitido para que una capacidad
+futura lleve un fragmento documental al contexto de un modelo. Valida procedencia
+relativa y límite de extracto, y `UntrustedDocumentEvidenceContextComposer` lo delimita
+como evidencia no confiable. Ningún flujo actual compone ese bloque en
+`LanguageProviderRequest`: no se habilitan RAG, herramientas documentales ni cambios
+en la política de herramientas.
+
 ```mermaid
 flowchart LR
     Local[LLM local / orquestador] --> Tool[Herramienta documental]

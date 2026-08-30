@@ -361,6 +361,13 @@ endpoint Ollama local configurado; no hay proveedor remoto permitido. La respues
 puede contener un extracto de 280 caracteres, pero no devuelve ni registra contenido
 completo, vectores o puntuaciones.
 
+Antes de que un futuro flujo pueda incorporar un fragmento documental al contexto de
+un modelo, debe representarlo como `UntrustedDocumentEvidence` y componerlo mediante
+sus delimitadores explícitos. El texto se declara evidencia no confiable y no puede
+promoverse a instrucción del sistema, autorización, scope, confirmación, herramienta
+ni argumento validado. Esta separación no garantiza que un modelo ignore una orden
+hostil: las políticas y validaciones del servidor siguen siendo la frontera decisiva.
+
 Toda ruta o referencia influida por el modelo se tratará como no confiable. El
 servicio validará el destino finalmente resuelto, no solo el texto de entrada, y
 evitará escapar de las raíces mediante `..`, rutas absolutas, representaciones
