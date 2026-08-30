@@ -1,5 +1,6 @@
 using LocalAssistant.Api.Endpoints;
 using LocalAssistant.Api.Fakes;
+using LocalAssistant.Api.HostedServices;
 using LocalAssistant.Api.LanguageModels;
 using LocalAssistant.Api.Profiles;
 using LocalAssistant.Api.Security;
@@ -37,12 +38,18 @@ builder.Services.AddSingleton<ILocalDocumentContentSearch, FileSystemDocumentCon
 builder.Services.AddSingleton<ILocalDocumentContentReader, FileSystemDocumentContentReader>();
 builder.Services.AddSingleton<InMemoryConversationStore>();
 builder.Services.AddSingleton<SqliteConversationStore>();
+builder.Services.AddSingleton<ConversationIndexingCoordinator>();
 builder.Services.AddSingleton<NullConversationContextRetriever>();
+builder.Services.AddSingleton<HybridConversationContextRetriever>(services =>
+    new HybridConversationContextRetriever(
+        services.GetRequiredService<SqliteConversationStore>(),
+        services.GetRequiredService<ITextEmbeddingProvider>(),
+        services.GetRequiredService<IOptions<ConversationRetrievalOptions>>().Value));
 builder.Services.AddSingleton<IConversationContextRetriever>(services =>
 {
     var options = services.GetRequiredService<IOptions<SqliteConversationStoreOptions>>().Value;
     return options.Enabled
-        ? services.GetRequiredService<SqliteConversationStore>()
+        ? services.GetRequiredService<HybridConversationContextRetriever>()
         : services.GetRequiredService<NullConversationContextRetriever>();
 });
 builder.Services.AddSingleton<IPersonalMemoryStore, SqlitePersonalMemoryStore>();
@@ -76,6 +83,11 @@ builder.Services.AddSingleton<IToolRegistry>(services =>
     new ToolRegistry(services.GetServices<ITool>()));
 builder.Services.AddSingleton<FakeLanguageProviderFactory>();
 builder.Services.AddHttpClient<OllamaLanguageProvider>();
+builder.Services.AddHttpClient<OllamaTextEmbeddingProvider>();
+builder.Services.AddSingleton<ITextEmbeddingProvider, OllamaTextEmbeddingProvider>();
+builder.Services.AddHttpClient<OllamaConversationIndexSummaryProvider>();
+builder.Services.AddSingleton<IConversationIndexSummaryProvider, OllamaConversationIndexSummaryProvider>();
+builder.Services.AddHostedService<ConversationIndexingHostedService>();
 builder.Services.AddHttpClient<OllamaModelInspector>();
 builder.Services.AddSingleton<OllamaModelValidationCache>();
 builder.Services.AddScoped<LanguageProviderSelector>();
@@ -122,7 +134,9 @@ builder.Services.AddOptions<ConversationRetrievalOptions>()
     .Bind(builder.Configuration.GetSection(ConversationRetrievalOptions.SectionName))
     .Validate(
         options => options.MaximumMatches is > 0 and <= 3 &&
-                   options.MaximumContextCharacters is >= 100 and <= 2_000,
+                   options.MaximumContextCharacters is >= 100 and <= 2_000 &&
+                   options.IndexingDelay > TimeSpan.Zero &&
+                   options.IndexingPollInterval > TimeSpan.Zero,
         "Conversation retrieval limits must be within their supported ranges.")
     .ValidateOnStart();
 builder.Services.AddOptions<LocalDocumentSourceOptions>()

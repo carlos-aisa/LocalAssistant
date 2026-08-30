@@ -6,9 +6,13 @@ public sealed class OllamaOptions
 
     public string Model { get; init; } = string.Empty;
 
+    public string EmbeddingModel { get; init; } = string.Empty;
+
     public bool Think { get; init; }
 
     public int ContextWindow { get; init; } = 4096;
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Model);
+
+    public bool IsEmbeddingConfigured => !string.IsNullOrWhiteSpace(EmbeddingModel);
 }

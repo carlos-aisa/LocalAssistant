@@ -24,8 +24,17 @@ public sealed class OllamaModelValidationCache
     public void Add(Uri endpoint, string model, int contextWindow) =>
         _validatedModels.TryAdd(CreateKey(endpoint, model, contextWindow), 0);
 
+    public bool ContainsEmbedding(Uri endpoint, string model) =>
+        _validatedModels.ContainsKey(CreateEmbeddingKey(endpoint, model));
+
+    public void AddEmbedding(Uri endpoint, string model) =>
+        _validatedModels.TryAdd(CreateEmbeddingKey(endpoint, model), 0);
+
     private static string CreateKey(Uri endpoint, string model, int contextWindow) =>
         $"{endpoint.AbsoluteUri.TrimEnd('/')}|{model}|{contextWindow}";
+
+    private static string CreateEmbeddingKey(Uri endpoint, string model) =>
+        $"{endpoint.AbsoluteUri.TrimEnd('/')}|embedding|{model}";
 }
 
 public sealed class OllamaModelInspector
@@ -115,6 +124,63 @@ public sealed class OllamaModelInspector
         }
 
         _cache.Add(_options.Endpoint, _options.Model, _options.ContextWindow);
+        return OllamaModelValidation.Valid;
+    }
+
+    public async Task<OllamaModelValidation> ValidateEmbeddingAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!_options.IsEmbeddingConfigured)
+        {
+            return OllamaModelValidation.Invalid(
+                "Ollama requires LocalAssistant:Ollama:EmbeddingModel configuration.");
+        }
+
+        Uri endpoint;
+        try
+        {
+            endpoint = OllamaEndpoint.Create(_options.Endpoint, "api/show");
+        }
+        catch (InvalidOperationException exception)
+        {
+            return OllamaModelValidation.Invalid(exception.Message);
+        }
+
+        if (_cache.ContainsEmbedding(_options.Endpoint, _options.EmbeddingModel))
+        {
+            return OllamaModelValidation.Valid;
+        }
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.PostAsJsonAsync(
+                endpoint,
+                new OllamaShowRequest(_options.EmbeddingModel),
+                cancellationToken);
+        }
+        catch (HttpRequestException)
+        {
+            return OllamaModelValidation.Invalid(
+                "Ollama could not be reached to validate the configured embedding model.");
+        }
+
+        using (response)
+        {
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                return OllamaModelValidation.Invalid(
+                    $"The configured Ollama embedding model '{_options.EmbeddingModel}' is not installed.");
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return OllamaModelValidation.Invalid(
+                    $"Ollama embedding model validation failed with HTTP status {(int)response.StatusCode}.");
+            }
+        }
+
+        _cache.AddEmbedding(_options.Endpoint, _options.EmbeddingModel);
         return OllamaModelValidation.Valid;
     }
 

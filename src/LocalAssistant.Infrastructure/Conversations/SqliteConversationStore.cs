@@ -149,7 +149,7 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
 
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT document.ConversationId, document.LastActivityUnixMilliseconds, document.SearchText FROM ConversationSearch search INNER JOIN ConversationSearchDocuments document ON document.ConversationId = search.ConversationId AND document.OwnerPrincipalId = search.OwnerPrincipalId WHERE search.OwnerPrincipalId = $owner AND search.ConversationId <> $currentConversationId AND search.SearchText MATCH $query ORDER BY rank LIMIT $limit;";
+        command.CommandText = "SELECT document.ConversationId, document.LastActivityUnixMilliseconds, document.SearchText, document.Topic, document.Summary FROM ConversationSearch search INNER JOIN ConversationSearchDocuments document ON document.ConversationId = search.ConversationId AND document.OwnerPrincipalId = search.OwnerPrincipalId WHERE search.OwnerPrincipalId = $owner AND search.ConversationId <> $currentConversationId AND search.SearchText MATCH $query ORDER BY rank LIMIT $limit;";
         command.Parameters.AddWithValue("$owner", ownerPrincipalId);
         command.Parameters.AddWithValue("$currentConversationId", currentConversationId.ToString("N"));
         command.Parameters.AddWithValue("$query", query);
@@ -164,8 +164,8 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
             matches.Add(new ConversationRetrievedContext(
                 Guid.ParseExact(reader.GetString(0), "N"),
                 DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(1)),
-                LimitText(text, 80),
-                LimitText(text, 300),
+                reader.IsDBNull(3) ? LimitText(text, 80) : reader.GetString(3),
+                reader.IsDBNull(4) ? LimitText(text, 300) : reader.GetString(4),
                 fragment,
                 1));
         }
@@ -173,6 +173,108 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
         return matches.Count == 0
             ? ConversationRetrievalResult.Empty
             : new ConversationRetrievalResult(matches);
+    }
+
+    public async ValueTask<IReadOnlyList<ConversationRetrievedContext>>
+        RetrieveByEmbeddingAsync(
+            string ownerPrincipalId,
+            Guid currentConversationId,
+            TextEmbedding queryEmbedding,
+            CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(queryEmbedding);
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT ConversationId, LastActivityUnixMilliseconds, SearchText, EmbeddingJson, Topic, Summary FROM ConversationSearchDocuments WHERE OwnerPrincipalId = $owner AND ConversationId <> $currentConversationId AND EmbeddingModel = $model AND EmbeddingJson IS NOT NULL ORDER BY LastActivityUnixMilliseconds DESC LIMIT 50;";
+        command.Parameters.AddWithValue("$owner", ownerPrincipalId);
+        command.Parameters.AddWithValue("$currentConversationId", currentConversationId.ToString("N"));
+        command.Parameters.AddWithValue("$model", queryEmbedding.Model);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var matches = new List<ConversationRetrievedContext>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var values = JsonSerializer.Deserialize<IReadOnlyList<float>>(
+                reader.GetString(3),
+                SerializerOptions);
+            if (values is null || values.Count != queryEmbedding.Values.Count ||
+                values.Any(value => !float.IsFinite(value)))
+            {
+                continue;
+            }
+
+            var score = CalculateCosineSimilarity(queryEmbedding.Values, values);
+            if (score < 0.65)
+            {
+                continue;
+            }
+
+            var text = reader.GetString(2);
+            matches.Add(new ConversationRetrievedContext(
+                Guid.ParseExact(reader.GetString(0), "N"),
+                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(1)),
+                reader.IsDBNull(4) ? LimitText(text, 80) : reader.GetString(4),
+                reader.IsDBNull(5) ? LimitText(text, 300) : reader.GetString(5),
+                LimitText(text, _retrievalOptions.MaximumContextCharacters),
+                score));
+        }
+
+        return matches;
+    }
+
+    public async ValueTask<IReadOnlyList<ConversationEmbeddingIndexCandidate>>
+        ListPendingEmbeddingIndexesAsync(CancellationToken cancellationToken)
+    {
+        var cutoff = _clock.GetUtcNow().Subtract(_retrievalOptions.IndexingDelay)
+            .ToUnixTimeMilliseconds();
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT ConversationId, OwnerPrincipalId, LastActivityUnixMilliseconds, SearchText, IndexedActivityUnixMilliseconds, SummaryIndexedActivityUnixMilliseconds FROM ConversationSearchDocuments WHERE LastActivityUnixMilliseconds <= $cutoff AND (IndexedActivityUnixMilliseconds IS NULL OR IndexedActivityUnixMilliseconds < LastActivityUnixMilliseconds OR SummaryIndexedActivityUnixMilliseconds IS NULL OR SummaryIndexedActivityUnixMilliseconds < LastActivityUnixMilliseconds) ORDER BY LastActivityUnixMilliseconds LIMIT 10;";
+        command.Parameters.AddWithValue("$cutoff", cutoff);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var candidates = new List<ConversationEmbeddingIndexCandidate>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            candidates.Add(new ConversationEmbeddingIndexCandidate(
+                Guid.ParseExact(reader.GetString(0), "N"),
+                reader.GetString(1),
+                reader.GetInt64(2),
+                reader.GetString(3),
+                reader.IsDBNull(4) || reader.GetInt64(4) < reader.GetInt64(2),
+                reader.IsDBNull(5) || reader.GetInt64(5) < reader.GetInt64(2)));
+        }
+
+        return candidates;
+    }
+
+    public async ValueTask<bool> StoreIndexAsync(
+        ConversationEmbeddingIndexCandidate candidate,
+        TextEmbedding? embedding,
+        ConversationIndexSummary? summary,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        if (embedding is null && summary is null)
+        {
+            return false;
+        }
+
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE ConversationSearchDocuments SET EmbeddingModel = COALESCE($model, EmbeddingModel), EmbeddingJson = COALESCE($embedding, EmbeddingJson), Topic = COALESCE($topic, Topic), Summary = COALESCE($summary, Summary), KeywordsJson = COALESCE($keywords, KeywordsJson), IndexedActivityUnixMilliseconds = CASE WHEN $embedding IS NULL THEN IndexedActivityUnixMilliseconds ELSE $activity END, SummaryIndexedActivityUnixMilliseconds = CASE WHEN $summary IS NULL THEN SummaryIndexedActivityUnixMilliseconds ELSE $activity END WHERE ConversationId = $id AND OwnerPrincipalId = $owner AND LastActivityUnixMilliseconds = $activity;";
+        command.Parameters.AddWithValue("$model", (object?)embedding?.Model ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$embedding",
+            embedding is null
+                ? DBNull.Value
+                : JsonSerializer.Serialize(embedding.Values, SerializerOptions));
+        command.Parameters.AddWithValue("$topic", (object?)summary?.Topic ?? DBNull.Value);
+        command.Parameters.AddWithValue("$summary", (object?)summary?.Summary ?? DBNull.Value);
+        command.Parameters.AddWithValue("$keywords", summary is null ? DBNull.Value : JsonSerializer.Serialize(summary.Keywords, SerializerOptions));
+        command.Parameters.AddWithValue("$activity", candidate.LastActivityUnixMilliseconds);
+        command.Parameters.AddWithValue("$id", candidate.ConversationId.ToString("N"));
+        command.Parameters.AddWithValue("$owner", candidate.OwnerPrincipalId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     private async ValueTask<SqliteConnection> OpenAsync(CancellationToken cancellationToken)
@@ -201,7 +303,7 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
         Directory.CreateDirectory(Path.GetDirectoryName(databasePath) ?? throw new InvalidOperationException("The conversation database directory is invalid."));
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
-        await ExecuteAsync(connection, null, "CREATE TABLE IF NOT EXISTS Conversations (ConversationId TEXT PRIMARY KEY NOT NULL, OwnerPrincipalId TEXT NOT NULL, ExpiresAtUnixMilliseconds INTEGER NOT NULL, LastActivityUnixMilliseconds INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS ConversationMessages (ConversationId TEXT NOT NULL, SequenceNumber INTEGER NOT NULL, PayloadJson TEXT NOT NULL, PRIMARY KEY (ConversationId, SequenceNumber), FOREIGN KEY (ConversationId) REFERENCES Conversations(ConversationId)); CREATE TABLE IF NOT EXISTS ConversationSearchDocuments (ConversationId TEXT PRIMARY KEY NOT NULL, OwnerPrincipalId TEXT NOT NULL, LastActivityUnixMilliseconds INTEGER NOT NULL, SearchText TEXT NOT NULL); CREATE VIRTUAL TABLE IF NOT EXISTS ConversationSearch USING fts5(ConversationId UNINDEXED, OwnerPrincipalId UNINDEXED, SearchText);", CancellationToken.None);
+        await ExecuteAsync(connection, null, "CREATE TABLE IF NOT EXISTS Conversations (ConversationId TEXT PRIMARY KEY NOT NULL, OwnerPrincipalId TEXT NOT NULL, ExpiresAtUnixMilliseconds INTEGER NOT NULL, LastActivityUnixMilliseconds INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS ConversationMessages (ConversationId TEXT NOT NULL, SequenceNumber INTEGER NOT NULL, PayloadJson TEXT NOT NULL, PRIMARY KEY (ConversationId, SequenceNumber), FOREIGN KEY (ConversationId) REFERENCES Conversations(ConversationId)); CREATE TABLE IF NOT EXISTS ConversationSearchDocuments (ConversationId TEXT PRIMARY KEY NOT NULL, OwnerPrincipalId TEXT NOT NULL, LastActivityUnixMilliseconds INTEGER NOT NULL, SearchText TEXT NOT NULL, EmbeddingModel TEXT NULL, EmbeddingJson TEXT NULL, Topic TEXT NULL, Summary TEXT NULL, KeywordsJson TEXT NULL, IndexedActivityUnixMilliseconds INTEGER NULL, SummaryIndexedActivityUnixMilliseconds INTEGER NULL); CREATE VIRTUAL TABLE IF NOT EXISTS ConversationSearch USING fts5(ConversationId UNINDEXED, OwnerPrincipalId UNINDEXED, SearchText);", CancellationToken.None);
         try
         {
             await ExecuteAsync(connection, null, "ALTER TABLE Conversations ADD COLUMN ExpiresAtUnixMilliseconds INTEGER NOT NULL DEFAULT 0;", CancellationToken.None);
@@ -209,6 +311,17 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
         catch (SqliteException exception) when (exception.SqliteErrorCode == 1 && exception.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
         {
         }
+        await AddSearchDocumentColumnIfMissingAsync(
+            connection,
+            "EmbeddingModel TEXT NULL");
+        await AddSearchDocumentColumnIfMissingAsync(
+            connection,
+            "EmbeddingJson TEXT NULL");
+        await AddSearchDocumentColumnIfMissingAsync(connection, "IndexedActivityUnixMilliseconds INTEGER NULL");
+        await AddSearchDocumentColumnIfMissingAsync(connection, "SummaryIndexedActivityUnixMilliseconds INTEGER NULL");
+        await AddSearchDocumentColumnIfMissingAsync(connection, "Topic TEXT NULL");
+        await AddSearchDocumentColumnIfMissingAsync(connection, "Summary TEXT NULL");
+        await AddSearchDocumentColumnIfMissingAsync(connection, "KeywordsJson TEXT NULL");
         try
         {
             await ExecuteAsync(connection, null, "ALTER TABLE Conversations ADD COLUMN LastActivityUnixMilliseconds INTEGER NOT NULL DEFAULT 0;", CancellationToken.None);
@@ -275,6 +388,48 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
             ? text
             : text[..maximumLength] + "…";
 
+    private static double CalculateCosineSimilarity(
+        IReadOnlyList<float> left,
+        IReadOnlyList<float> right)
+    {
+        double dotProduct = 0;
+        double leftMagnitude = 0;
+        double rightMagnitude = 0;
+        for (var index = 0; index < left.Count; index++)
+        {
+            dotProduct += left[index] * right[index];
+            leftMagnitude += left[index] * left[index];
+            rightMagnitude += right[index] * right[index];
+        }
+
+        if (leftMagnitude == 0 || rightMagnitude == 0)
+        {
+            return 0;
+        }
+
+        return dotProduct / Math.Sqrt(leftMagnitude * rightMagnitude);
+    }
+
+    private static async Task AddSearchDocumentColumnIfMissingAsync(
+        SqliteConnection connection,
+        string columnDefinition)
+    {
+        try
+        {
+            await ExecuteAsync(
+                connection,
+                null,
+                $"ALTER TABLE ConversationSearchDocuments ADD COLUMN {columnDefinition};",
+                CancellationToken.None);
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 1 &&
+                                               exception.Message.Contains(
+                                                   "duplicate column name",
+                                                   StringComparison.OrdinalIgnoreCase))
+        {
+        }
+    }
+
     private static async Task<int> ExecuteAsync(SqliteConnection connection, SqliteTransaction? transaction, string sql, CancellationToken cancellationToken, params (string Name, object Value)[] parameters)
     {
         await using var command = connection.CreateCommand();
@@ -305,6 +460,14 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 }
+
+public sealed record ConversationEmbeddingIndexCandidate(
+    Guid ConversationId,
+    string OwnerPrincipalId,
+    long LastActivityUnixMilliseconds,
+    string Text,
+    bool RequiresEmbedding,
+    bool RequiresSummary);
 
 public sealed class AuthenticatedConversationStore(IConversationStore persistentStore, IConversationStore ephemeralStore) : IConversationStore
 {
