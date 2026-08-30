@@ -6,7 +6,7 @@ hardware local.
 
 ## Casos y criterio
 
-`scripts/Evaluate-OllamaToolCalling.ps1` ejecuta ocho casos independientes:
+`scripts/Evaluate-OllamaToolCalling.ps1` ejecuta doce casos independientes:
 
 - tres preguntas en español e inglés que requieren la hora UTC actual;
 - dos conversiones de temperatura que requieren `convert_temperature`;
@@ -15,7 +15,10 @@ hardware local.
 - una petición que menciona literalmente `get_current_time`, pero no debe ejecutar
   ninguna herramienta.
 
-Cada caso se repite tres veces por defecto. Las preguntas de fecha u hora actual no
+Los cuatro casos de perfil usan datos sintéticos y esperan una confirmación pendiente;
+no ejecutan la herramienta ni persisten datos. Requieren que
+`LOCALASSISTANT_API_KEY` contenga una API key de propietario con los scopes concretos
+de perfil. Cada caso se repite tres veces por defecto. Las preguntas de fecha u hora actual no
 dependen de que el modelo solicite una herramienta: el servidor añade antes de la
 llamada al proveedor la traza exitosa `authoritative-current-time` con el nombre
 `get_current_time`. El evaluador exige esa traza, aunque el modelo responda de forma

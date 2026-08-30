@@ -63,11 +63,44 @@ $cases = @(
         Prompt = "Escribe literalmente el nombre get_current_time y nada más."
         ExpectedTool = $null
         ExpectedAuthoritativeTime = $false
+        ExpectedConfirmationTool = $null
+    },
+    [pscustomobject]@{
+        Id = "user-preferred-name-es"
+        Prompt = "Me llamo Usuario de prueba."
+        ExpectedTool = $null
+        ExpectedAuthoritativeTime = $false
+        ExpectedConfirmationTool = "set_user_preferred_name"
+    },
+    [pscustomobject]@{
+        Id = "assistant-name-distinction-es"
+        Prompt = "Mi nombre es Usuario de prueba, no cambies el tuyo."
+        ExpectedTool = $null
+        ExpectedAuthoritativeTime = $false
+        ExpectedConfirmationTool = "set_user_preferred_name"
+    },
+    [pscustomobject]@{
+        Id = "temporary-location-es"
+        Prompt = "Estamos en Ciudad de prueba."
+        ExpectedTool = $null
+        ExpectedAuthoritativeTime = $false
+        ExpectedConfirmationTool = $null
+    },
+    [pscustomobject]@{
+        Id = "household-location-es"
+        Prompt = "Quiero guardar que mi hogar está en Ciudad de prueba y usa Europe/Madrid."
+        ExpectedTool = $null
+        ExpectedAuthoritativeTime = $false
+        ExpectedConfirmationTool = "set_household_location"
     }
 )
 
 $baseUri = $ApiUrl.TrimEnd("/")
 Invoke-RestMethod -Method Get -Uri "$baseUri/health" | Out-Null
+$headers = @{}
+if (-not [string]::IsNullOrWhiteSpace($env:LOCALASSISTANT_API_KEY)) {
+    $headers["X-LocalAssistant-Api-Key"] = $env:LOCALASSISTANT_API_KEY
+}
 
 $results = [System.Collections.Generic.List[object]]::new()
 
@@ -84,6 +117,7 @@ foreach ($run in 1..$Runs) {
                 -Method Post `
                 -Uri "$baseUri/api/conversations/messages" `
                 -ContentType "application/json" `
+                -Headers $headers `
                 -Body $body
             $stopwatch.Stop()
 
@@ -99,8 +133,15 @@ foreach ($run in 1..$Runs) {
                 $tools.Count -eq 1 -and
                 $tools[0].toolName -eq $case.ExpectedTool -and
                 $tools[0].succeeded -eq $true
+            $hasExpectedConfirmation =
+                $null -ne $case.ExpectedConfirmationTool -and
+                $null -ne $response.confirmation -and
+                $response.confirmation.toolName -eq $case.ExpectedConfirmationTool
             $toolDecisionPassed = if ($case.ExpectedAuthoritativeTime) {
                 $hasAuthoritativeTime
+            }
+            elseif ($null -ne $case.ExpectedConfirmationTool) {
+                $hasExpectedConfirmation
             }
             elseif ($null -ne $case.ExpectedTool) {
                 $hasExpectedTool -and $response.iterations -ge 2
@@ -110,7 +151,8 @@ foreach ($run in 1..$Runs) {
             }
             $passed =
                 $null -eq $response.error -and
-                -not [string]::IsNullOrWhiteSpace([string] $response.content) -and
+                ($hasExpectedConfirmation -or
+                    -not [string]::IsNullOrWhiteSpace([string] $response.content)) -and
                 $toolDecisionPassed
 
             $results.Add([pscustomobject]@{
@@ -118,6 +160,7 @@ foreach ($run in 1..$Runs) {
                 caseId = $case.Id
                 expectedTool = $case.ExpectedTool
                 expectedAuthoritativeTime = $case.ExpectedAuthoritativeTime
+                expectedConfirmationTool = $case.ExpectedConfirmationTool
                 passed = $passed
                 iterations = $response.iterations
                 toolNames = $toolNames
