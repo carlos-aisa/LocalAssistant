@@ -12,9 +12,10 @@ habitaciones.
   política de riesgo, egreso controlado, identidad local opcional, auditoría local y
   exposición segura de errores; la fase 4 comienza con identidad de instalación con
   propietario único y propiedad de conversaciones autenticadas en memoria.
-- **Próximo incremento:** completado con `create_reminder`: una operación local
-  privada, confirmada e idempotente en memoria. La siguiente herramienta con efecto
-  deberá ampliar esta garantía según su almacenamiento o destino real.
+- **Próximo incremento:** completado con `create_reminder`: un vertical slice
+  experimental de operación local privada, confirmada e idempotente en memoria. Solo
+  crea un registro temporal sin aviso; la siguiente herramienta con efecto deberá
+  definir su garantía según su almacenamiento o destino real.
 - **Horizonte cercano:** tutor de inglés escrito con role-play, correcciones e
   informe; persistencia e identidad de la fase 4; capacidad mínima de módulos,
   `Controlled Local Resources`, migración preparada y `BatchCooking` MVP. Home
@@ -105,9 +106,9 @@ confirmación y auditoría vinculadas a su solicitud.
 - [x] Separar el detalle de fallo que recibe el proveedor del mensaje seguro que se
   expone al cliente HTTP.
 - [x] Definir y probar una clave de operación interna con `create_reminder`, la
-  primera herramienta real que cambia estado. El almacén en memoria crea el resultado
-  de forma atómica por principal y operación; no es una garantía distribuida ni
-  durable.
+  primera demostración experimental de una herramienta que cambia estado. El almacén
+  en memoria crea un registro temporal de forma atómica por principal y operación;
+  no programa avisos ni es una garantía distribuida, durable o recuperable.
 
 **Capacidades excluidas:** un sistema completo de roles, acceso general a archivos y
 acciones domésticas de escritura no justificadas por el vertical slice.

@@ -291,13 +291,14 @@ Invoke-RestMethod -Method Post `
   -Body $body
 ```
 
-### Recordatorio local confirmado
+### Registro temporal de recordatorio confirmado
 
-El escenario fake `reminder` demuestra la primera operación local que cambia estado.
-Requiere una API key válida con el scope `reminders.write` y devuelve una confirmación
-antes de crear el recordatorio. Al aprobar la llamada, el servidor genera y conserva
-una clave de operación interna; repetir esa operación durante la vida del proceso
-devuelve el mismo recordatorio sin crear otro.
+El escenario fake `reminder` demuestra el vertical slice experimental de la primera
+operación local que cambia estado. Requiere una API key válida con el scope
+`reminders.write` y devuelve una confirmación antes de crear un registro temporal en
+memoria. No programa ni entrega un aviso cuando llega la fecha. Al aprobar la llamada,
+el servidor genera y conserva una clave de operación interna; repetir internamente esa
+operación durante la vida del proceso devuelve el mismo registro sin crear otro.
 
 ```powershell
 $env:LocalAssistant__Identity__Scopes__0 = "reminders.write"
@@ -315,8 +316,11 @@ Invoke-RestMethod -Method Post `
   -Body (@{ approved = $true; scenario = "reminder" } | ConvertTo-Json)
 ```
 
-Los recordatorios actuales existen solo en memoria: se pierden al reiniciar y no hay
-listado, edición, borrado, aviso programado ni integración con dispositivos.
+El registro experimental existe solo en memoria y se pierde al reiniciar. No hay
+agenda, listado, consulta, edición, borrado, scheduler, aviso programado ni
+integración con dispositivos. Una confirmación se consume antes de ejecutar: repetir
+la aprobación HTTP devuelve `confirmation_not_found`, no reutiliza la clave de
+operación ni crea otro registro.
 
 El fake responderá `Fake response: Hola` en una iteración y sin herramientas.
 

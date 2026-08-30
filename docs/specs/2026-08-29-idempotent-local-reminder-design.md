@@ -1,14 +1,17 @@
-# Diseño: recordatorio local idempotente
+# Diseño: registro temporal local idempotente
 
 ## Objetivo
 
 Incorporar la primera herramienta local que cambia estado para demostrar una operación
-confirmada, auditable e idempotente. El vertical slice crea un recordatorio en memoria
-y no pretende ser todavía un sistema de agenda, notificaciones ni automatización.
+confirmada, auditable e idempotente. El vertical slice crea exclusivamente un registro
+temporal en memoria para pruebas de infraestructura; no pretende ser una agenda, un
+sistema de recordatorios, notificaciones ni automatización.
 
 ## Alcance
 
-La herramienta `create_reminder` recibirá un texto breve y una fecha UTC futura. Su
+La herramienta `create_reminder` conserva su nombre de contrato para evitar un cambio
+innecesario, pero su descripción y resultado declaran que crea solo un registro
+temporal sin notificación. Recibirá un texto breve y una fecha UTC futura. Su
 perfil de riesgo declarará modificación de estado, datos privados, ejecución local,
 coste nulo, confirmación requerida y el scope `reminders.write`.
 
@@ -17,10 +20,11 @@ asociará al principal, conversación y llamada de herramienta que ya valida. El
 identificador no se recibirá desde HTTP ni concederá permisos: solo evita que esa
 operación confirmada produzca el mismo efecto dos veces.
 
-Un almacén en memoria creará el recordatorio de forma atómica por principal e
+Un almacén en memoria creará el registro de forma atómica por principal e
 identificador de operación. Si recibe de nuevo la misma operación, devolverá el
-recordatorio ya creado sin insertar otro. Una operación distinta creará un recordatorio
-distinto aunque sus datos coincidan. El estado se perderá al reiniciar.
+registro ya creado sin insertar otro. Una operación distinta creará un registro
+distinto aunque sus datos coincidan. El estado se perderá al reiniciar y no existirá
+scheduler ni entrega de avisos.
 
 ## Diseño técnico
 
@@ -31,7 +35,8 @@ evita introducir claves de idempotencia controladas por el modelo o el cliente.
 
 `create_reminder` validará estrictamente el objeto JSON, sus propiedades permitidas,
 un texto no vacío y acotado, y una fecha UTC futura. Devolverá al proveedor una
-representación JSON del recordatorio creado o recuperado. Los errores de argumentos
+representación JSON del registro creado o recuperado que incluirá almacenamiento en
+memoria, no durabilidad y ausencia de notificación programada. Los errores de argumentos
 mantendrán el código estable `invalid_tool_arguments` y no expondrán detalles internos
 al cliente HTTP.
 
@@ -40,10 +45,13 @@ exacta. Tras aprobarla, el orquestador pasará ese identificador a la herramient
 herramientas de solo lectura seguirán ejecutándose sin un identificador de operación;
 el contexto hará explícita esa ausencia. La confirmación de un solo uso existente no
 se convierte en una garantía durable: este incremento cubre únicamente el proceso
-local actual y los reintentos de la misma operación dentro de él.
+local actual y los reintentos de la misma operación dentro de él. La confirmación se
+consume antes de ejecutar, por lo que repetir su aprobación HTTP no reintenta la
+herramienta y normalmente devuelve `confirmation_not_found`.
 
 El fake añadirá el escenario `reminder`: solicitará `create_reminder`, y después de
-la aprobación responderá usando el resultado estructurado. No se añadirá un endpoint
+la aprobación responderá que el registro temporal experimental fue creado sin
+notificación. No se añadirá un endpoint
 de recordatorios ni un modo de listar, editar, borrar, programar o notificar.
 
 ## Flujo
@@ -84,9 +92,9 @@ idempotencia local. No se creará un ADR: aplica las decisiones existentes de lo
 
 ## Criterios de aceptación
 
-- Una llamada autorizada solicita confirmación antes de crear el recordatorio.
-- Dos ejecuciones de la misma operación crean exactamente un recordatorio y devuelven
+- Una llamada autorizada solicita confirmación antes de crear el registro temporal.
+- Dos ejecuciones de la misma operación crean exactamente un registro temporal y devuelven
   el mismo resultado.
-- Dos operaciones distintas pueden crear recordatorios con los mismos datos.
-- Rechazar, expirar o resolver desde otro principal no cambia el almacén.
+- Dos operaciones distintas pueden crear registros temporales con los mismos datos.
+- Rechazar, expirar o resolver desde otro principal no cambia el almacén temporal.
 - La API y la documentación no presentan el almacén en memoria como agenda durable.

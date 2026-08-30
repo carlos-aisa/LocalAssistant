@@ -80,14 +80,18 @@ conservan ese propietario en memoria y solo él puede continuarlas o resolver su
 confirmaciones. Las conversaciones anónimas permanecen sin propietario, públicas y
 efímeras; no se convertirán automáticamente en conversaciones privadas persistentes.
 
-La primera operación local que cambia estado es `create_reminder`. Requiere el scope
-`reminders.write` y una confirmación retenida por el servidor. Al crear esa
+El vertical slice experimental de la primera operación local que cambia estado usa
+`create_reminder`. Requiere el scope `reminders.write` y una confirmación retenida por
+el servidor. La herramienta solo crea un registro temporal en memoria para probar el
+flujo: no programa ni entrega un aviso cuando llega `dueAtUtc`. Al crear la
 confirmación, el orquestador asigna un identificador de operación interno y lo entrega
-a la herramienta únicamente después de aprobarla. El almacén de recordatorios en
-memoria obtiene o crea el resultado por principal e identificador de operación, de
-forma que una repetición no produzca un segundo recordatorio. Esta garantía no
-sobrevive a reinicios, no cubre varios procesos y no convierte el componente en una
-agenda ni en un planificador de avisos.
+a la herramienta únicamente después de aprobarla. El almacén obtiene o crea el
+resultado por principal e identificador de operación, de forma atómica dentro del
+proceso actual. La garantía no sobrevive a reinicios, no cubre varios procesos,
+servicios externos, recuperación tras un fallo posterior al efecto ni una nueva
+aprobación HTTP: la confirmación se consume antes de ejecutar y una repetición
+devuelve `confirmation_not_found`. No existe una agenda, scheduler ni planificador de
+avisos.
 
 El fake usa una cola de funciones de respuesta. Cada llamada consume exactamente
 un paso, por lo que una prueba declara de forma visible la secuencia esperada.

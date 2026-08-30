@@ -130,6 +130,7 @@ public sealed class FakeLanguageProviderFactory
 
         using var document = JsonDocument.Parse(result.Content);
         var title = document.RootElement.GetProperty("title").GetString();
-        return LanguageProviderResponse.Final($"Reminder created: {title}.");
+        return LanguageProviderResponse.Final(
+            $"Temporary reminder record created for experimental testing: {title}. No notification has been scheduled.");
     }
 }

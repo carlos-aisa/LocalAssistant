@@ -492,7 +492,7 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
     }
 
     [Fact]
-    public async Task ReminderScenarioCreatesOneConfirmedPrivateReminder()
+    public async Task ReminderScenarioCreatesOneConfirmedTemporaryRecord()
     {
         using var client = CreateIdentityClient(["reminders.write"]);
         client.DefaultRequestHeaders.Add(
@@ -523,11 +523,40 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
             await decisionResponse.Content.ReadAsStreamAsync(CancellationToken.None),
             cancellationToken: CancellationToken.None);
         Assert.Equal(
-            "Reminder created: Review the local reminder design.",
+            "Temporary reminder record created for experimental testing: Review the local reminder design. No notification has been scheduled.",
             decisionBody.RootElement.GetProperty("content").GetString());
         var tool = Assert.Single(decisionBody.RootElement.GetProperty("tools").EnumerateArray());
         Assert.Equal("create_reminder", tool.GetProperty("toolName").GetString());
         Assert.True(tool.GetProperty("succeeded").GetBoolean());
+    }
+
+    [Fact]
+    public async Task AnonymousClientCannotUseReminderScenario()
+    {
+        using var client = CreateIdentityClient(["reminders.write"]);
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Remind me to review the design", scenario = "reminder" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PrincipalWithoutReminderScopeCannotUseReminderScenario()
+    {
+        using var client = CreateIdentityClient([]);
+        client.DefaultRequestHeaders.Add(
+            LocalApiKeyAuthenticationDefaults.HeaderName,
+            LocalApiKey);
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Remind me to review the design", scenario = "reminder" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]

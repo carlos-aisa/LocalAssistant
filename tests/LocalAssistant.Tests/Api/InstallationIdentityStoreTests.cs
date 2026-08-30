@@ -29,6 +29,7 @@ public sealed class InstallationIdentityStoreTests
         Assert.Contains("installation.owner", identity.GrantedScopes);
         Assert.Contains("memory.personal.read", identity.GrantedScopes);
         Assert.Contains("memory.personal.write", identity.GrantedScopes);
+        Assert.DoesNotContain("reminders.write", identity.GrantedScopes);
         Assert.Equal(3, identity.GrantedScopes.Count);
         using var persistedDocument = JsonDocument.Parse(persistedState);
         Assert.Equal(2, persistedDocument.RootElement.GetProperty("SchemaVersion").GetInt32());

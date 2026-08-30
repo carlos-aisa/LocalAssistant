@@ -61,11 +61,13 @@ mapa genérico de valores que pueda modificar el modelo.
   `DENY` para un LLM externo.
 - **Acciones repetidas:** la confirmación actual se consume una sola vez, pero no
   aporta idempotencia distribuida. `create_reminder` es el primer vertical slice:
-  genera una clave de operación interna al retener la confirmación y crea el resultado
-  de forma atómica por principal y clave dentro del proceso. La garantía no sobrevive
-  a un reinicio ni cubre varios procesos, dispositivos o servicios externos; cada
-  futura herramienta con efectos deberá definir su propia semántica antes de
-  conectarse a esos destinos.
+  genera una clave de operación interna al retener la confirmación y crea un registro
+  temporal de prueba de forma atómica por principal y clave dentro del proceso. La
+  garantía no sobrevive a un reinicio ni cubre varios procesos, dispositivos, servicios
+  externos, notificaciones, recuperación tras una respuesta fallida ni una repetición
+  de la aprobación HTTP, que normalmente devuelve `confirmation_not_found` porque la
+  confirmación ya fue consumida. Cada futura herramienta con efectos deberá definir su
+  propia semántica antes de conectarse a esos destinos.
 - **Denegación de servicio:** el límite de iteraciones y los timeouts reducen bucles
   y esperas, pero faltan cuotas, límites de tamaño y rate limiting.
 - **Memoria sensible:** las conversaciones anónimas permanecen en RAM hasta terminar
