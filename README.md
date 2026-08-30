@@ -65,7 +65,8 @@ Implementado:
 - Contratos de proveedor reutilizados por el fake y el adaptador de Ollama.
 - Evaluación local reproducible de decisiones de tool calling por modelo.
 
-No implementado: detección automática de capacidades por modelo, acceso real a
+No implementado: indexación semántica y resúmenes automáticos de conversaciones,
+detección automática de capacidades por modelo, acceso real a
 Internet, proveedores cloud, retención y auditoría durable, gestión de usuarios, voz, wake word,
 RAG, agenda durable o notificaciones, Home Assistant, MQTT, MCP, interfaz gráfica ni
 ejecución de comandos.
