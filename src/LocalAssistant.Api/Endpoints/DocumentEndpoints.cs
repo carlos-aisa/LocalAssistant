@@ -64,6 +64,15 @@ public static class DocumentEndpoints
         }
 
         var results = await documentContentSearch.SearchAsync(query, cancellationToken);
+        if (!httpContext.User.HasClaim(
+                LocalApiKeyAuthenticationDefaults.ScopeClaimType,
+                ReadScope))
+        {
+            results = results
+                .Select(result => result with { Excerpt = null })
+                .ToArray();
+        }
+
         return Results.Ok(DocumentSearchResponse.FromResults(results));
     }
 

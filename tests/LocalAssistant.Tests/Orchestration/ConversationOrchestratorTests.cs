@@ -941,6 +941,109 @@ public sealed class ConversationOrchestratorTests
         Assert.Equal(CurrentTimeTool.ToolName, trace.ToolName);
     }
 
+    [Fact]
+    public async Task RefreshesAuthoritativeTimeAfterAnApprovedConfirmation()
+    {
+        var clock = new ManualTimeProvider(
+            new DateTimeOffset(2026, 8, 30, 12, 4, 0, TimeSpan.Zero));
+        var tool = new DelegateTool(
+            "change_state",
+            true,
+            static (_, _) => ValueTask.FromResult(ToolExecutionResult.Success("changed")));
+        var call = new ToolCall("change-1", "change_state", EmptyArguments());
+        var provider = new ScriptedLanguageProvider(
+        [
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.RequestTools(call)),
+            request =>
+            {
+                var timeContext = Assert.Single(
+                    request.Messages,
+                    message => message.Role == ConversationRole.System &&
+                               message.Content!.Contains(
+                                   "Authoritative current time",
+                                   StringComparison.Ordinal));
+                Assert.Contains(
+                    "2026-08-30T12:05:00.0000000+00:00",
+                    timeContext.Content,
+                    StringComparison.Ordinal);
+                return LanguageProviderResponse.Final("Done.");
+            },
+        ]);
+        var sut = CreateOrchestrator(tools: [tool], timeProvider: clock);
+
+        var pending = await sut.ProcessAsync(
+            new ConversationTurnRequest("Change this and tell me the current time."),
+            provider,
+            CancellationToken.None);
+        clock.Advance(TimeSpan.FromMinutes(1));
+
+        var result = await sut.ResolveConfirmationAsync(
+            pending.ConversationId,
+            pending.Confirmation!.ConfirmationId,
+            true,
+            provider,
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Contains(
+            result.Tools,
+            trace => trace.ToolCallId == "authoritative-current-time" && trace.Succeeded);
+    }
+
+    [Fact]
+    public async Task ReturnsAControlledErrorWhenConfirmationRefreshFindsAnInvalidHouseholdTimeZone()
+    {
+        var tool = new DelegateTool(
+            "change_state",
+            true,
+            static (_, _) => ValueTask.FromResult(ToolExecutionResult.Success("changed")));
+        var call = new ToolCall("change-1", "change_state", EmptyArguments());
+        var policyContext = new ToolPolicyContext(
+            "owner",
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "household.profile.read",
+            });
+        var validHouseholdProfile = HouseholdProfile.Create(
+            "Home",
+            "UTC",
+            FixedUtcNow,
+            "test");
+        var invalidHouseholdProfile = new HouseholdProfile(
+            "Unknown",
+            "Invalid/TimeZone",
+            FixedUtcNow,
+            "test");
+        var provider = new ScriptedLanguageProvider(
+        [
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.RequestTools(call)),
+        ]);
+        var sut = CreateOrchestrator(
+            tools: [tool],
+            toolPolicyContextAccessor: new MutableToolPolicyContextAccessor(policyContext),
+            householdProfiles: new SequenceHouseholdProfileStore(
+                validHouseholdProfile,
+                validHouseholdProfile,
+                invalidHouseholdProfile));
+
+        var pending = await sut.ProcessAsync(
+            new ConversationTurnRequest("Change this and tell me the current time."),
+            provider,
+            CancellationToken.None);
+        var result = await sut.ResolveConfirmationAsync(
+            pending.ConversationId,
+            pending.Confirmation!.ConfirmationId,
+            true,
+            provider,
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("invalid_household_time_zone", result.Error?.Code);
+        Assert.Contains(
+            result.Tools,
+            trace => trace.ToolCallId == "authoritative-current-time" && !trace.Succeeded);
+    }
+
     [Theory]
     [InlineData("Explícame qué es UTC")]
     [InlineData("Escribe literalmente get_current_time")]
@@ -1053,6 +1156,26 @@ public sealed class ConversationOrchestratorTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return ValueTask.FromResult<HouseholdProfile?>(profile);
+        }
+
+        public ValueTask<HouseholdProfile> SetLocationAsync(
+            string location,
+            string timeZoneId,
+            string source,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromException<HouseholdProfile>(
+                new InvalidOperationException("The test store is read-only."));
+    }
+
+    private sealed class SequenceHouseholdProfileStore(
+        params HouseholdProfile[] profiles) : IHouseholdProfileStore
+    {
+        private readonly Queue<HouseholdProfile> _profiles = new(profiles);
+
+        public ValueTask<HouseholdProfile?> GetAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult<HouseholdProfile?>(_profiles.Dequeue());
         }
 
         public ValueTask<HouseholdProfile> SetLocationAsync(

@@ -8,6 +8,21 @@ namespace LocalAssistant.Tests.Orchestration;
 public sealed class AuthoritativeCurrentTimeTests
 {
     [Theory]
+    [InlineData("Explícame qué es UTC y después dime la hora actual", true)]
+    [InlineData("Dime mi nombre y la hora local", true)]
+    [InlineData("Guarda mi nombre y dime qué día es hoy", true)]
+    [InlineData("Explícame qué es UTC", false)]
+    [InlineData("Escribe literalmente get_current_time", false)]
+    [InlineData("Convierte las 15:00 de Madrid a Nueva York", false)]
+    [InlineData("Ayer hablamos de la hora de la reunión", false)]
+    public void DetectsOnlyExplicitRequestsForAuthoritativeCurrentTime(
+        string message,
+        bool expected)
+    {
+        Assert.Equal(expected, CurrentTimeRequestPolicy.RequiresAuthoritativeTime(message));
+    }
+
+    [Theory]
     [InlineData(2026, 8, 30, 12, 4, 2)]
     [InlineData(2026, 1, 15, 12, 4, 1)]
     public async Task ResolvesTheAuthorizedHouseholdTimeZoneWithTheCorrectSeasonalOffset(

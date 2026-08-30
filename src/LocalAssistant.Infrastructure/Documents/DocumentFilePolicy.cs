@@ -56,9 +56,15 @@ internal static class DocumentFilePolicy
     }
 
     public static async ValueTask<string?> ReadBoundedTextAsync(
+        string rootPath,
         string filePath,
         CancellationToken cancellationToken)
     {
+        if (!IsAuthorizedFile(rootPath, filePath))
+        {
+            return null;
+        }
+
         await using var fileStream = new FileStream(
             filePath,
             FileMode.Open,
@@ -96,12 +102,23 @@ internal static class DocumentFilePolicy
 
     private static bool IsWithinRoot(string rootPath, string candidatePath)
     {
-        var rootWithSeparator = rootPath.EndsWith(Path.DirectorySeparatorChar)
-            ? rootPath
-            : rootPath + Path.DirectorySeparatorChar;
+        var normalizedRootPath = Path.GetFullPath(rootPath);
+        var normalizedCandidatePath = Path.GetFullPath(candidatePath);
+        var relativePath = Path.GetRelativePath(normalizedRootPath, normalizedCandidatePath);
+        if (Path.IsPathRooted(relativePath) ||
+            relativePath.Equals("..", StringComparison.Ordinal) ||
+            relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
+            relativePath.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal))
+        {
+            return false;
+        }
 
-        return candidatePath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase) ||
-            StringComparer.OrdinalIgnoreCase.Equals(rootPath, candidatePath);
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        return StringComparer.FromComparison(comparison).Equals(
+            Path.GetFullPath(Path.Combine(normalizedRootPath, relativePath)),
+            normalizedCandidatePath);
     }
 
     private static bool ContainsReparsePoint(string rootPath, string candidatePath)

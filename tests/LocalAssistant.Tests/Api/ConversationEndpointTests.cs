@@ -159,6 +159,76 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
         Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
     }
 
+    [Fact]
+    public async Task CompletionMarksOnlyTheAuthenticatedOwnersConversationAndIsIdempotent()
+    {
+        using var directory = new TemporaryInstallationStateDirectory();
+        using var ownerClient = CreatePersistentIdentityClient(
+            Path.Combine(directory.Path, "conversations.db"),
+            "owner-a");
+        var conversationId = await CreateConversationAsync(ownerClient);
+
+        using var firstResponse = await ownerClient.PostAsync(
+            $"/api/conversations/{conversationId}/completion",
+            content: null,
+            CancellationToken.None);
+        using var secondResponse = await ownerClient.PostAsync(
+            $"/api/conversations/{conversationId}/completion",
+            content: null,
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.NoContent, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, secondResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task CompletionDoesNotRevealAnotherPrincipalsConversation()
+    {
+        using var directory = new TemporaryInstallationStateDirectory();
+        using var ownerClient = CreatePersistentIdentityClient(
+            Path.Combine(directory.Path, "conversations.db"),
+            "owner-a");
+        var conversationId = await CreateConversationAsync(ownerClient);
+        using var otherClient = CreatePersistentIdentityClient(
+            Path.Combine(directory.Path, "conversations.db"),
+            "owner-b");
+
+        using var response = await otherClient.PostAsync(
+            $"/api/conversations/{conversationId}/completion",
+            content: null,
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CompletionRequiresAuthenticationAndPersistence()
+    {
+        var conversationId = Guid.NewGuid();
+        using var anonymousResponse = await _client.PostAsync(
+            $"/api/conversations/{conversationId}/completion",
+            content: null,
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, anonymousResponse.StatusCode);
+
+        using var directory = new TemporaryInstallationStateDirectory();
+        using var authenticatedFactory = _factory.WithWebHostBuilder(builder =>
+        {
+            ConfigurePersistentIdentity(
+                builder,
+                Path.Combine(directory.Path, "conversations.db"),
+                "owner-a");
+        });
+        using var anonymousPersistentClient = authenticatedFactory.CreateClient();
+        using var anonymousPersistentResponse = await anonymousPersistentClient.PostAsync(
+            $"/api/conversations/{conversationId}/completion",
+            content: null,
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousPersistentResponse.StatusCode);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("false")]

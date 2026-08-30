@@ -173,6 +173,59 @@ public sealed class SqliteConversationStoreTests
     }
 
     [Fact]
+    public async Task CompletionRequestIsClearedAfterBothIndexArtifactsAreCurrent()
+    {
+        using var directory = new LocalAssistant.Tests.Api.TemporaryInstallationStateDirectory();
+        var store = CreateStore(
+            Path.Combine(directory.Path, "conversations.db"),
+            retrievalEnabled: true);
+        var conversationId = Guid.NewGuid();
+        await store.GetOrCreateMetadataAsync(conversationId, "owner-a", CancellationToken.None);
+        await store.AppendAsync(
+            conversationId,
+            new ConversationMessage(ConversationRole.User, "Plan weekly meals."),
+            CancellationToken.None);
+        Assert.True(await store.RequestImmediateIndexingAsync(
+            conversationId,
+            "owner-a",
+            CancellationToken.None));
+
+        var coordinator = new ConversationIndexingCoordinator(
+            store,
+            new CountingEmbeddingProvider(),
+            new StaticSummaryProvider(),
+            NullLogger<ConversationIndexingCoordinator>.Instance);
+
+        Assert.Equal(1, await coordinator.ProcessPendingAsync(CancellationToken.None));
+        Assert.Empty(await store.ListPendingEmbeddingIndexesAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task NewMessageClearsAnEarlierCompletionRequestAndReturnsToDebounce()
+    {
+        using var directory = new LocalAssistant.Tests.Api.TemporaryInstallationStateDirectory();
+        var store = CreateStore(
+            Path.Combine(directory.Path, "conversations.db"),
+            retrievalEnabled: true);
+        var conversationId = Guid.NewGuid();
+        await store.GetOrCreateMetadataAsync(conversationId, "owner-a", CancellationToken.None);
+        await store.AppendAsync(
+            conversationId,
+            new ConversationMessage(ConversationRole.User, "Plan weekly meals."),
+            CancellationToken.None);
+        Assert.True(await store.RequestImmediateIndexingAsync(
+            conversationId,
+            "owner-a",
+            CancellationToken.None));
+        await store.AppendAsync(
+            conversationId,
+            new ConversationMessage(ConversationRole.Assistant, "Here are some ideas."),
+            CancellationToken.None);
+
+        Assert.Empty(await store.ListPendingEmbeddingIndexesAsync(CancellationToken.None));
+    }
+
+    [Fact]
     public async Task FindsAnInactiveConversationThroughItsLocalEmbedding()
     {
         using var directory = new LocalAssistant.Tests.Api.TemporaryInstallationStateDirectory();

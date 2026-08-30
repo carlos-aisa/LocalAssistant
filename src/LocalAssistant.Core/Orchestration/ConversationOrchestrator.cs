@@ -212,7 +212,33 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
             if (outcome.Error is not null || outcome.Confirmation is not null)
                 return Result(id, null, traces, 0, TimeSpan.Zero, toolsTime, outcome.Error, outcome.Confirmation);
         }
-        return await ContinueAsync(id, provider, policyContext, traces, 0, toolsTime, null, ct);
+        var continuationTime = await ResolveCurrentTimeForContinuationAsync(
+            id,
+            policyContext,
+            ct);
+        traces.AddRange(continuationTime.Traces);
+        toolsTime += continuationTime.Elapsed;
+        if (continuationTime.Error is not null)
+        {
+            return Result(
+                id,
+                null,
+                traces,
+                0,
+                TimeSpan.Zero,
+                toolsTime,
+                continuationTime.Error);
+        }
+
+        return await ContinueAsync(
+            id,
+            provider,
+            policyContext,
+            traces,
+            0,
+            toolsTime,
+            continuationTime.CurrentTime,
+            ct);
     }
 
     private async Task<ConversationTurnResult> ContinueAsync(Guid id,
@@ -305,11 +331,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
                 currentTime.ToSystemMessage()));
         }
 
-        await AddStableProfileContextAsync(
-            messages,
-            policyContext.PrincipalId,
-            policyContext,
-            cancellationToken);
+        await AddStableProfileContextAsync(messages, policyContext, cancellationToken);
 
         if (mayRetrieveContext &&
             !string.IsNullOrWhiteSpace(policyContext.PrincipalId) &&
@@ -333,34 +355,80 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
 
     private async ValueTask AddStableProfileContextAsync(
         List<ConversationMessage> messages,
-        string? ownerPrincipalId,
         ToolPolicyContext policyContext,
         CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(ownerPrincipalId) &&
-            StringComparer.Ordinal.Equals(ownerPrincipalId, policyContext.PrincipalId) &&
+        UserProfile? userProfile = null;
+        if (!string.IsNullOrWhiteSpace(policyContext.PrincipalId) &&
             policyContext.GrantedScopes.Contains("profile.personal.read"))
         {
-            var profile = await _userProfiles.GetAsync(ownerPrincipalId, cancellationToken);
-            if (profile is not null)
-            {
-                messages.Add(new ConversationMessage(
-                    ConversationRole.System,
-                    $"Authorized stable user profile: preferred name is '{profile.PreferredName}'."));
-            }
+            userProfile = await _userProfiles.GetAsync(policyContext.PrincipalId, cancellationToken);
         }
 
+        HouseholdProfile? householdProfile = null;
         if (policyContext.GrantedScopes.Contains("household.profile.read"))
         {
-            var profile = await _householdProfiles.GetAsync(cancellationToken);
-            if (profile is not null)
-            {
-                messages.Add(new ConversationMessage(
-                    ConversationRole.System,
-                    $"Authorized stable household profile: location is '{profile.Location}' and time zone is '{profile.TimeZoneId}'."));
-            }
+            householdProfile = await _householdProfiles.GetAsync(cancellationToken);
+        }
+
+        var context = StableProfileContextComposer.Compose(userProfile, householdProfile);
+        if (context is not null)
+        {
+            messages.Add(new ConversationMessage(ConversationRole.System, context));
         }
     }
+
+    private async ValueTask<ContinuationCurrentTime> ResolveCurrentTimeForContinuationAsync(
+        Guid conversationId,
+        ToolPolicyContext policyContext,
+        CancellationToken cancellationToken)
+    {
+        var messages = await _store.GetMessagesAsync(conversationId, cancellationToken);
+        var lastUserMessage = messages.LastOrDefault(message => message.Role == ConversationRole.User);
+        if (!CurrentTimeRequestPolicy.RequiresAuthoritativeTime(lastUserMessage?.Content))
+        {
+            return new(null, TimeSpan.Zero, []);
+        }
+
+        var start = _clock.GetTimestamp();
+        try
+        {
+            var currentTime = await _currentTimeResolver.ResolveAsync(policyContext, cancellationToken);
+            var elapsed = _clock.GetElapsedTime(start);
+            return new(
+                currentTime,
+                elapsed,
+                [new ToolExecutionTrace(
+                    "authoritative-current-time",
+                    CurrentTimeTool.ToolName,
+                    true,
+                    elapsed.TotalMilliseconds)],
+                null);
+        }
+        catch (Exception exception) when (exception is TimeZoneNotFoundException or
+                                         InvalidTimeZoneException)
+        {
+            var elapsed = _clock.GetElapsedTime(start);
+            return new(
+                null,
+                elapsed,
+                [new ToolExecutionTrace(
+                    "authoritative-current-time",
+                    CurrentTimeTool.ToolName,
+                    false,
+                    elapsed.TotalMilliseconds,
+                    "invalid_household_time_zone")],
+                new OrchestrationError(
+                    "invalid_household_time_zone",
+                    "The authorized household time zone is invalid."));
+        }
+    }
+
+    private sealed record ContinuationCurrentTime(
+        AuthoritativeCurrentTime? CurrentTime,
+        TimeSpan Elapsed,
+        IReadOnlyList<ToolExecutionTrace> Traces,
+        OrchestrationError? Error = null);
 
     private static void AddRetrievedContext(
         List<ConversationMessage> messages,

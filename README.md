@@ -276,9 +276,14 @@ silencioso. Esta API todavía no entrega el contenido al LLM ni crea un índice.
 persistencia privada y un modelo de embeddings local configurado, similitud semántica.
 Admite los filtros de extensión, ruta relativa, fechas de modificación y límite de la
 búsqueda documental. Requiere el scope independiente `documents.content.search` y
-devuelve metadatos seguros y, si existe, un extracto de hasta 280 caracteres. Nunca
+devuelve metadatos seguros. El extracto de hasta 280 caracteres solo se entrega si el
+principal también dispone de `documents.read`; buscar contenido no concede por sí
+mismo permiso para recibirlo. Nunca
 devuelve contenido completo, puntuaciones, vectores ni rutas absolutas. Si Ollama no
 está disponible conserva la búsqueda literal; no crea RAG, watcher ni worker.
+El umbral semántico inicial es 0,78, conservador y configurable mediante
+`LocalAssistant:DocumentSemanticSearch:MinimumSimilarity`; debe calibrarse con el
+corpus local antes de tratarlo como un valor definitivo.
 
 ### Escenario 1: respuesta directa
 
@@ -451,6 +456,11 @@ Los comandos interactivos son `/help`, `/new`, `/provider fake`, `/provider olla
 `/scenario <nombre>`, `/info` y `/exit`. El proveedor fake admite actualmente
 `direct`, `time` y `temperature`; el cliente muestra este modo de forma visible para
 evitar confundirlo con una conversación de Ollama.
+
+Antes de `/new` o de cambiar `/provider`, el cliente solicita la finalización de la
+conversación autenticada actual. `/exit` hace lo mismo y solo cierra tras una respuesta
+correcta; si falla, el cliente conserva la conversación actual y permanece abierto para
+reintentar. Un cierre inesperado sigue dependiendo del debounce de inactividad.
 
 ### Validación local observada
 

@@ -98,7 +98,13 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
         }
 
         await ExecuteAsync(connection, transaction, "INSERT INTO ConversationMessages (ConversationId, SequenceNumber, PayloadJson) SELECT $id, COALESCE(MAX(SequenceNumber) + 1, 0), $payload FROM ConversationMessages WHERE ConversationId = $id;", cancellationToken, ("$id", (object)identifier), ("$payload", JsonSerializer.Serialize(message, SerializerOptions)));
-        await ExecuteAsync(connection, transaction, "UPDATE Conversations SET LastActivityUnixMilliseconds = $lastActivity WHERE ConversationId = $id;", cancellationToken, ("$id", (object)identifier), ("$lastActivity", _clock.GetUtcNow().ToUnixTimeMilliseconds()));
+        await ExecuteAsync(
+            connection,
+            transaction,
+            "UPDATE Conversations SET LastActivityUnixMilliseconds = $lastActivity, IndexingRequestedAtUnixMilliseconds = NULL WHERE ConversationId = $id;",
+            cancellationToken,
+            ("$id", (object)identifier),
+            ("$lastActivity", _clock.GetUtcNow().ToUnixTimeMilliseconds()));
         await RefreshSearchDocumentAsync(connection, transaction, identifier, owner, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
@@ -124,7 +130,7 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
         var updated = await ExecuteAsync(
             connection,
             null,
-            "UPDATE Conversations SET IndexingRequestedAtUnixMilliseconds = COALESCE(IndexingRequestedAtUnixMilliseconds, $requestedAt) WHERE ConversationId = $id AND OwnerPrincipalId = $owner;",
+            "UPDATE Conversations SET IndexingRequestedAtUnixMilliseconds = COALESCE(IndexingRequestedAtUnixMilliseconds, $requestedAt) WHERE ConversationId = $id AND OwnerPrincipalId = $owner AND EXISTS (SELECT 1 FROM ConversationSearchDocuments WHERE ConversationId = $id AND OwnerPrincipalId = $owner);",
             cancellationToken,
             ("$requestedAt", _clock.GetUtcNow().ToUnixTimeMilliseconds()),
             ("$id", conversationId.ToString("N")),
@@ -246,7 +252,7 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
             .ToUnixTimeMilliseconds();
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT document.ConversationId, document.OwnerPrincipalId, document.LastActivityUnixMilliseconds, document.SearchText, document.IndexedActivityUnixMilliseconds, document.SummaryIndexedActivityUnixMilliseconds FROM ConversationSearchDocuments document INNER JOIN Conversations conversation ON conversation.ConversationId = document.ConversationId AND conversation.OwnerPrincipalId = document.OwnerPrincipalId WHERE (conversation.LastActivityUnixMilliseconds <= $cutoff OR conversation.IndexingRequestedAtUnixMilliseconds IS NOT NULL) AND (document.IndexedActivityUnixMilliseconds IS NULL OR document.IndexedActivityUnixMilliseconds < document.LastActivityUnixMilliseconds OR document.SummaryIndexedActivityUnixMilliseconds IS NULL OR document.SummaryIndexedActivityUnixMilliseconds < document.LastActivityUnixMilliseconds) ORDER BY conversation.IndexingRequestedAtUnixMilliseconds DESC, document.LastActivityUnixMilliseconds LIMIT 10;";
+        command.CommandText = "SELECT document.ConversationId, document.OwnerPrincipalId, document.LastActivityUnixMilliseconds, document.SearchText, document.SearchVersion, document.IndexedSearchVersion, document.SummaryIndexedVersion FROM ConversationSearchDocuments document INNER JOIN Conversations conversation ON conversation.ConversationId = document.ConversationId AND conversation.OwnerPrincipalId = document.OwnerPrincipalId WHERE (conversation.LastActivityUnixMilliseconds <= $cutoff OR conversation.IndexingRequestedAtUnixMilliseconds IS NOT NULL) AND (document.IndexedSearchVersion IS NULL OR document.IndexedSearchVersion <> document.SearchVersion OR document.SummaryIndexedVersion IS NULL OR document.SummaryIndexedVersion <> document.SearchVersion) ORDER BY conversation.IndexingRequestedAtUnixMilliseconds DESC, document.LastActivityUnixMilliseconds LIMIT 10;";
         command.Parameters.AddWithValue("$cutoff", cutoff);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var candidates = new List<ConversationEmbeddingIndexCandidate>();
@@ -257,8 +263,9 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
                 reader.GetString(1),
                 reader.GetInt64(2),
                 reader.GetString(3),
-                reader.IsDBNull(4) || reader.GetInt64(4) < reader.GetInt64(2),
-                reader.IsDBNull(5) || reader.GetInt64(5) < reader.GetInt64(2)));
+                reader.GetInt64(4),
+                reader.IsDBNull(5) || reader.GetInt64(5) != reader.GetInt64(4),
+                reader.IsDBNull(6) || reader.GetInt64(6) != reader.GetInt64(4)));
         }
 
         return candidates;
@@ -277,8 +284,10 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
         }
 
         await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE ConversationSearchDocuments SET EmbeddingModel = COALESCE($model, EmbeddingModel), EmbeddingJson = COALESCE($embedding, EmbeddingJson), IndexedSearchText = CASE WHEN $embedding IS NULL THEN IndexedSearchText ELSE SearchText END, Topic = COALESCE($topic, Topic), Summary = COALESCE($summary, Summary), KeywordsJson = COALESCE($keywords, KeywordsJson), IndexedActivityUnixMilliseconds = CASE WHEN $embedding IS NULL THEN IndexedActivityUnixMilliseconds ELSE $activity END, SummaryIndexedActivityUnixMilliseconds = CASE WHEN $summary IS NULL THEN SummaryIndexedActivityUnixMilliseconds ELSE $activity END WHERE ConversationId = $id AND OwnerPrincipalId = $owner AND LastActivityUnixMilliseconds = $activity;";
+        command.Transaction = transaction;
+        command.CommandText = "UPDATE ConversationSearchDocuments SET EmbeddingModel = COALESCE($model, EmbeddingModel), EmbeddingJson = COALESCE($embedding, EmbeddingJson), IndexedSearchText = CASE WHEN $embedding IS NULL THEN IndexedSearchText ELSE SearchText END, Topic = COALESCE($topic, Topic), Summary = COALESCE($summary, Summary), KeywordsJson = COALESCE($keywords, KeywordsJson), IndexedActivityUnixMilliseconds = CASE WHEN $embedding IS NULL THEN IndexedActivityUnixMilliseconds ELSE $activity END, SummaryIndexedActivityUnixMilliseconds = CASE WHEN $summary IS NULL THEN SummaryIndexedActivityUnixMilliseconds ELSE $activity END, IndexedSearchVersion = CASE WHEN $embedding IS NULL THEN IndexedSearchVersion ELSE $version END, SummaryIndexedVersion = CASE WHEN $summary IS NULL THEN SummaryIndexedVersion ELSE $version END WHERE ConversationId = $id AND OwnerPrincipalId = $owner AND SearchVersion = $version;";
         command.Parameters.AddWithValue("$model", (object?)embedding?.Model ?? DBNull.Value);
         command.Parameters.AddWithValue(
             "$embedding",
@@ -289,9 +298,23 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
         command.Parameters.AddWithValue("$summary", (object?)summary?.Summary ?? DBNull.Value);
         command.Parameters.AddWithValue("$keywords", summary is null ? DBNull.Value : JsonSerializer.Serialize(summary.Keywords, SerializerOptions));
         command.Parameters.AddWithValue("$activity", candidate.LastActivityUnixMilliseconds);
+        command.Parameters.AddWithValue("$version", candidate.SearchVersion);
         command.Parameters.AddWithValue("$id", candidate.ConversationId.ToString("N"));
         command.Parameters.AddWithValue("$owner", candidate.OwnerPrincipalId);
-        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+        var updated = await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+        if (updated)
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                "UPDATE Conversations SET IndexingRequestedAtUnixMilliseconds = NULL WHERE ConversationId = $id AND OwnerPrincipalId = $owner AND NOT EXISTS (SELECT 1 FROM ConversationSearchDocuments WHERE ConversationId = $id AND OwnerPrincipalId = $owner AND (IndexedSearchVersion IS NULL OR IndexedSearchVersion <> SearchVersion OR SummaryIndexedVersion IS NULL OR SummaryIndexedVersion <> SearchVersion));",
+                cancellationToken,
+                ("$id", candidate.ConversationId.ToString("N")),
+                ("$owner", candidate.OwnerPrincipalId));
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return updated;
     }
 
     private async ValueTask<SqliteConnection> OpenAsync(CancellationToken cancellationToken)
@@ -340,6 +363,9 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
         await AddSearchDocumentColumnIfMissingAsync(
             connection,
             "IndexedSearchText TEXT NULL");
+        await AddSearchDocumentColumnIfMissingAsync(connection, "SearchVersion INTEGER NOT NULL DEFAULT 0");
+        await AddSearchDocumentColumnIfMissingAsync(connection, "IndexedSearchVersion INTEGER NULL");
+        await AddSearchDocumentColumnIfMissingAsync(connection, "SummaryIndexedVersion INTEGER NULL");
         await AddSearchDocumentColumnIfMissingAsync(connection, "IndexedActivityUnixMilliseconds INTEGER NULL");
         await AddSearchDocumentColumnIfMissingAsync(connection, "SummaryIndexedActivityUnixMilliseconds INTEGER NULL");
         await AddSearchDocumentColumnIfMissingAsync(connection, "Topic TEXT NULL");
@@ -388,10 +414,10 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
             return;
         }
 
-        var updated = await ExecuteAsync(connection, transaction, "UPDATE ConversationSearchDocuments SET LastActivityUnixMilliseconds = (SELECT LastActivityUnixMilliseconds FROM Conversations WHERE ConversationId = $id AND OwnerPrincipalId = $owner), SearchText = $text WHERE ConversationId = $id AND OwnerPrincipalId = $owner;", cancellationToken, ("$id", conversationId), ("$owner", ownerPrincipalId), ("$text", searchText));
+        var updated = await ExecuteAsync(connection, transaction, "UPDATE ConversationSearchDocuments SET LastActivityUnixMilliseconds = (SELECT LastActivityUnixMilliseconds FROM Conversations WHERE ConversationId = $id AND OwnerPrincipalId = $owner), SearchText = $text, SearchVersion = SearchVersion + 1 WHERE ConversationId = $id AND OwnerPrincipalId = $owner;", cancellationToken, ("$id", conversationId), ("$owner", ownerPrincipalId), ("$text", searchText));
         if (updated == 0)
         {
-            await ExecuteAsync(connection, transaction, "INSERT INTO ConversationSearchDocuments (ConversationId, OwnerPrincipalId, LastActivityUnixMilliseconds, SearchText) SELECT ConversationId, OwnerPrincipalId, LastActivityUnixMilliseconds, $text FROM Conversations WHERE ConversationId = $id AND OwnerPrincipalId = $owner;", cancellationToken, ("$id", conversationId), ("$owner", ownerPrincipalId), ("$text", searchText));
+            await ExecuteAsync(connection, transaction, "INSERT INTO ConversationSearchDocuments (ConversationId, OwnerPrincipalId, LastActivityUnixMilliseconds, SearchText, SearchVersion) SELECT ConversationId, OwnerPrincipalId, LastActivityUnixMilliseconds, $text, 1 FROM Conversations WHERE ConversationId = $id AND OwnerPrincipalId = $owner;", cancellationToken, ("$id", conversationId), ("$owner", ownerPrincipalId), ("$text", searchText));
         }
 
         await ExecuteAsync(connection, transaction, "INSERT INTO ConversationSearch (ConversationId, OwnerPrincipalId, SearchText) VALUES ($id, $owner, $text);", cancellationToken, ("$id", conversationId), ("$owner", ownerPrincipalId), ("$text", searchText));
@@ -513,6 +539,7 @@ public sealed record ConversationEmbeddingIndexCandidate(
     string OwnerPrincipalId,
     long LastActivityUnixMilliseconds,
     string Text,
+    long SearchVersion,
     bool RequiresEmbedding,
     bool RequiresSummary);
 

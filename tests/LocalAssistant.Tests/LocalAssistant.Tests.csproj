@@ -31,5 +31,8 @@
     <None Include="Documents\Fixtures\document-semantic-search-corpus.json"
           Link="Documents\Fixtures\document-semantic-search-corpus.json"
           CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\LocalAssistant.Api\appsettings.json"
+          Link="appsettings.json"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

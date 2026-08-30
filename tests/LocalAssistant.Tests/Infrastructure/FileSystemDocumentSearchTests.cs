@@ -41,6 +41,27 @@ public sealed class FileSystemDocumentSearchTests
     }
 
     [Fact]
+    public async Task DoesNotTreatACaseDifferentSiblingAsTheConfiguredRootOnCaseSensitivePlatforms()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var directory = new TemporaryDirectory();
+        var rootPath = Directory.CreateDirectory(Path.Combine(directory.Path, "Documents")).FullName;
+        var siblingPath = Directory.CreateDirectory(Path.Combine(directory.Path, "documents")).FullName;
+        File.WriteAllText(Path.Combine(siblingPath, "private.txt"), "private content");
+        var search = CreateSearch(rootPath);
+
+        var results = await search.SearchAsync(
+            new DocumentSearchQuery(relativePath: "../documents"),
+            CancellationToken.None);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
     public async Task LimitsTheNumberOfReturnedDocuments()
     {
         using var directory = new TemporaryDirectory();

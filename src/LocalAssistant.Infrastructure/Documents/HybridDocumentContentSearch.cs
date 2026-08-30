@@ -18,6 +18,7 @@ public sealed class HybridDocumentContentSearch : ILocalDocumentContentSearch, I
     private readonly IDocumentReferenceProtector _documentReferenceProtector;
     private readonly IDocumentSemanticIndex _index;
     private readonly ITextEmbeddingProvider _embeddingProvider;
+    private readonly DocumentSemanticSearchOptions _options;
     private readonly SemaphoreSlim _synchronizationLock = new(1, 1);
 
     public HybridDocumentContentSearch(
@@ -25,13 +26,15 @@ public sealed class HybridDocumentContentSearch : ILocalDocumentContentSearch, I
         ILocalDocumentRoot documentRoot,
         IDocumentReferenceProtector documentReferenceProtector,
         IDocumentSemanticIndex index,
-        ITextEmbeddingProvider embeddingProvider)
+        ITextEmbeddingProvider embeddingProvider,
+        DocumentSemanticSearchOptions? options = null)
     {
         _literalSearch = literalSearch;
         _documentRoot = documentRoot;
         _documentReferenceProtector = documentReferenceProtector;
         _index = index;
         _embeddingProvider = embeddingProvider;
+        _options = options ?? new DocumentSemanticSearchOptions();
     }
 
     public async ValueTask<IReadOnlyList<DocumentSearchResult>> SearchAsync(
@@ -44,8 +47,10 @@ public sealed class HybridDocumentContentSearch : ILocalDocumentContentSearch, I
 
         try
         {
-            var queryEmbedding = await _embeddingProvider.EmbedAsync(query.Text, cancellationToken);
-            await SynchronizeAsync(queryEmbedding.Model, cancellationToken);
+            using var semanticTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            semanticTimeout.CancelAfter(_options.SynchronizationBudget);
+            var queryEmbedding = await EmbedAsync(query.Text, semanticTimeout.Token);
+            await SynchronizeAsync(queryEmbedding.Model, semanticTimeout.Token);
 
             var semanticResults = await SearchByEmbeddingAsync(
                 query,
@@ -75,16 +80,26 @@ public sealed class HybridDocumentContentSearch : ILocalDocumentContentSearch, I
                 .Where(document => StringComparer.Ordinal.Equals(document.EmbeddingModel, embeddingModel))
                 .ToDictionary(document => document.RelativePath, StringComparer.OrdinalIgnoreCase);
             var discoveredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var synchronizationCompleted = true;
+            var processedFiles = 0;
 
             foreach (var filePath in Directory.EnumerateFiles(rootPath, "*", EnumerationOptions))
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
+                if (processedFiles >= _options.MaximumFilesPerSynchronizationCycle)
+                {
+                    synchronizationCompleted = false;
+                    break;
+                }
 
                 var file = TryGetIndexableFile(rootPath, filePath);
                 if (file is null)
                 {
                     continue;
                 }
+
+                processedFiles++;
 
                 var relativePath = Path.GetRelativePath(rootPath, file.FullName);
                 discoveredPaths.Add(relativePath);
@@ -96,16 +111,20 @@ public sealed class HybridDocumentContentSearch : ILocalDocumentContentSearch, I
                     continue;
                 }
 
-                var text = await DocumentFilePolicy.ReadBoundedTextAsync(file.FullName, cancellationToken);
+                var text = await DocumentFilePolicy.ReadBoundedTextAsync(
+                    rootPath,
+                    file.FullName,
+                    cancellationToken);
                 if (string.IsNullOrWhiteSpace(text))
                 {
+                    await _index.RemoveAsync(relativePath, cancellationToken);
                     continue;
                 }
 
                 var chunks = new List<DocumentSemanticChunkInput>();
                 foreach (var chunk in DocumentTextChunker.Split(text))
                 {
-                    var embedding = await _embeddingProvider.EmbedAsync(chunk, cancellationToken);
+                    var embedding = await EmbedAsync(chunk, cancellationToken);
                     chunks.Add(new DocumentSemanticChunkInput(chunk, embedding));
                 }
 
@@ -115,6 +134,11 @@ public sealed class HybridDocumentContentSearch : ILocalDocumentContentSearch, I
                     lastModifiedUtc,
                     chunks,
                     cancellationToken);
+            }
+
+            if (!synchronizationCompleted)
+            {
+                return;
             }
 
             foreach (var indexedDocument in indexedDocuments)
@@ -151,7 +175,7 @@ public sealed class HybridDocumentContentSearch : ILocalDocumentContentSearch, I
             .Select(chunk => new ScoredDocument(
                 CreateResult(chunk),
                 CalculateCosineSimilarity(queryEmbedding.Values, chunk.Embedding.Values)))
-            .Where(result => result.Score is not null)
+            .Where(result => result.Score is not null && result.Score >= _options.MinimumSimilarity)
             .Select(result => new ScoredDocument(result.Document, result.Score!.Value))
             .GroupBy(result => result.Document.RelativePath, StringComparer.OrdinalIgnoreCase)
             .Select(group => group
@@ -285,6 +309,13 @@ public sealed class HybridDocumentContentSearch : ILocalDocumentContentSearch, I
     }
 
     private sealed record ScoredDocument(DocumentSearchResult Document, double? Score);
+
+    private async ValueTask<TextEmbedding> EmbedAsync(string text, CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(_options.EmbeddingTimeout);
+        return await _embeddingProvider.EmbedAsync(text, timeout.Token);
+    }
 
     public void Dispose()
     {

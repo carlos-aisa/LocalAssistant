@@ -60,6 +60,14 @@ sensibles.
 - **Prompt injection:** texto del usuario, documentos o conectores pueden intentar
   manipular la elección de herramientas. La allowlist y las políticas deben
   imponerse fuera del modelo.
+- **Índice documental derivado:** `documents.db` puede contener fragmentos de texto y
+  embeddings de la raíz autorizada. Es una copia privada derivada del documento fuente:
+  comparte sus exigencias de permisos, protección en reposo, backup y restauración.
+  Desactivar embeddings no borra el índice existente. El scope de búsqueda de contenido
+  no concede por sí solo acceso al extracto: el servidor exige además `documents.read`.
+  Los delimitadores o la serialización JSON de evidencia documental no neutralizan por
+  sí mismos prompt injection; la autorización y las políticas del servidor siguen
+  siendo la frontera efectiva.
 - **Argumentos inventados:** todo argumento producido por un modelo se considera no
   confiable y debe validarse contra reglas de la herramienta.
 - **Exfiltración:** un proveedor externo futuro no debe recibir datos privados por

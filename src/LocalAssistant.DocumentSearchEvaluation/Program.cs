@@ -1,6 +1,7 @@
 using System.Text.Json;
 using LocalAssistant.Core.Documents;
 using LocalAssistant.DocumentSearchEvaluation;
+using LocalAssistant.Infrastructure.Documents;
 using LocalAssistant.Infrastructure.LanguageModels.Ollama;
 using Microsoft.Extensions.Options;
 
@@ -24,6 +25,7 @@ var literal = evaluator.EvaluateLiteral(corpus, options.Limit);
 var semantic = await evaluator.EvaluateSemanticAsync(
     corpus,
     options.Limit,
+    options.MinimumSimilarity,
     embeddings,
     CancellationToken.None);
 var report = new
@@ -41,13 +43,19 @@ await File.WriteAllTextAsync(
 
 Console.WriteLine($"Report: {options.OutputPath}");
 
-internal sealed record EvaluationOptions(Uri Endpoint, string EmbeddingModel, int Limit, string OutputPath)
+internal sealed record EvaluationOptions(
+    Uri Endpoint,
+    string EmbeddingModel,
+    int Limit,
+    double MinimumSimilarity,
+    string OutputPath)
 {
     public static EvaluationOptions Parse(string[] arguments)
     {
         var endpoint = new Uri("http://localhost:11434");
         var model = string.Empty;
         var limit = 3;
+        var minimumSimilarity = new DocumentSemanticSearchOptions().MinimumSimilarity;
         var outputPath = Path.GetFullPath(Path.Combine("artifacts", "local-document-semantic-search.json"));
 
         for (var index = 0; index < arguments.Length; index += 2)
@@ -62,6 +70,9 @@ internal sealed record EvaluationOptions(Uri Endpoint, string EmbeddingModel, in
                 case "--endpoint": endpoint = new Uri(arguments[index + 1], UriKind.Absolute); break;
                 case "--model": model = arguments[index + 1]; break;
                 case "--limit": limit = int.Parse(arguments[index + 1], System.Globalization.CultureInfo.InvariantCulture); break;
+                case "--minimum-similarity":
+                    minimumSimilarity = double.Parse(arguments[index + 1], System.Globalization.CultureInfo.InvariantCulture);
+                    break;
                 case "--output": outputPath = Path.GetFullPath(arguments[index + 1]); break;
                 default: throw new ArgumentException($"Unknown option '{arguments[index]}'.");
             }
@@ -75,6 +86,11 @@ internal sealed record EvaluationOptions(Uri Endpoint, string EmbeddingModel, in
 
         ArgumentException.ThrowIfNullOrWhiteSpace(model);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
-        return new EvaluationOptions(endpoint, model.Trim(), limit, outputPath);
+        if (minimumSimilarity is < -1 or > 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(arguments), "The minimum similarity must be between -1 and 1.");
+        }
+
+        return new EvaluationOptions(endpoint, model.Trim(), limit, minimumSimilarity, outputPath);
     }
 }
