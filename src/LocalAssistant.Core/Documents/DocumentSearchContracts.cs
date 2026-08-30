@@ -63,7 +63,8 @@ public sealed record DocumentSearchResult(
     string Extension,
     string RelativePath,
     long SizeBytes,
-    DateTimeOffset LastModifiedUtc);
+    DateTimeOffset LastModifiedUtc,
+    string? Excerpt = null);
 
 public sealed record DocumentContent(
     string Name,

@@ -272,12 +272,13 @@ silencioso. Esta API todavía no entrega el contenido al LLM ni crea un índice.
 
 ### Búsqueda textual documental
 
-`GET /api/documents/content-search?text=...` busca texto literal, sin distinguir
-mayúsculas, en formatos permitidos de hasta 1 MiB. Admite los filtros de extensión,
-ruta relativa, fechas de modificación y límite de la búsqueda documental. Requiere el
-scope independiente `documents.content.search` y devuelve solo metadatos seguros; no
-devuelve fragmentos, contenido ni rutas absolutas. No crea índice, embeddings, RAG ni
-tráfico a un modelo.
+`GET /api/documents/content-search?text=...` combina búsqueda literal y, cuando hay
+persistencia privada y un modelo de embeddings local configurado, similitud semántica.
+Admite los filtros de extensión, ruta relativa, fechas de modificación y límite de la
+búsqueda documental. Requiere el scope independiente `documents.content.search` y
+devuelve metadatos seguros y, si existe, un extracto de hasta 280 caracteres. Nunca
+devuelve contenido completo, puntuaciones, vectores ni rutas absolutas. Si Ollama no
+está disponible conserva la búsqueda literal; no crea RAG, watcher ni worker.
 
 ### Escenario 1: respuesta directa
 

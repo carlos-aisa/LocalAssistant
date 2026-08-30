@@ -1,3 +1,5 @@
+using LocalAssistant.Core.Conversations;
+
 namespace LocalAssistant.Core.Documents;
 
 public sealed record DocumentSemanticChunk(
@@ -5,7 +7,8 @@ public sealed record DocumentSemanticChunk(
     long SizeBytes,
     DateTimeOffset LastModifiedUtc,
     int Position,
-    string Text)
+    string Text,
+    TextEmbedding Embedding)
 {
     public const int MaximumExcerptLength = 280;
 }
@@ -13,7 +16,12 @@ public sealed record DocumentSemanticChunk(
 public sealed record IndexedDocument(
     string RelativePath,
     long SizeBytes,
-    DateTimeOffset LastModifiedUtc);
+    DateTimeOffset LastModifiedUtc,
+    string EmbeddingModel);
+
+public sealed record DocumentSemanticChunkInput(
+    string Text,
+    TextEmbedding Embedding);
 
 public interface IDocumentSemanticIndex
 {
@@ -21,13 +29,13 @@ public interface IDocumentSemanticIndex
         string relativePath,
         long sizeBytes,
         DateTimeOffset lastModifiedUtc,
-        IReadOnlyList<string> chunks,
+        IReadOnlyList<DocumentSemanticChunkInput> chunks,
         CancellationToken cancellationToken);
 
     ValueTask RemoveAsync(string relativePath, CancellationToken cancellationToken);
 
     ValueTask<IReadOnlyList<DocumentSemanticChunk>> GetChunksAsync(
-        string relativePath,
+        string embeddingModel,
         CancellationToken cancellationToken);
 
     ValueTask<IReadOnlyList<IndexedDocument>> GetDocumentsAsync(

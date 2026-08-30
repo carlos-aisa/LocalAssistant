@@ -355,9 +355,11 @@ propiedad y alcance de acceso.
 
 La búsqueda textual de contenido requiere además `documents.content.search`, que no
 queda concedido por `documents.search` ni `documents.read`. Puede abrir solo los
-formatos textuales permitidos y acotados a 1 MiB para decidir una coincidencia
-literal, pero no devuelve ni registra contenido o fragmentos. Esta operación no crea
-índices, embeddings, memoria derivada ni egreso a proveedores.
+formatos textuales permitidos y acotados a 1 MiB. Si se configura un modelo de
+embeddings, persiste un índice privado derivado y envía el texto exclusivamente al
+endpoint Ollama local configurado; no hay proveedor remoto permitido. La respuesta
+puede contener un extracto de 280 caracteres, pero no devuelve ni registra contenido
+completo, vectores o puntuaciones.
 
 Toda ruta o referencia influida por el modelo se tratará como no confiable. El
 servicio validará el destino finalmente resuelto, no solo el texto de entrada, y

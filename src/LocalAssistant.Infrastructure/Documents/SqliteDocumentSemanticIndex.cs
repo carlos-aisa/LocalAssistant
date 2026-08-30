@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LocalAssistant.Core.Documents;
 using Microsoft.Data.Sqlite;
 
@@ -23,7 +24,7 @@ public sealed class SqliteDocumentSemanticIndex : IDocumentSemanticIndex
         string relativePath,
         long sizeBytes,
         DateTimeOffset lastModifiedUtc,
-        IReadOnlyList<string> chunks,
+        IReadOnlyList<DocumentSemanticChunkInput> chunks,
         CancellationToken cancellationToken)
     {
         Validate(relativePath, sizeBytes, lastModifiedUtc, chunks);
@@ -46,16 +47,18 @@ public sealed class SqliteDocumentSemanticIndex : IDocumentSemanticIndex
                 transaction,
                 """
                 INSERT INTO DocumentSemanticChunks
-                    (RelativePath, SizeBytes, LastModifiedUnixMilliseconds, Position, Text)
+                    (RelativePath, SizeBytes, LastModifiedUnixMilliseconds, Position, Text, EmbeddingModel, EmbeddingJson)
                 VALUES
-                    ($path, $size, $modified, $position, $text);
+                    ($path, $size, $modified, $position, $text, $model, $embedding);
                 """,
                 cancellationToken,
                 ("$path", relativePath),
                 ("$size", sizeBytes),
                 ("$modified", lastModifiedUtc.ToUnixTimeMilliseconds()),
                 ("$position", position),
-                ("$text", chunks[position]));
+                ("$text", chunks[position].Text),
+                ("$model", chunks[position].Embedding.Model),
+                ("$embedding", JsonSerializer.Serialize(chunks[position].Embedding.Values)));
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -74,19 +77,21 @@ public sealed class SqliteDocumentSemanticIndex : IDocumentSemanticIndex
             ("$path", relativePath));
     }
 
-    public async ValueTask<IReadOnlyList<DocumentSemanticChunk>> GetChunksAsync(string relativePath, CancellationToken cancellationToken)
+    public async ValueTask<IReadOnlyList<DocumentSemanticChunk>> GetChunksAsync(
+        string embeddingModel,
+        CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(embeddingModel);
 
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT RelativePath, SizeBytes, LastModifiedUnixMilliseconds, Position, Text
+            SELECT RelativePath, SizeBytes, LastModifiedUnixMilliseconds, Position, Text, EmbeddingModel, EmbeddingJson
             FROM DocumentSemanticChunks
-            WHERE RelativePath = $path
-            ORDER BY Position;
+            WHERE EmbeddingModel = $model
+            ORDER BY RelativePath, Position;
             """;
-        command.Parameters.AddWithValue("$path", relativePath);
+        command.Parameters.AddWithValue("$model", embeddingModel);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var chunks = new List<DocumentSemanticChunk>();
@@ -99,7 +104,10 @@ public sealed class SqliteDocumentSemanticIndex : IDocumentSemanticIndex
                     reader.GetInt64(1),
                     DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(2)),
                     reader.GetInt32(3),
-                    reader.GetString(4)));
+                    reader.GetString(4),
+                    new LocalAssistant.Core.Conversations.TextEmbedding(
+                        reader.GetString(5),
+                        DeserializeEmbedding(reader.GetString(6)))));
         }
 
         return chunks;
@@ -111,9 +119,9 @@ public sealed class SqliteDocumentSemanticIndex : IDocumentSemanticIndex
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT RelativePath, SizeBytes, LastModifiedUnixMilliseconds
+            SELECT RelativePath, SizeBytes, LastModifiedUnixMilliseconds, EmbeddingModel
             FROM DocumentSemanticChunks
-            GROUP BY RelativePath, SizeBytes, LastModifiedUnixMilliseconds
+            GROUP BY RelativePath, SizeBytes, LastModifiedUnixMilliseconds, EmbeddingModel
             ORDER BY RelativePath;
             """;
 
@@ -126,7 +134,8 @@ public sealed class SqliteDocumentSemanticIndex : IDocumentSemanticIndex
                 new IndexedDocument(
                     reader.GetString(0),
                     reader.GetInt64(1),
-                    DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(2))));
+                    DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(2)),
+                    reader.GetString(3)));
         }
 
         return documents;
@@ -172,6 +181,8 @@ public sealed class SqliteDocumentSemanticIndex : IDocumentSemanticIndex
                 LastModifiedUnixMilliseconds INTEGER NOT NULL,
                 Position INTEGER NOT NULL,
                 Text TEXT NOT NULL,
+                EmbeddingModel TEXT NOT NULL,
+                EmbeddingJson TEXT NOT NULL,
                 PRIMARY KEY (RelativePath, Position)
             );
             """,
@@ -182,14 +193,22 @@ public sealed class SqliteDocumentSemanticIndex : IDocumentSemanticIndex
         string relativePath,
         long sizeBytes,
         DateTimeOffset lastModifiedUtc,
-        IReadOnlyList<string> chunks)
+        IReadOnlyList<DocumentSemanticChunkInput> chunks)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
         ArgumentOutOfRangeException.ThrowIfNegative(sizeBytes);
-        if (lastModifiedUtc == default || chunks.Count == 0 || chunks.Any(string.IsNullOrWhiteSpace))
+        if (lastModifiedUtc == default ||
+            chunks.Count == 0 ||
+            chunks.Any(chunk => string.IsNullOrWhiteSpace(chunk.Text)))
         {
             throw new ArgumentException("The document chunks are invalid.");
         }
+    }
+
+    private static float[] DeserializeEmbedding(string serializedEmbedding)
+    {
+        var values = JsonSerializer.Deserialize<float[]>(serializedEmbedding);
+        return values ?? throw new InvalidOperationException("The stored document embedding is invalid.");
     }
 
     private static async Task ExecuteAsync(

@@ -34,7 +34,28 @@ builder.Services.AddSingleton<ISystemDocumentsPathProvider, SystemDocumentsPathP
 builder.Services.AddSingleton<ILocalDocumentRoot, ConfiguredLocalDocumentRoot>();
 builder.Services.AddSingleton<IDocumentReferenceProtector, ProtectedDocumentReferenceProtector>();
 builder.Services.AddSingleton<ILocalDocumentSearch, FileSystemDocumentSearch>();
-builder.Services.AddSingleton<ILocalDocumentContentSearch, FileSystemDocumentContentSearch>();
+builder.Services.AddSingleton<FileSystemDocumentContentSearch>();
+builder.Services.AddSingleton<IDocumentSemanticIndex>(services =>
+{
+    var options = services.GetRequiredService<IOptions<SqliteConversationStoreOptions>>().Value;
+    var databasePath = options.DatabasePath
+        ?? throw new InvalidOperationException("Document semantic indexing requires a persistence database path.");
+    var directory = Path.GetDirectoryName(databasePath)
+        ?? throw new InvalidOperationException("The persistence database directory is invalid.");
+    return new SqliteDocumentSemanticIndex(Path.Combine(directory, "documents.db"));
+});
+builder.Services.AddSingleton<HybridDocumentContentSearch>();
+builder.Services.AddSingleton<ILocalDocumentContentSearch>(services =>
+{
+    var persistenceOptions = services.GetRequiredService<IOptions<SqliteConversationStoreOptions>>().Value;
+    var ollamaOptions = services.GetRequiredService<IOptions<OllamaOptions>>().Value;
+    return persistenceOptions.Enabled &&
+        !string.IsNullOrWhiteSpace(persistenceOptions.DatabasePath) &&
+        ollamaOptions.IsEmbeddingConfigured &&
+        ollamaOptions.Endpoint.IsLoopback
+        ? services.GetRequiredService<HybridDocumentContentSearch>()
+        : services.GetRequiredService<FileSystemDocumentContentSearch>();
+});
 builder.Services.AddSingleton<ILocalDocumentContentReader, FileSystemDocumentContentReader>();
 builder.Services.AddSingleton<InMemoryConversationStore>();
 builder.Services.AddSingleton<SqliteConversationStore>();

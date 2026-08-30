@@ -5,7 +5,8 @@
 Cuando `LocalAssistant:ConversationPersistence:Enabled` está activado, la base de
 datos SQLite contiene conversaciones autenticadas y notas personales. La aplicación
 usa por defecto `%LOCALAPPDATA%\LocalAssistant\conversations.db`. Las rutas de base
-de datos configuradas deben ser absolutas.
+de datos configuradas deben ser absolutas. Cuando se configura un modelo de embeddings
+local, `documents.db` se crea en el mismo directorio como índice privado derivado.
 
 El bootstrap de identidad guarda también
 `%LOCALAPPDATA%\LocalAssistant\installation-identity.json` por defecto. El directorio
