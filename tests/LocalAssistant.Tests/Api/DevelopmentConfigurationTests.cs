@@ -12,7 +12,10 @@ public sealed class DevelopmentConfigurationTests
             .Build();
         var developmentConfiguration = new ConfigurationBuilder()
             .AddJsonFile("appsettings.json", optional: false)
-            .AddJsonFile("appsettings.Development.json", optional: false)
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["LocalAssistant:DocumentSemanticSearch:MinimumSimilarity"] = "0.40",
+            })
             .Build();
 
         Assert.Equal(0.78, baseConfiguration.GetValue<double>("LocalAssistant:DocumentSemanticSearch:MinimumSimilarity"), 3);

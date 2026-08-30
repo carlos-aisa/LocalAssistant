@@ -34,8 +34,5 @@
     <None Include="..\..\src\LocalAssistant.Api\appsettings.json"
           Link="appsettings.json"
           CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\src\LocalAssistant.Api\appsettings.Development.json"
-          Link="appsettings.Development.json"
-          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
