@@ -83,6 +83,11 @@ sensibles.
 - **Endpoint de inferencia:** la URL de Ollama es configuración de confianza y no
   procede de cada petición. Apuntarla a otro host puede enviarle conversaciones y
   resultados de herramientas.
+- **Datos temporales actuales:** la fecha y hora actuales se resuelven en el servidor
+  con `TimeProvider`, no a partir de la respuesta ni de los datos de entrenamiento
+  del LLM. La zona horaria del hogar solo se usa con el scope
+  `household.profile.read`; en cualquier otro caso se expone UTC y no se infiere
+  ubicación por IP.
 
 ## Ollama y red local
 
