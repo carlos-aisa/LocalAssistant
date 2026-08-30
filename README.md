@@ -281,6 +281,9 @@ principal también dispone de `documents.read`; buscar contenido no concede por 
 mismo permiso para recibirlo. Nunca
 devuelve contenido completo, puntuaciones, vectores ni rutas absolutas. Si Ollama no
 está disponible conserva la búsqueda literal; no crea RAG, watcher ni worker.
+El umbral semántico inicial es 0,78, conservador y configurable mediante
+`LocalAssistant:DocumentSemanticSearch:MinimumSimilarity`; debe calibrarse con el
+corpus local antes de tratarlo como un valor definitivo.
 
 ### Escenario 1: respuesta directa
 
