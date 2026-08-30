@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LocalAssistant.DocumentSearchEvaluation</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\LocalAssistant.Core\LocalAssistant.Core.csproj" />
+    <ProjectReference Include="..\LocalAssistant.Infrastructure\LocalAssistant.Infrastructure.csproj" />
+    <None Include="..\..\tests\LocalAssistant.Tests\Documents\Fixtures\document-semantic-search-corpus.json"
+          Link="Fixtures\document-semantic-search-corpus.json"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
