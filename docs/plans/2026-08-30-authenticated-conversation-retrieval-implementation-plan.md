@@ -1,7 +1,7 @@
 # Plan de implementación: recuperación de conversaciones autenticadas
 
 - Diseño de referencia: `docs/specs/2026-08-30-authenticated-conversation-retrieval-design.md`
-- Estado: pendiente de aprobación para implementación
+- Estado: implementado y verificado
 - Fecha: 2026-08-30
 
 ## Objetivo y límites

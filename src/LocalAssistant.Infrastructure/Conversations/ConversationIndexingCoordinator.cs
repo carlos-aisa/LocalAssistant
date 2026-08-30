@@ -1,21 +1,25 @@
 using LocalAssistant.Core.Conversations;
+using Microsoft.Extensions.Logging;
 
 namespace LocalAssistant.Infrastructure.Conversations;
 
-public sealed class ConversationIndexingCoordinator
+public sealed partial class ConversationIndexingCoordinator
 {
     private readonly SqliteConversationStore _store;
     private readonly ITextEmbeddingProvider _embeddingProvider;
     private readonly IConversationIndexSummaryProvider _summaryProvider;
+    private readonly ILogger<ConversationIndexingCoordinator> _logger;
 
     public ConversationIndexingCoordinator(
         SqliteConversationStore store,
         ITextEmbeddingProvider embeddingProvider,
-        IConversationIndexSummaryProvider summaryProvider)
+        IConversationIndexSummaryProvider summaryProvider,
+        ILogger<ConversationIndexingCoordinator> logger)
     {
         _store = store;
         _embeddingProvider = embeddingProvider;
         _summaryProvider = summaryProvider;
+        _logger = logger;
     }
 
     public async Task<int> ProcessPendingAsync(CancellationToken cancellationToken)
@@ -43,8 +47,9 @@ public sealed class ConversationIndexingCoordinator
                 {
                     throw;
                 }
-                catch (Exception)
+                catch (Exception exception)
                 {
+                    ConversationSummaryFailed(_logger, exception);
                 }
             }
 
@@ -56,4 +61,10 @@ public sealed class ConversationIndexingCoordinator
 
         return indexed;
     }
+
+    [LoggerMessage(
+        EventId = 1000,
+        Level = LogLevel.Warning,
+        Message = "Conversation summary indexing failed and will be retried.")]
+    private static partial void ConversationSummaryFailed(ILogger logger, Exception exception);
 }

@@ -122,6 +122,22 @@ restauración. La aplicación mantiene el aislamiento por propietario, la retenc
 el borrado selectivo sobre la base activa; no cifra SQLite ni administra esos controles
 del sistema operativo.
 
+La recuperación de conversaciones anteriores es un índice derivado dentro de la misma
+SQLite. `ConversationSearch` usa FTS5 para coincidencias literales y
+`ConversationSearchDocuments` conserva, por conversación autenticada, texto
+indexable, embedding con el identificador de su modelo, tema, resumen y palabras
+clave. El filtro por propietario se aplica en las consultas SQLite antes de devolver
+candidatos. Solo se indexan mensajes de usuario y asistente; argumentos y resultados
+de herramientas no se copian al índice.
+
+Un servicio hospedado revisa conversaciones inactivas durante el retraso configurado
+(quince minutos por defecto). Solicita embedding y resumen exclusivamente a Ollama
+local y guarda el resultado solo si la actividad de la conversación no cambió durante
+el procesamiento. El estado de embedding y el de resumen se reintentan por separado.
+El orquestador consulta el índice solo para peticiones retrospectivas y añade un
+contexto de sistema transitorio, delimitado como dato no confiable, antes del historial
+actual. No hay endpoint de búsqueda, proceso separado ni base vectorial.
+
 La primera memoria personal persistente es una nota de texto creada expresamente por
 el cliente. `IPersonalMemoryStore` mantiene el contrato en el núcleo y
 `SqlitePersonalMemoryStore` la guarda en la tabla `PersonalMemories`, independiente de
@@ -888,7 +904,7 @@ posponen hasta que exista un consumidor concreto de trazas o métricas.
 ## Configuración
 
 `LocalAssistant:Orchestration` contiene el máximo de iteraciones y los timeouts.
-`LocalAssistant:Ollama` contiene `Endpoint`, `Model`, `Think` y `ContextWindow`; el
+`LocalAssistant:Ollama` contiene `Endpoint`, `Model`, `EmbeddingModel`, `Think` y `ContextWindow`; el
 repositorio deja el modelo vacío para que Ollama permanezca desactivado por defecto.
 El timeout de proveedor es global y vale tres minutos para tolerar inferencia local
 en CPU. No se guardan secretos ni configuraciones personales en el repositorio.

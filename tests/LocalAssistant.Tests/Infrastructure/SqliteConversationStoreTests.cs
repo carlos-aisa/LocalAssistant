@@ -1,6 +1,7 @@
 using LocalAssistant.Core.Conversations;
 using LocalAssistant.Infrastructure.Conversations;
 using LocalAssistant.Tests.TestDoubles;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace LocalAssistant.Tests.Infrastructure;
@@ -154,7 +155,8 @@ public sealed class SqliteConversationStoreTests
         var coordinator = new ConversationIndexingCoordinator(
             store,
             provider,
-            new StaticSummaryProvider());
+            new StaticSummaryProvider(),
+            NullLogger<ConversationIndexingCoordinator>.Instance);
         var conversationId = Guid.NewGuid();
         await store.GetOrCreateMetadataAsync(conversationId, "owner-a", CancellationToken.None);
         await store.AppendAsync(
@@ -183,7 +185,8 @@ public sealed class SqliteConversationStoreTests
         var coordinator = new ConversationIndexingCoordinator(
             store,
             embeddingProvider,
-            new StaticSummaryProvider());
+            new StaticSummaryProvider(),
+            NullLogger<ConversationIndexingCoordinator>.Instance);
         var indexedConversationId = Guid.NewGuid();
         await store.GetOrCreateMetadataAsync(
             indexedConversationId,
@@ -227,7 +230,8 @@ public sealed class SqliteConversationStoreTests
         var coordinator = new ConversationIndexingCoordinator(
             store,
             embeddingProvider,
-            new FailingSummaryProvider());
+            new FailingSummaryProvider(),
+            NullLogger<ConversationIndexingCoordinator>.Instance);
         var indexedConversationId = Guid.NewGuid();
         await store.GetOrCreateMetadataAsync(
             indexedConversationId,
@@ -254,7 +258,8 @@ public sealed class SqliteConversationStoreTests
         var recoveredCoordinator = new ConversationIndexingCoordinator(
             store,
             embeddingProvider,
-            new StaticSummaryProvider());
+            new StaticSummaryProvider(),
+            NullLogger<ConversationIndexingCoordinator>.Instance);
 
         Assert.Equal(1, await recoveredCoordinator.ProcessPendingAsync(CancellationToken.None));
         Assert.Equal(1, embeddingProvider.CallCount);
@@ -286,7 +291,8 @@ public sealed class SqliteConversationStoreTests
         var coordinator = new ConversationIndexingCoordinator(
             store,
             embeddingProvider,
-            new StaticSummaryProvider());
+            new StaticSummaryProvider(),
+            NullLogger<ConversationIndexingCoordinator>.Instance);
 
         Assert.Equal(0, await coordinator.ProcessPendingAsync(CancellationToken.None));
         Assert.Empty(await store.RetrieveByEmbeddingAsync(

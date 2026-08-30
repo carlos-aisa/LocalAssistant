@@ -55,9 +55,9 @@ Implementado:
 - Retención configurable de conversaciones persistidas, inicialmente 30 días, y
   borrado selectivo interno protegido por propietario.
 - Recuperación híbrida opcional de conversaciones autenticadas anteriores mediante
-  índice FTS5 y embeddings locales, limitada al propietario y a contexto transitorio
-  no persistido. Los embeddings se actualizan tras un periodo configurable de
-  inactividad.
+  índice FTS5, embeddings, tema, resumen y palabras clave generados por Ollama local,
+  limitada al propietario y a contexto transitorio no persistido. La indexación se
+  actualiza tras un periodo configurable de inactividad.
 - Raíz documental local permitida, con búsqueda por metadatos, lectura textual
   limitada y búsqueda textual como capacidades y permisos independientes.
 - Logging estructurado sin contenido de conversación.
@@ -65,8 +65,7 @@ Implementado:
 - Contratos de proveedor reutilizados por el fake y el adaptador de Ollama.
 - Evaluación local reproducible de decisiones de tool calling por modelo.
 
-No implementado: resúmenes, temas y palabras clave automáticos de conversaciones,
-detección automática de capacidades por modelo, acceso real a
+No implementado: detección automática de capacidades por modelo, acceso real a
 Internet, proveedores cloud, retención y auditoría durable, gestión de usuarios, voz, wake word,
 RAG, agenda durable o notificaciones, Home Assistant, MQTT, MCP, interfaz gráfica ni
 ejecución de comandos.
@@ -388,6 +387,20 @@ correctas se cachean durante la vida del proceso; los fallos se reintentan en la
 siguiente petición para permitir instalar o corregir el modelo sin reiniciar la API.
 Si `/api/show` publica un valor `*.context_length`, la configuración tampoco puede
 superarlo.
+
+Para activar la recuperación semántica de conversaciones persistidas se configura,
+además, `LocalAssistant:Ollama:EmbeddingModel`. El servicio local valida con
+`POST /api/show` que ese modelo está instalado y solo después procesa conversaciones
+inactivas. Por ejemplo:
+
+```powershell
+ollama pull embeddinggemma
+$env:LocalAssistant__Ollama__EmbeddingModel = "embeddinggemma"
+```
+
+El modelo de chat configurado produce también un tema, resumen y palabras clave
+acotados. Todo este procesamiento usa el endpoint de Ollama configurado; no se envía
+contenido de conversaciones a servicios externos.
 
 ### Cliente de terminal para pruebas manuales
 

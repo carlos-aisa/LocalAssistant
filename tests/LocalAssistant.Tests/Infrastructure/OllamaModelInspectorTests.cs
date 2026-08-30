@@ -118,6 +118,42 @@ public sealed class OllamaModelInspectorTests
             result.ErrorMessage);
     }
 
+    [Fact]
+    public async Task ValidateEmbeddingAsyncAcceptsAnInstalledEmbeddingModelWithoutTools()
+    {
+        using var handler = new RecordingHandler(_ => CreateResponse(
+            HttpStatusCode.OK,
+            """{ "capabilities": ["embedding"] }"""));
+        using var httpClient = new HttpClient(handler);
+        var inspector = CreateInspector(httpClient);
+
+        var first = await inspector.ValidateEmbeddingAsync(CancellationToken.None);
+        var second = await inspector.ValidateEmbeddingAsync(CancellationToken.None);
+
+        Assert.True(first.IsValid);
+        Assert.True(second.IsValid);
+        Assert.Equal(1, handler.CallCount);
+        using var body = JsonDocument.Parse(Assert.IsType<string>(handler.Body));
+        Assert.Equal("embedding-model", body.RootElement.GetProperty("model").GetString());
+    }
+
+    [Fact]
+    public async Task ValidateEmbeddingAsyncReportsMissingEmbeddingModel()
+    {
+        using var handler = new RecordingHandler(_ => CreateResponse(
+            HttpStatusCode.NotFound,
+            """{ "error": "model not found" }"""));
+        using var httpClient = new HttpClient(handler);
+        var inspector = CreateInspector(httpClient);
+
+        var result = await inspector.ValidateEmbeddingAsync(CancellationToken.None);
+
+        Assert.False(result.IsValid);
+        Assert.Equal(
+            "The configured Ollama embedding model 'embedding-model' is not installed.",
+            result.ErrorMessage);
+    }
+
     private static OllamaModelInspector CreateInspector(
         HttpClient httpClient,
         int contextWindow = 4096)
@@ -128,6 +164,7 @@ public sealed class OllamaModelInspectorTests
             {
                 Endpoint = new Uri("http://localhost:11434"),
                 Model = "test-model",
+                EmbeddingModel = "embedding-model",
                 ContextWindow = contextWindow,
             }),
             new OllamaModelValidationCache());

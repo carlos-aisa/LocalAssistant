@@ -140,6 +140,19 @@ No se registra, recupera para el modelo, entrega a herramientas ni transmite a u
 proveedor. SQLite y sus backups siguen sin aportar cifrado propio y deben protegerse
 como datos privados del principal según la guía operativa.
 
+La recuperación híbrida de conversaciones crea datos derivados privados —texto FTS5,
+embeddings, tema, resumen y palabras clave— únicamente para conversaciones
+autenticadas. Comparte propietario, retención y borrado transaccional con la
+conversación fuente. Las consultas filtran por propietario antes de seleccionar
+candidatos; las conversaciones anónimas no se indexan. El contexto recuperado se
+entrega de forma transitoria al modelo local y no se añade al historial. Logs y
+auditoría no contienen consultas, fragmentos, resúmenes, palabras clave ni vectores.
+
+Los embeddings y resúmenes se envían solo al endpoint Ollama configurado. Ese endpoint
+es una frontera de confianza: configurarlo en un host remoto puede divulgar el
+contenido conversacional derivado y fuente que necesita procesar. La disponibilidad de
+un proveedor externo no es fallback para esta capacidad.
+
 El bootstrap de instalación concede explícitamente `memory.personal.read` y
 `memory.personal.write` al propietario local para que pueda acceder a sus propias
 notas. El estado anterior se migra una vez al esquema 2, preservando identidad y hash
