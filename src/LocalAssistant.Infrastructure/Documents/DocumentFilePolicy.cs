@@ -56,9 +56,15 @@ internal static class DocumentFilePolicy
     }
 
     public static async ValueTask<string?> ReadBoundedTextAsync(
+        string rootPath,
         string filePath,
         CancellationToken cancellationToken)
     {
+        if (!IsAuthorizedFile(rootPath, filePath))
+        {
+            return null;
+        }
+
         await using var fileStream = new FileStream(
             filePath,
             FileMode.Open,

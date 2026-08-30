@@ -86,7 +86,10 @@ public sealed class FileSystemDocumentContentSearch : ILocalDocumentContentSearc
                 return null;
             }
 
-            var text = await DocumentFilePolicy.ReadBoundedTextAsync(fullPath, cancellationToken);
+            var text = await DocumentFilePolicy.ReadBoundedTextAsync(
+                rootPath,
+                fullPath,
+                cancellationToken);
             if (text is null ||
                 !text.Contains(query.Text, StringComparison.OrdinalIgnoreCase))
             {

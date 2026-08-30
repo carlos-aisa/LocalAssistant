@@ -111,7 +111,10 @@ public sealed class HybridDocumentContentSearch : ILocalDocumentContentSearch, I
                     continue;
                 }
 
-                var text = await DocumentFilePolicy.ReadBoundedTextAsync(file.FullName, cancellationToken);
+                var text = await DocumentFilePolicy.ReadBoundedTextAsync(
+                    rootPath,
+                    file.FullName,
+                    cancellationToken);
                 if (string.IsNullOrWhiteSpace(text))
                 {
                     await _index.RemoveAsync(relativePath, cancellationToken);

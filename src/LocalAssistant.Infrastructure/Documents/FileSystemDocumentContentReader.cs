@@ -46,7 +46,10 @@ public sealed class FileSystemDocumentContentReader : ILocalDocumentContentReade
                 return DocumentContentReadOutcome.Failed(DocumentContentReadFailure.TooLarge);
             }
 
-            var text = await DocumentFilePolicy.ReadBoundedTextAsync(filePath, cancellationToken);
+            var text = await DocumentFilePolicy.ReadBoundedTextAsync(
+                rootPath,
+                filePath,
+                cancellationToken);
             if (text is null)
             {
                 return DocumentContentReadOutcome.Failed(DocumentContentReadFailure.TooLarge);
