@@ -19,7 +19,12 @@ public sealed class DocumentSemanticSearchEvaluationTests
         var report = sut.EvaluateLiteral(corpus, 2);
 
         Assert.Equal("literal", report.Strategy);
-        Assert.All(report.Results, result => Assert.False(result.Hit));
+        Assert.All(
+            report.Results.Where(result => result.ExpectsDocument),
+            result => Assert.False(result.Hit));
+        Assert.All(
+            report.Results.Where(result => !result.ExpectsDocument),
+            result => Assert.True(result.Hit));
         Assert.Null(report.EmbeddingModel);
     }
 
@@ -45,14 +50,19 @@ public sealed class DocumentSemanticSearchEvaluationTests
             ["when do lessons resume after holidays"] = [-1, -1],
             ["how much was the power invoice"] = [1, -1],
             ["what do I need to make a loaf"] = [-1, 1],
+            ["what time does the cinema open"] = [0, 0],
+            ["how do I renew a passport"] = [0, 0],
         });
 
-        var report = await sut.EvaluateSemanticAsync(corpus, 1, embeddings, CancellationToken.None);
+        var report = await sut.EvaluateSemanticAsync(corpus, 1, 0.78, embeddings, CancellationToken.None);
         var serialized = System.Text.Json.JsonSerializer.Serialize(report);
 
         Assert.Equal("semantic", report.Strategy);
+        Assert.NotNull(report.MinimumSimilarity);
+        Assert.Equal(0.78, report.MinimumSimilarity.Value, 3);
         Assert.Equal(0, report.PreparationMilliseconds);
         Assert.All(report.Results, result => Assert.True(result.Hit));
+        Assert.Equal(0, report.FalsePositiveCount);
         Assert.DoesNotContain("Lisbon", serialized, StringComparison.Ordinal);
         Assert.DoesNotContain("Travel expenses", serialized, StringComparison.Ordinal);
     }
@@ -67,13 +77,82 @@ public sealed class DocumentSemanticSearchEvaluationTests
             _ => OneDimensionEmbedding), TwoDimensionEmbedding);
 
         await Assert.ThrowsAsync<ArgumentException>(async () =>
-            await sut.EvaluateSemanticAsync(corpus, 1, embeddings, CancellationToken.None));
+            await sut.EvaluateSemanticAsync(corpus, 1, 0.78, embeddings, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReportsAFalsePositiveWhenANegativeCaseExceedsTheMinimumSimilarity()
+    {
+        var corpus = CreateCorpus(
+            new DocumentSearchEvaluationCase("unrelated", "unrelated question", null));
+        var sut = new DocumentSemanticSearchEvaluator(TimeProvider.System);
+        var embeddings = new StaticEmbeddingProvider(new Dictionary<string, float[]>
+        {
+            ["garden content"] = [1, 0],
+            ["unrelated question"] = [1, 0],
+        });
+
+        var report = await sut.EvaluateSemanticAsync(corpus, 1, 0.78, embeddings, CancellationToken.None);
+        var result = Assert.Single(report.Results);
+
+        Assert.False(result.ExpectsDocument);
+        Assert.True(result.ReturnedAnyDocument);
+        Assert.Equal(1, result.TopScore);
+        Assert.False(result.Hit);
+        Assert.True(result.FalsePositive);
+        Assert.Equal(1, report.FalsePositiveCount);
+    }
+
+    [Fact]
+    public async Task RejectsAnExpectedDocumentBelowTheMinimumSimilarity()
+    {
+        var corpus = CreateCorpus(
+            new DocumentSearchEvaluationCase("garden", "watering", "garden"));
+        var sut = new DocumentSemanticSearchEvaluator(TimeProvider.System);
+        var embeddings = new StaticEmbeddingProvider(new Dictionary<string, float[]>
+        {
+            ["garden content"] = [1, 0],
+            ["watering"] = [0.5f, 0.8660254f],
+        });
+
+        var report = await sut.EvaluateSemanticAsync(corpus, 1, 0.78, embeddings, CancellationToken.None);
+        var result = Assert.Single(report.Results);
+
+        Assert.Equal(1, result.ExpectedDocumentPosition);
+        Assert.NotNull(result.ExpectedDocumentScore);
+        Assert.Equal(0.5, result.ExpectedDocumentScore.Value, 3);
+        Assert.False(result.Hit);
+        Assert.False(result.FalsePositive);
+    }
+
+    [Fact]
+    public async Task RejectsAnOutOfRangeMinimumSimilarity()
+    {
+        var corpus = CreateCorpus(
+            new DocumentSearchEvaluationCase("garden", "watering", "garden"));
+        var sut = new DocumentSemanticSearchEvaluator(TimeProvider.System);
+        var embeddings = new StaticEmbeddingProvider(new Dictionary<string, float[]>
+        {
+            ["garden content"] = [1, 0],
+            ["watering"] = [1, 0],
+        });
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () =>
+            await sut.EvaluateSemanticAsync(corpus, 1, 1.01, embeddings, CancellationToken.None));
     }
 
     private static DocumentSearchEvaluationCorpus LoadCorpus()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "Documents", "Fixtures", "document-semantic-search-corpus.json");
         return DocumentSearchEvaluationCorpus.FromJson(File.ReadAllText(path));
+    }
+
+    private static DocumentSearchEvaluationCorpus CreateCorpus(params DocumentSearchEvaluationCase[] cases)
+    {
+        return new DocumentSearchEvaluationCorpus(
+            "test",
+            [new SyntheticDocument("garden", ".txt", "garden content")],
+            cases).Validate();
     }
 
     private sealed class StaticEmbeddingProvider(

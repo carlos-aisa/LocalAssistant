@@ -1,5 +1,5 @@
 {
-  "version": "1",
+  "version": "2",
   "documents": [
     { "id": "lisbon-expenses", "format": ".md", "content": "Travel expenses for Lisbon included hotel, tram, and museum tickets." },
     { "id": "garden-schedule", "format": ".txt", "content": "Water the vegetable garden every Tuesday morning." },
@@ -16,6 +16,8 @@
     { "id": "bicycle", "query": "how do I fix my bike stopping safely", "expectedDocumentId": "bike-repair" },
     { "id": "school", "query": "when do lessons resume after holidays", "expectedDocumentId": "school-calendar" },
     { "id": "utility", "query": "how much was the power invoice", "expectedDocumentId": "electricity-bill" },
-    { "id": "baking", "query": "what do I need to make a loaf", "expectedDocumentId": "bread-recipe" }
+    { "id": "baking", "query": "what do I need to make a loaf", "expectedDocumentId": "bread-recipe" },
+    { "id": "cinema-hours", "query": "what time does the cinema open" },
+    { "id": "passport-renewal", "query": "how do I renew a passport" }
   ]
 }

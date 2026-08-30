@@ -16,13 +16,13 @@ public sealed record SyntheticDocument(string Id, string Format, string Content)
     }
 }
 
-public sealed record DocumentSearchEvaluationCase(string Id, string Query, string ExpectedDocumentId)
+public sealed record DocumentSearchEvaluationCase(string Id, string Query, string? ExpectedDocumentId)
 {
     public DocumentSearchEvaluationCase Validate()
     {
-        if (string.IsNullOrWhiteSpace(Id) || string.IsNullOrWhiteSpace(Query) || string.IsNullOrWhiteSpace(ExpectedDocumentId))
+        if (string.IsNullOrWhiteSpace(Id) || string.IsNullOrWhiteSpace(Query))
         {
-            throw new ArgumentException("An evaluation case requires an id, query, and expected document id.");
+            throw new ArgumentException("An evaluation case requires an id and query.");
         }
 
         return this;
@@ -57,7 +57,9 @@ public sealed record DocumentSearchEvaluationCorpus(
         var cases = Cases.Select(@case => @case.Validate()).ToArray();
         if (documents.Select(document => document.Id).Distinct(StringComparer.Ordinal).Count() != documents.Length ||
             cases.Select(@case => @case.Id).Distinct(StringComparer.Ordinal).Count() != cases.Length ||
-            cases.Any(@case => !documents.Any(document => StringComparer.Ordinal.Equals(document.Id, @case.ExpectedDocumentId))))
+            cases
+                .Where(@case => @case.ExpectedDocumentId is not null)
+                .Any(@case => !documents.Any(document => StringComparer.Ordinal.Equals(document.Id, @case.ExpectedDocumentId))))
         {
             throw new ArgumentException("The evaluation corpus identifiers are invalid.");
         }
@@ -66,17 +68,36 @@ public sealed record DocumentSearchEvaluationCorpus(
     }
 }
 
-public sealed record DocumentSearchEvaluationResult(string CaseId, int? ExpectedDocumentPosition, bool Hit, double ElapsedMilliseconds);
+public sealed record DocumentSearchEvaluationResult(
+    string CaseId,
+    bool ExpectsDocument,
+    bool ReturnedAnyDocument,
+    int? ExpectedDocumentPosition,
+    double? ExpectedDocumentScore,
+    double? TopScore,
+    bool Hit,
+    bool FalsePositive,
+    double ElapsedMilliseconds);
 
 public sealed record DocumentSearchEvaluationReport(
     string CorpusVersion,
     string Strategy,
     string? EmbeddingModel,
+    double? MinimumSimilarity,
     double PreparationMilliseconds,
-    IReadOnlyList<DocumentSearchEvaluationResult> Results);
+    IReadOnlyList<DocumentSearchEvaluationResult> Results)
+{
+    public int HitCount => Results.Count(result => result.Hit);
+
+    public int FailureCount => Results.Count(result => !result.Hit);
+
+    public int FalsePositiveCount => Results.Count(result => result.FalsePositive);
+}
 
 public sealed class DocumentSemanticSearchEvaluator(TimeProvider clock)
 {
+    private sealed record RankedDocument(string Id, double Score);
+
     public DocumentSearchEvaluationReport EvaluateLiteral(DocumentSearchEvaluationCorpus corpus, int limit)
     {
         ValidateLimit(limit);
@@ -90,19 +111,21 @@ public sealed class DocumentSemanticSearchEvaluator(TimeProvider clock)
                 .Take(limit)
                 .Select(document => document.Id)
                 .ToArray();
-            return CreateResult(@case, ranked, clock.GetElapsedTime(start).TotalMilliseconds);
+            return CreateLiteralResult(@case, ranked, clock.GetElapsedTime(start).TotalMilliseconds);
         }).ToArray();
 
-        return new DocumentSearchEvaluationReport(corpus.Version, "literal", null, 0, results);
+        return new DocumentSearchEvaluationReport(corpus.Version, "literal", null, null, 0, results);
     }
 
     public async ValueTask<DocumentSearchEvaluationReport> EvaluateSemanticAsync(
         DocumentSearchEvaluationCorpus corpus,
         int limit,
+        double minimumSimilarity,
         ITextEmbeddingProvider embeddings,
         CancellationToken cancellationToken)
     {
         ValidateLimit(limit);
+        ValidateMinimumSimilarity(minimumSimilarity);
         ArgumentNullException.ThrowIfNull(embeddings);
         corpus.Validate();
         var documentEmbeddings = new Dictionary<string, TextEmbedding>(StringComparer.Ordinal);
@@ -125,32 +148,116 @@ public sealed class DocumentSemanticSearchEvaluator(TimeProvider clock)
             }
 
             var ranked = documentEmbeddings
-                .Select(pair => new { pair.Key, Score = CalculateCosineSimilarity(queryEmbedding.Values, pair.Value.Values) })
+                .Select(pair => new RankedDocument(
+                    pair.Key,
+                    CalculateCosineSimilarity(queryEmbedding.Values, pair.Value.Values)))
                 .OrderByDescending(result => result.Score)
-                .ThenBy(result => result.Key, StringComparer.Ordinal)
-                .Take(limit)
-                .Select(result => result.Key)
+                .ThenBy(result => result.Id, StringComparer.Ordinal)
                 .ToArray();
-            results.Add(CreateResult(@case, ranked, clock.GetElapsedTime(start).TotalMilliseconds));
+            results.Add(CreateSemanticResult(
+                @case,
+                ranked,
+                limit,
+                minimumSimilarity,
+                clock.GetElapsedTime(start).TotalMilliseconds));
         }
 
         return new DocumentSearchEvaluationReport(
             corpus.Version,
             "semantic",
             model,
+            minimumSimilarity,
             preparationMilliseconds,
             results);
     }
 
-    private static DocumentSearchEvaluationResult CreateResult(DocumentSearchEvaluationCase @case, IReadOnlyList<string> ranked, double elapsedMilliseconds)
+    private static DocumentSearchEvaluationResult CreateLiteralResult(
+        DocumentSearchEvaluationCase @case,
+        IReadOnlyList<string> ranked,
+        double elapsedMilliseconds)
     {
+        var returnedAnyDocument = ranked.Count > 0;
+        if (@case.ExpectedDocumentId is null)
+        {
+            return new DocumentSearchEvaluationResult(
+                @case.Id,
+                false,
+                returnedAnyDocument,
+                null,
+                null,
+                null,
+                !returnedAnyDocument,
+                false,
+                elapsedMilliseconds);
+        }
+
         var position = Array.IndexOf(ranked.ToArray(), @case.ExpectedDocumentId) + 1;
-        return new DocumentSearchEvaluationResult(@case.Id, position == 0 ? null : position, position > 0, elapsedMilliseconds);
+        return new DocumentSearchEvaluationResult(
+            @case.Id,
+            true,
+            returnedAnyDocument,
+            position == 0 ? null : position,
+            null,
+            null,
+            position > 0,
+            false,
+            elapsedMilliseconds);
+    }
+
+    private static DocumentSearchEvaluationResult CreateSemanticResult(
+        DocumentSearchEvaluationCase @case,
+        IReadOnlyList<RankedDocument> ranked,
+        int limit,
+        double minimumSimilarity,
+        double elapsedMilliseconds)
+    {
+        var limitedRanked = ranked.Take(limit).ToArray();
+        var returnedAnyDocument = limitedRanked.Length > 0;
+        double? topScore = returnedAnyDocument ? limitedRanked[0].Score : null;
+        if (@case.ExpectedDocumentId is null)
+        {
+            var falsePositive = topScore.HasValue && topScore.Value >= minimumSimilarity;
+            return new DocumentSearchEvaluationResult(
+                @case.Id,
+                false,
+                returnedAnyDocument,
+                null,
+                null,
+                topScore,
+                !falsePositive,
+                falsePositive,
+                elapsedMilliseconds);
+        }
+
+        var expectedRank = ranked
+            .Select((result, index) => new { Result = result, Position = index + 1 })
+            .Single(result => StringComparer.Ordinal.Equals(result.Result.Id, @case.ExpectedDocumentId));
+        int? expectedPosition = expectedRank.Position <= limit ? expectedRank.Position : null;
+        var expectedScore = expectedRank.Result.Score;
+        var hit = expectedPosition is not null && expectedScore >= minimumSimilarity;
+        return new DocumentSearchEvaluationResult(
+            @case.Id,
+            true,
+            returnedAnyDocument,
+            expectedPosition,
+            expectedScore,
+            topScore,
+            hit,
+            false,
+            elapsedMilliseconds);
     }
 
     private static void ValidateLimit(int limit)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+    }
+
+    private static void ValidateMinimumSimilarity(double minimumSimilarity)
+    {
+        if (minimumSimilarity is < -1 or > 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(minimumSimilarity));
+        }
     }
 
     private static double CalculateCosineSimilarity(IReadOnlyList<float> left, IReadOnlyList<float> right)
