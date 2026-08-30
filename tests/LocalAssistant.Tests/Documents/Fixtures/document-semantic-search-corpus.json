@@ -1,0 +1,13 @@
+{
+  "version": "1",
+  "documents": [
+    { "id": "lisbon-expenses", "format": ".md", "content": "Travel expenses for Lisbon included hotel, tram, and museum tickets." },
+    { "id": "garden-schedule", "format": ".txt", "content": "Water the vegetable garden every Tuesday morning." },
+    { "id": "reading-list", "format": ".json", "content": "{ \"books\": [\"The Left Hand of Darkness\"] }" },
+    { "id": "meal-plan", "format": ".csv", "content": "day,dinner\nMonday,pasta\nTuesday,soup" }
+  ],
+  "cases": [
+    { "id": "trip-cost", "query": "Lisbon", "expectedDocumentId": "lisbon-expenses" },
+    { "id": "garden", "query": "vegetable garden", "expectedDocumentId": "garden-schedule" }
+  ]
+}
