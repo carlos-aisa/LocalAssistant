@@ -10,7 +10,7 @@ public sealed class DocumentSemanticSearchEvaluationTests
     private static readonly float[] TwoDimensionEmbedding = [1f, 0f];
 
     [Fact]
-    public void LoadsTheSyntheticCorpusAndRanksLiteralMatches()
+    public void LoadsTheSyntheticCorpusAndReportsLiteralMissesForParaphrasedQueries()
     {
         var corpus = LoadCorpus();
         var sut = new DocumentSemanticSearchEvaluator(
@@ -19,7 +19,7 @@ public sealed class DocumentSemanticSearchEvaluationTests
         var report = sut.EvaluateLiteral(corpus, 2);
 
         Assert.Equal("literal", report.Strategy);
-        Assert.All(report.Results, result => Assert.True(result.Hit));
+        Assert.All(report.Results, result => Assert.False(result.Hit));
         Assert.Null(report.EmbeddingModel);
     }
 
@@ -35,14 +35,23 @@ public sealed class DocumentSemanticSearchEvaluationTests
             ["Water the vegetable garden every Tuesday morning."] = [0, 1],
             ["{ \"books\": [\"The Left Hand of Darkness\"] }"] = [-1, 0],
             ["day,dinner\nMonday,pasta\nTuesday,soup"] = [0, -1],
-            ["Lisbon"] = [1, 0],
-            ["vegetable garden"] = [0, 1],
+            ["Replace the worn chain and adjust the rear brake before cycling."] = [1, 1],
+            ["The children return to class on 8 September after the summer break."] = [-1, -1],
+            ["{ \"utility\": \"electricity\", \"amount\": 48.20 }"] = [1, -1],
+            ["ingredient,quantity\nflour,500g\nyeast,7g"] = [-1, 1],
+            ["Portugal holiday spending"] = [1, 0],
+            ["when should I irrigate my plants"] = [0, 1],
+            ["how do I fix my bike stopping safely"] = [1, 1],
+            ["when do lessons resume after holidays"] = [-1, -1],
+            ["how much was the power invoice"] = [1, -1],
+            ["what do I need to make a loaf"] = [-1, 1],
         });
 
         var report = await sut.EvaluateSemanticAsync(corpus, 1, embeddings, CancellationToken.None);
         var serialized = System.Text.Json.JsonSerializer.Serialize(report);
 
         Assert.Equal("semantic", report.Strategy);
+        Assert.Equal(0, report.PreparationMilliseconds);
         Assert.All(report.Results, result => Assert.True(result.Hit));
         Assert.DoesNotContain("Lisbon", serialized, StringComparison.Ordinal);
         Assert.DoesNotContain("Travel expenses", serialized, StringComparison.Ordinal);

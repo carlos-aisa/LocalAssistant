@@ -189,8 +189,12 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
 - [x] Incorporar búsqueda textual literal y acotada en los formatos textuales ya
   permitidos, con el scope independiente `documents.content.search`. Devuelve solo
   metadatos y no crea índice, embeddings ni retención de contenido.
-- Evaluar índice local, embeddings locales y búsqueda semántica después de medir
-  corpus, latencia y calidad; no introducir todavía base vectorial, watcher ni worker.
+- [x] Evaluar índice local, embeddings locales y búsqueda semántica con un corpus
+  sintético. `embeddinggemma` recuperó 6 de 6 paráfrasis en primera posición, frente
+  a 0 de 6 de la búsqueda literal, con 52 ms de media por consulta y 4,0 s de
+  preparación para ocho documentos. La decisión adopta una futura búsqueda semántica
+  local con índice persistente; no introduce todavía base vectorial, watcher ni
+  worker.
 - Mantener la ingesta RAG como una decisión separada y explícita: buscar o leer un
   archivo no lo convertirá automáticamente en conocimiento persistente.
 - Mantener repositorios y búsqueda de código fuera de las fuentes documentales; una

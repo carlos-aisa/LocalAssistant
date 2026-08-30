@@ -1,7 +1,7 @@
 using System.Text.Json;
 using LocalAssistant.Core.Documents;
-using LocalAssistant.Infrastructure.LanguageModels.Ollama;
 using LocalAssistant.DocumentSearchEvaluation;
+using LocalAssistant.Infrastructure.LanguageModels.Ollama;
 using Microsoft.Extensions.Options;
 
 var options = EvaluationOptions.Parse(args);

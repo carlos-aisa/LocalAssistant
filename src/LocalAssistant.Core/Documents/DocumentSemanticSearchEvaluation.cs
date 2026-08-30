@@ -72,6 +72,7 @@ public sealed record DocumentSearchEvaluationReport(
     string CorpusVersion,
     string Strategy,
     string? EmbeddingModel,
+    double PreparationMilliseconds,
     IReadOnlyList<DocumentSearchEvaluationResult> Results);
 
 public sealed class DocumentSemanticSearchEvaluator(TimeProvider clock)
@@ -92,7 +93,7 @@ public sealed class DocumentSemanticSearchEvaluator(TimeProvider clock)
             return CreateResult(@case, ranked, clock.GetElapsedTime(start).TotalMilliseconds);
         }).ToArray();
 
-        return new DocumentSearchEvaluationReport(corpus.Version, "literal", null, results);
+        return new DocumentSearchEvaluationReport(corpus.Version, "literal", null, 0, results);
     }
 
     public async ValueTask<DocumentSearchEvaluationReport> EvaluateSemanticAsync(
@@ -105,11 +106,13 @@ public sealed class DocumentSemanticSearchEvaluator(TimeProvider clock)
         ArgumentNullException.ThrowIfNull(embeddings);
         corpus.Validate();
         var documentEmbeddings = new Dictionary<string, TextEmbedding>(StringComparer.Ordinal);
+        var preparationStart = clock.GetTimestamp();
         foreach (var document in corpus.Documents)
         {
             documentEmbeddings.Add(document.Id, await embeddings.EmbedAsync(document.Content, cancellationToken));
         }
 
+        var preparationMilliseconds = clock.GetElapsedTime(preparationStart).TotalMilliseconds;
         var model = documentEmbeddings.Values.First().Model;
         var results = new List<DocumentSearchEvaluationResult>();
         foreach (var @case in corpus.Cases)
@@ -131,7 +134,12 @@ public sealed class DocumentSemanticSearchEvaluator(TimeProvider clock)
             results.Add(CreateResult(@case, ranked, clock.GetElapsedTime(start).TotalMilliseconds));
         }
 
-        return new DocumentSearchEvaluationReport(corpus.Version, "semantic", model, results);
+        return new DocumentSearchEvaluationReport(
+            corpus.Version,
+            "semantic",
+            model,
+            preparationMilliseconds,
+            results);
     }
 
     private static DocumentSearchEvaluationResult CreateResult(DocumentSearchEvaluationCase @case, IReadOnlyList<string> ranked, double elapsedMilliseconds)
