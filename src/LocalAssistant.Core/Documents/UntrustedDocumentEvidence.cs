@@ -1,4 +1,4 @@
-using System.Text;
+using System.Text.Json;
 
 namespace LocalAssistant.Core.Documents;
 
@@ -36,10 +36,10 @@ public sealed record UntrustedDocumentEvidence
 
         var normalizedPath = relativePath.Replace('\\', '/');
         if (normalizedPath[0] == '/' ||
-            (normalizedPath.Length >= 3 &&
-             char.IsAsciiLetter(normalizedPath[0]) &&
-             normalizedPath[1] == ':' &&
-             normalizedPath[2] == '/'))
+            (normalizedPath.Length >= 2 &&
+              char.IsAsciiLetter(normalizedPath[0]) &&
+              normalizedPath[1] == ':') ||
+            normalizedPath.Any(char.IsControl))
         {
             return false;
         }
@@ -64,20 +64,12 @@ public static class UntrustedDocumentEvidenceContextComposer
             return null;
         }
 
-        var context = new StringBuilder(Introduction);
-        foreach (var item in evidence)
+        var values = evidence.Select(item =>
         {
             ArgumentNullException.ThrowIfNull(item);
-
-            context.AppendLine();
-            context.AppendLine();
-            context.Append("<<<UNTRUSTED_DOCUMENT path=\"");
-            context.Append(item.RelativePath);
-            context.AppendLine("\">>>");
-            context.AppendLine(item.Excerpt);
-            context.Append("<<<END_UNTRUSTED_DOCUMENT>>>");
-        }
-
-        return context.ToString();
+            return new { path = item.RelativePath, excerpt = item.Excerpt };
+        });
+        return $"{Introduction}\nUntrusted document data (JSON):\n" +
+               JsonSerializer.Serialize(values);
     }
 }

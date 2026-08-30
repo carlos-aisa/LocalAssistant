@@ -35,9 +35,8 @@ public static class ConversationRetrievalPolicy
             return true;
         }
 
-        return (normalized.Length >= 18 &&
-                ContinuationPhrases.Any(phrase =>
-                    normalized.Contains(phrase, StringComparison.OrdinalIgnoreCase))) ||
-               (isFirstUserTurn && normalized.Length >= 24);
+        return normalized.Length >= 18 &&
+               ContinuationPhrases.Any(phrase =>
+                   normalized.Contains(phrase, StringComparison.OrdinalIgnoreCase));
     }
 }

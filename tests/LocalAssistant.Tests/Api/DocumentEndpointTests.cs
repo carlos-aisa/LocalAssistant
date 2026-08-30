@@ -68,8 +68,32 @@ public sealed class DocumentEndpointTests
             cancellationToken: CancellationToken.None);
         var document = Assert.Single(body.RootElement.GetProperty("documents").EnumerateArray());
         Assert.Equal("notes.txt", document.GetProperty("name").GetString());
+        Assert.True(document.GetProperty("excerpt").ValueKind == JsonValueKind.Null);
         Assert.False(document.TryGetProperty("text", out _));
         Assert.False(document.TryGetProperty("content", out _));
+    }
+
+    [Fact]
+    public async Task ContentSearchIncludesAnExcerptOnlyWhenReadScopeIsAlsoGranted()
+    {
+        using var directory = new TemporaryDirectory();
+        File.WriteAllText(Path.Combine(directory.Path, "notes.txt"), "private launch phrase");
+        using var factory = CreateFactory(
+            directory.Path,
+            ["documents.content.search", "documents.read"]);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(LocalApiKeyAuthenticationDefaults.HeaderName, ApiKey);
+
+        using var response = await client.GetAsync(
+            "/api/documents/content-search?text=launch%20phrase",
+            CancellationToken.None);
+
+        response.EnsureSuccessStatusCode();
+        using var body = await JsonDocument.ParseAsync(
+            await response.Content.ReadAsStreamAsync(CancellationToken.None),
+            cancellationToken: CancellationToken.None);
+        var document = Assert.Single(body.RootElement.GetProperty("documents").EnumerateArray());
+        Assert.Equal("private launch phrase", document.GetProperty("excerpt").GetString());
     }
 
     [Fact]

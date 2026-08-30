@@ -12,24 +12,18 @@ public static class CurrentTimeRequestPolicy
         "que hora",
         "dime la hora",
         "hora local",
+        "hora de ahora",
+        "fecha actual",
+        "qué fecha es",
+        "que fecha es",
+        "en qué día estamos",
+        "en que dia estamos",
         "qué día es hoy",
         "que dia es hoy",
         "darme la hora",
         "what time is it",
         "current time",
         "current date",
-    ];
-
-    private static readonly string[] ExcludedPhrases =
-    [
-        "qué es utc",
-        "que es utc",
-        "husos horarios",
-        "hora de la reunión",
-        "hora de la reunion",
-        "get_current_time",
-        "convierte las",
-        "convert ",
     ];
 
     public static bool RequiresAuthoritativeTime(string? message)
@@ -40,10 +34,8 @@ public static class CurrentTimeRequestPolicy
         }
 
         var normalized = message.Trim();
-        return !ExcludedPhrases.Any(phrase =>
-                   normalized.Contains(phrase, StringComparison.OrdinalIgnoreCase)) &&
-               CurrentTimePhrases.Any(phrase =>
-                   normalized.Contains(phrase, StringComparison.OrdinalIgnoreCase));
+        return CurrentTimePhrases.Any(phrase =>
+                    normalized.Contains(phrase, StringComparison.OrdinalIgnoreCase));
     }
 }
 

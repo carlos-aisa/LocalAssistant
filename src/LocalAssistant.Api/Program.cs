@@ -44,7 +44,13 @@ builder.Services.AddSingleton<IDocumentSemanticIndex>(services =>
         ?? throw new InvalidOperationException("The persistence database directory is invalid.");
     return new SqliteDocumentSemanticIndex(Path.Combine(directory, "documents.db"));
 });
-builder.Services.AddSingleton<HybridDocumentContentSearch>();
+builder.Services.AddSingleton<HybridDocumentContentSearch>(services => new HybridDocumentContentSearch(
+    services.GetRequiredService<FileSystemDocumentContentSearch>(),
+    services.GetRequiredService<ILocalDocumentRoot>(),
+    services.GetRequiredService<IDocumentReferenceProtector>(),
+    services.GetRequiredService<IDocumentSemanticIndex>(),
+    services.GetRequiredService<ITextEmbeddingProvider>(),
+    services.GetRequiredService<IOptions<DocumentSemanticSearchOptions>>().Value));
 builder.Services.AddSingleton<ILocalDocumentContentSearch>(services =>
 {
     var persistenceOptions = services.GetRequiredService<IOptions<SqliteConversationStoreOptions>>().Value;
@@ -173,6 +179,15 @@ builder.Services.AddOptions<LocalDocumentSourceOptions>()
         options => string.IsNullOrWhiteSpace(options.DocumentsRoot) ||
             (Path.IsPathFullyQualified(options.DocumentsRoot) && Directory.Exists(options.DocumentsRoot)),
         "Configured documents root must be an existing absolute directory.")
+    .ValidateOnStart();
+builder.Services.AddOptions<DocumentSemanticSearchOptions>()
+    .Bind(builder.Configuration.GetSection(DocumentSemanticSearchOptions.SectionName))
+    .Validate(
+        options => options.MinimumSimilarity is >= -1 and <= 1 &&
+                   options.MaximumFilesPerSynchronizationCycle > 0 &&
+                   options.SynchronizationBudget > TimeSpan.Zero &&
+                   options.EmbeddingTimeout > TimeSpan.Zero,
+        "Document semantic search limits must be valid.")
     .ValidateOnStart();
 
 if (bootstrapRequested)

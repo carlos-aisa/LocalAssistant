@@ -100,7 +100,8 @@ public sealed class FileSystemDocumentContentSearch : ILocalDocumentContentSearc
                 file.Extension,
                 relativePath,
                 file.Length,
-                lastModifiedUtc);
+                lastModifiedUtc,
+                DocumentTextChunker.ToExcerpt(text));
         }
         catch (Exception exception) when (
             exception is IOException or
