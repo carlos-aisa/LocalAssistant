@@ -98,7 +98,62 @@ public sealed class SqliteConversationStoreTests
         Assert.Null(await store.GetMetadataAsync(conversationId, CancellationToken.None));
     }
 
-    private static SqliteConversationStore CreateStore(string databasePath, TimeProvider? clock = null, int retentionDays = 30) => new(
-        Options.Create(new SqliteConversationStoreOptions { DatabasePath = databasePath, RetentionDays = retentionDays }),
+    [Fact]
+    public async Task RetrievesOnlyAnotherConversationOwnedByTheCurrentPrincipal()
+    {
+        using var directory = new LocalAssistant.Tests.Api.TemporaryInstallationStateDirectory();
+        var store = CreateStore(
+            Path.Combine(directory.Path, "conversations.db"),
+            retrievalEnabled: true);
+        var matchingConversation = Guid.NewGuid();
+        var otherOwnerConversation = Guid.NewGuid();
+        var currentConversation = Guid.NewGuid();
+
+        await store.GetOrCreateMetadataAsync(
+            matchingConversation,
+            "owner-a",
+            CancellationToken.None);
+        await store.AppendAsync(
+            matchingConversation,
+            new ConversationMessage(
+                ConversationRole.User,
+                "Planificamos los menus de la semana que viene."),
+            CancellationToken.None);
+        await store.GetOrCreateMetadataAsync(
+            otherOwnerConversation,
+            "owner-b",
+            CancellationToken.None);
+        await store.AppendAsync(
+            otherOwnerConversation,
+            new ConversationMessage(
+                ConversationRole.User,
+                "Menus privados de otro propietario."),
+            CancellationToken.None);
+
+        var result = await store.RetrieveAsync(
+            "owner-a",
+            currentConversation,
+            "Tengo mas ideas para los menus.",
+            CancellationToken.None);
+
+        var match = Assert.Single(result.Matches);
+        Assert.Equal(matchingConversation, match.ConversationId);
+        Assert.Contains("menus", match.Fragment, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static SqliteConversationStore CreateStore(
+        string databasePath,
+        TimeProvider? clock = null,
+        int retentionDays = 30,
+        bool retrievalEnabled = false) => new(
+        Options.Create(new SqliteConversationStoreOptions
+        {
+            DatabasePath = databasePath,
+            RetentionDays = retentionDays,
+        }),
+        Options.Create(new ConversationRetrievalOptions
+        {
+            Enabled = retrievalEnabled,
+        }),
         clock ?? TimeProvider.System);
 }

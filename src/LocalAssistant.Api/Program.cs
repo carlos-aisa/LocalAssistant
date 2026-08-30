@@ -37,6 +37,14 @@ builder.Services.AddSingleton<ILocalDocumentContentSearch, FileSystemDocumentCon
 builder.Services.AddSingleton<ILocalDocumentContentReader, FileSystemDocumentContentReader>();
 builder.Services.AddSingleton<InMemoryConversationStore>();
 builder.Services.AddSingleton<SqliteConversationStore>();
+builder.Services.AddSingleton<NullConversationContextRetriever>();
+builder.Services.AddSingleton<IConversationContextRetriever>(services =>
+{
+    var options = services.GetRequiredService<IOptions<SqliteConversationStoreOptions>>().Value;
+    return options.Enabled
+        ? services.GetRequiredService<SqliteConversationStore>()
+        : services.GetRequiredService<NullConversationContextRetriever>();
+});
 builder.Services.AddSingleton<IPersonalMemoryStore, SqlitePersonalMemoryStore>();
 builder.Services.AddSingleton<IConversationStore>(services =>
 {
@@ -109,6 +117,13 @@ builder.Services.AddOptions<SqliteConversationStoreOptions>()
     .Validate(
         options => string.IsNullOrWhiteSpace(options.DatabasePath) || Path.IsPathFullyQualified(options.DatabasePath),
         "Conversation database path must be an absolute path.")
+    .ValidateOnStart();
+builder.Services.AddOptions<ConversationRetrievalOptions>()
+    .Bind(builder.Configuration.GetSection(ConversationRetrievalOptions.SectionName))
+    .Validate(
+        options => options.MaximumMatches is > 0 and <= 3 &&
+                   options.MaximumContextCharacters is >= 100 and <= 2_000,
+        "Conversation retrieval limits must be within their supported ranges.")
     .ValidateOnStart();
 builder.Services.AddOptions<LocalDocumentSourceOptions>()
     .Bind(builder.Configuration.GetSection(LocalDocumentSourceOptions.SectionName))

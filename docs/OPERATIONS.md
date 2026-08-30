@@ -46,6 +46,24 @@ privada. Los permisos de archivos y el cifrado de disco tampoco protegen frente 
 administrador malicioso del equipo, malware que se ejecute con la misma cuenta o una
 API expuesta sin una frontera de red y autenticación adecuada.
 
+## Recuperación de conversaciones
+
+`LocalAssistant:ConversationRetrieval:Enabled` permanece desactivado por defecto.
+Cuando se activa junto con la persistencia de conversaciones, LocalAssistant mantiene
+un índice FTS5 local de los mensajes textuales de usuario y asistente. No copia al
+índice argumentos ni resultados de herramientas.
+
+La recuperación solo se solicita para un principal autenticado y solo ante expresiones
+retrospectivas o de continuación. El filtro por propietario se aplica dentro de la
+consulta SQLite; una conversación anónima no se indexa. El contexto resultante se
+envía de forma transitoria al proveedor y no se guarda como parte del historial.
+Los límites `MaximumMatches` y `MaximumContextCharacters` restringen, respectivamente,
+el número de conversaciones y caracteres entregados al proveedor.
+
+El índice es dato privado derivado: comparte la ruta, permisos operativos, backup,
+retención y borrado de `conversations.db`. No deben registrarse consultas ni
+fragmentos recuperados en logs o auditoría.
+
 ## Copias de seguridad y restauración
 
 Una copia de `conversations.db`, de cualquier archivo auxiliar de SQLite que exista en
