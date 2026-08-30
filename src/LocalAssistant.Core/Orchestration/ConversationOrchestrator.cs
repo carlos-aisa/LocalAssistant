@@ -14,6 +14,8 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
     private readonly IConversationStore _store;
     private readonly IConversationContextRetriever _conversationContextRetriever;
     private readonly IAssistantProfileStore _profiles;
+    private readonly IUserProfileStore _userProfiles;
+    private readonly IHouseholdProfileStore _householdProfiles;
     private readonly IToolRegistry _tools;
     private readonly IToolRiskPolicy _toolRiskPolicy;
     private readonly IToolPolicyContextAccessor _toolPolicyContextAccessor;
@@ -35,11 +37,15 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
                                     IConversationExecutionLock locks,
                                     TimeProvider clock,
                                     IOptions<OrchestrationOptions> options,
-                                    ILogger<ConversationOrchestrator> logger)
+                                    ILogger<ConversationOrchestrator> logger,
+                                    IUserProfileStore? userProfiles = null,
+                                    IHouseholdProfileStore? householdProfiles = null)
     {
         _store = store;
         _conversationContextRetriever = conversationContextRetriever;
         _profiles = profiles;
+        _userProfiles = userProfiles ?? new NullUserProfileStore();
+        _householdProfiles = householdProfiles ?? new NullHouseholdProfileStore();
         _tools = tools;
         _toolRiskPolicy = toolRiskPolicy;
         _toolPolicyContextAccessor = toolPolicyContextAccessor;
@@ -189,7 +195,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
                 response = await provider.GetResponseAsync(new(id,
                                                               await GetProviderMessagesAsync(
                                                                   id,
-                                                                  policyContext.PrincipalId,
+                                                                  policyContext,
                                                                   iteration == completedIterations + 1,
                                                                   ct),
                                                               GetAvailableDefinitions(policyContext)),
@@ -234,27 +240,35 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
 
     private async ValueTask<IReadOnlyList<ConversationMessage>> GetProviderMessagesAsync(
         Guid conversationId,
-        string? ownerPrincipalId,
+        ToolPolicyContext policyContext,
         bool mayRetrieveContext,
         CancellationToken cancellationToken)
     {
         var profile = await _profiles.GetAsync(cancellationToken);
         var history = await _store.GetMessagesAsync(conversationId, cancellationToken);
-        var messages = new List<ConversationMessage>(history.Count + 2)
+        var messages = new List<ConversationMessage>(history.Count + 4)
         {
             new(
                 ConversationRole.System,
                 $"The assistant's configured display name for this installation is '{profile.DisplayName}'."),
         };
 
+        await AddStableProfileContextAsync(
+            messages,
+            policyContext.PrincipalId,
+            policyContext,
+            cancellationToken);
+
         if (mayRetrieveContext &&
-            !string.IsNullOrWhiteSpace(ownerPrincipalId) &&
+            !string.IsNullOrWhiteSpace(policyContext.PrincipalId) &&
             history.Count > 0 &&
             history[^1].Role == ConversationRole.User &&
-            ConversationRetrievalPolicy.ShouldRetrieve(history[^1].Content ?? string.Empty))
+            ConversationRetrievalPolicy.ShouldRetrieve(
+                history[^1].Content ?? string.Empty,
+                history.Count(message => message.Role == ConversationRole.User) == 1))
         {
             var retrieval = await _conversationContextRetriever.RetrieveAsync(
-                ownerPrincipalId,
+                policyContext.PrincipalId,
                 conversationId,
                 history[^1].Content ?? string.Empty,
                 cancellationToken);
@@ -263,6 +277,37 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
 
         messages.AddRange(history);
         return messages;
+    }
+
+    private async ValueTask AddStableProfileContextAsync(
+        List<ConversationMessage> messages,
+        string? ownerPrincipalId,
+        ToolPolicyContext policyContext,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(ownerPrincipalId) &&
+            StringComparer.Ordinal.Equals(ownerPrincipalId, policyContext.PrincipalId) &&
+            policyContext.GrantedScopes.Contains("profile.personal.read"))
+        {
+            var profile = await _userProfiles.GetAsync(ownerPrincipalId, cancellationToken);
+            if (profile is not null)
+            {
+                messages.Add(new ConversationMessage(
+                    ConversationRole.System,
+                    $"Authorized stable user profile: preferred name is '{profile.PreferredName}'."));
+            }
+        }
+
+        if (policyContext.GrantedScopes.Contains("household.profile.read"))
+        {
+            var profile = await _householdProfiles.GetAsync(cancellationToken);
+            if (profile is not null)
+            {
+                messages.Add(new ConversationMessage(
+                    ConversationRole.System,
+                    $"Authorized stable household profile: location is '{profile.Location}' and time zone is '{profile.TimeZoneId}'."));
+            }
+        }
     }
 
     private static void AddRetrievedContext(

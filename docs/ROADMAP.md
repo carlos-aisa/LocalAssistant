@@ -1,5 +1,13 @@
 # Roadmap
 
+## Incremento de perfiles estables y continuidad (completado)
+
+- [x] Perfil personal autorizado y perfil doméstico separados de conversaciones y notas.
+- [x] Herramientas confirmadas para nombre preferido y ubicación doméstica.
+- [x] Hora local basada en identificador IANA y cierre explícito que acelera el indexado.
+- [x] Recuperación episódica híbrida acotada, sin contexto cruzado para anónimos.
+- [ ] Identidad doméstica multiusuario, reconocimiento de hablante y extracción automática de hechos.
+
 El orden expresa dependencias técnicas, no fechas. Cada fase debe aportar un flujo
 vertical comprobable antes de introducir infraestructura adicional. En particular,
 la voz se valida primero en un único dispositivo; solo después se distribuye por

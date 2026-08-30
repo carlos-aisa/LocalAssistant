@@ -246,6 +246,20 @@ function Send-ConversationMessage {
     }
 }
 
+function Complete-Conversation {
+    if ($null -eq $conversationId) {
+        return
+    }
+
+    $response = Invoke-ApiRequest -Method POST -Path "/api/conversations/$conversationId/completion"
+    if ($null -ne $response.ConnectionError -or $response.StatusCode -lt 200 -or $response.StatusCode -ge 300) {
+        Show-ApiError $response
+        return
+    }
+
+    Write-Host "Conversation marked for background indexing."
+}
+
 function Show-Help {
     Write-Host @"
 Commands:
@@ -255,7 +269,7 @@ Commands:
   /provider ollama      Use Ollama and start a new conversation.
   /scenario <name>      Set the fake scenario (direct, time, temperature).
   /info                 Show the current local client state.
-  /exit                 Exit the client.
+  /exit                 Mark this conversation for indexing, then exit the client.
 "@
 }
 
@@ -318,7 +332,7 @@ function Handle-Command {
             return $true
         }
         "/info" { Show-Info; return $true }
-        "/exit" { return $false }
+        "/exit" { Complete-Conversation; return $false }
         default {
             Write-Host "Unknown command. Type /help for available commands." -ForegroundColor Yellow
             return $true

@@ -69,6 +69,11 @@ builder.Services.AddSingleton<IReminderStore, InMemoryReminderStore>();
 builder.Services.AddSingleton<IToolRiskPolicy, DefaultToolRiskPolicy>();
 builder.Services.AddSingleton<IInstallationIdentityStore, FileInstallationIdentityStore>();
 builder.Services.AddSingleton<IAssistantProfileStore, FileAssistantProfileStore>();
+builder.Services.AddSingleton<FileStableProfileStores>();
+builder.Services.AddSingleton<IUserProfileStore>(services =>
+    services.GetRequiredService<FileStableProfileStores>());
+builder.Services.AddSingleton<IHouseholdProfileStore>(services =>
+    services.GetRequiredService<FileStableProfileStores>());
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddAuthentication(LocalApiKeyAuthenticationDefaults.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, LocalApiKeyAuthenticationHandler>(
@@ -79,6 +84,8 @@ builder.Services.AddSingleton<ITool, CurrentTimeTool>();
 builder.Services.AddSingleton<ITool, TemperatureConversionTool>();
 builder.Services.AddSingleton<ITool, CreateReminderTool>();
 builder.Services.AddSingleton<ITool, SetAssistantNameTool>();
+builder.Services.AddSingleton<ITool, SetUserPreferredNameTool>();
+builder.Services.AddSingleton<ITool, SetHouseholdLocationTool>();
 builder.Services.AddSingleton<IToolRegistry>(services =>
     new ToolRegistry(services.GetServices<ITool>()));
 builder.Services.AddSingleton<FakeLanguageProviderFactory>();

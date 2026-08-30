@@ -21,7 +21,7 @@ public static class ConversationRetrievalPolicy
         "retom",
     ];
 
-    public static bool ShouldRetrieve(string message)
+    public static bool ShouldRetrieve(string message, bool isFirstUserTurn)
     {
         if (string.IsNullOrWhiteSpace(message))
         {
@@ -35,8 +35,9 @@ public static class ConversationRetrievalPolicy
             return true;
         }
 
-        return normalized.Length >= 18 &&
-               ContinuationPhrases.Any(phrase =>
-                   normalized.Contains(phrase, StringComparison.OrdinalIgnoreCase));
+        return (normalized.Length >= 18 &&
+                ContinuationPhrases.Any(phrase =>
+                    normalized.Contains(phrase, StringComparison.OrdinalIgnoreCase))) ||
+               (isFirstUserTurn && normalized.Length >= 24);
     }
 }

@@ -38,8 +38,13 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
     private const string OwnerScope = "installation.owner";
     private const string PersonalMemoryReadScope = "memory.personal.read";
     private const string PersonalMemoryWriteScope = "memory.personal.write";
+    private const string PersonalProfileReadScope = "profile.personal.read";
+    private const string PersonalProfileWriteScope = "profile.personal.write";
+    private const string HouseholdProfileReadScope = "household.profile.read";
+    private const string HouseholdProfileWriteScope = "household.profile.write";
     private const int LegacySchemaVersion = 1;
-    private const int CurrentSchemaVersion = 2;
+    private const int PersonalMemorySchemaVersion = 2;
+    private const int CurrentSchemaVersion = 3;
     private readonly InstallationIdentityOptions _options;
     private readonly TimeProvider _clock;
 
@@ -75,7 +80,7 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
         }
 
         var validatedState = Validate(state);
-        if (validatedState.SchemaVersion == LegacySchemaVersion)
+        if (validatedState.SchemaVersion != CurrentSchemaVersion)
         {
             validatedState = MigrateLegacyState(validatedState);
             await WriteStateAsync(
@@ -147,7 +152,7 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
     private static StoredInstallationIdentity Validate(StoredInstallationIdentity? state)
     {
         if (state is null ||
-            state.SchemaVersion is not (LegacySchemaVersion or CurrentSchemaVersion) ||
+            state.SchemaVersion is not (LegacySchemaVersion or PersonalMemorySchemaVersion or CurrentSchemaVersion) ||
             !Guid.TryParseExact(state.InstallationId, "N", out _) ||
             !IsValidPrincipalId(state.OwnerPrincipalId) ||
             !IsSha256Hash(state.ApiKeySha256) ||
@@ -169,6 +174,10 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
             GrantedScopes = state.GrantedScopes
             .Append(PersonalMemoryReadScope)
             .Append(PersonalMemoryWriteScope)
+            .Append(PersonalProfileReadScope)
+            .Append(PersonalProfileWriteScope)
+            .Append(HouseholdProfileReadScope)
+            .Append(HouseholdProfileWriteScope)
             .Distinct(StringComparer.Ordinal)
             .ToArray(),
         };
@@ -230,6 +239,10 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
         OwnerScope,
         PersonalMemoryReadScope,
         PersonalMemoryWriteScope,
+        PersonalProfileReadScope,
+        PersonalProfileWriteScope,
+        HouseholdProfileReadScope,
+        HouseholdProfileWriteScope,
     ];
 
     private sealed record StoredInstallationIdentity(
