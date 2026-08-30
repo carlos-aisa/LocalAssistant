@@ -1,5 +1,22 @@
 # Arquitectura
 
+## Perfiles estables e identidad futura
+
+`user-profiles.json` asocia un nombre preferido al principal autenticado y
+`household-profile.json` guarda ubicación y zona horaria IANA del hogar. Ambos se
+añaden como contexto de sistema acotado solo tras verificar los scopes
+`profile.personal.read` o `household.profile.read`; no se infieren de conversaciones.
+Las herramientas confirmadas `set_user_preferred_name` y
+`set_household_location` escriben estos perfiles. Véase [ADR 0029](adr/0029-separate-stable-profiles-from-episodic-memory.md).
+
+`POST /api/conversations/{conversationId}/completion` marca el indexado en segundo
+plano sin bloquear; la inactividad sigue como fallback y el índice anterior se
+conserva mientras se actualiza. Véase [ADR 0030](adr/0030-index-on-explicit-conversation-completion.md).
+
+La identidad de dispositivo, sesión y hablante son conceptos distintos. Un dispositivo
+registrado, diarización o voz probable no autorizan memoria personal. La futura
+conversación multi-hablante queda documentada en [ADR 0031](adr/0031-distinguish-device-session-and-speaker-identity.md).
+
 ## Alcance implementado
 
 La primera versión es un núcleo modular desplegado junto a una API. Solo se separan

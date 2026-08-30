@@ -218,6 +218,22 @@ paths:
         "401": { description: A local API key is required. }
         "404": { description: The conversation was not found or is not owned by the caller. }
         "503": { description: Conversation persistence is disabled. }
+  /api/conversations/{conversationId}/completion:
+    post:
+      operationId: completeConversation
+      summary: Mark an owned conversation eligible for immediate background indexing.
+      security:
+        - LocalApiKey: []
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: The conversation was marked. Repeating the operation is safe. }
+        "401": { description: A local API key is required. }
+        "404": { description: The conversation was not found or is not owned by the caller. }
+        "503": { description: Conversation persistence is disabled. }
   /api/conversations/messages:
     post:
       operationId: sendConversationMessage

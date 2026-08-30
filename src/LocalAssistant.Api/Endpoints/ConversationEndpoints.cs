@@ -23,6 +23,9 @@ public static class ConversationEndpoints
         endpoints.MapDelete("/api/conversations/{conversationId:guid}", DeleteAsync)
             .WithName("DeleteConversation")
             .WithSummary("Deletes one authenticated principal's persisted conversation.");
+        endpoints.MapPost("/api/conversations/{conversationId:guid}/completion", CompleteAsync)
+            .WithName("CompleteConversation")
+            .WithSummary("Marks one authenticated conversation eligible for immediate background indexing.");
 
         return endpoints;
     }
@@ -128,6 +131,38 @@ public static class ConversationEndpoints
 
         await confirmationStore.RemoveAsync(conversationId, cancellationToken);
         return Results.NoContent();
+    }
+
+    private static async Task<IResult> CompleteAsync(
+        Guid conversationId,
+        HttpContext httpContext,
+        IOptions<SqliteConversationStoreOptions> persistenceOptions,
+        SqliteConversationStore conversationStore,
+        CancellationToken cancellationToken)
+    {
+        if (!persistenceOptions.Value.Enabled)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Conversation persistence is disabled.");
+        }
+
+        if (httpContext.User.Identity?.IsAuthenticated != true)
+        {
+            return Results.Unauthorized();
+        }
+
+        var ownerPrincipalId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(ownerPrincipalId))
+        {
+            return Results.Unauthorized();
+        }
+
+        var completed = await conversationStore.RequestImmediateIndexingAsync(
+            conversationId,
+            ownerPrincipalId,
+            cancellationToken);
+        return completed ? Results.NoContent() : Results.NotFound();
     }
 
     private static int GetStatusCode(ConversationTurnResult result)

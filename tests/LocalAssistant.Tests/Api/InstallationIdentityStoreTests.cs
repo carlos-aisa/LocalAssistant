@@ -29,10 +29,14 @@ public sealed class InstallationIdentityStoreTests
         Assert.Contains("installation.owner", identity.GrantedScopes);
         Assert.Contains("memory.personal.read", identity.GrantedScopes);
         Assert.Contains("memory.personal.write", identity.GrantedScopes);
+        Assert.Contains("profile.personal.read", identity.GrantedScopes);
+        Assert.Contains("profile.personal.write", identity.GrantedScopes);
+        Assert.Contains("household.profile.read", identity.GrantedScopes);
+        Assert.Contains("household.profile.write", identity.GrantedScopes);
         Assert.DoesNotContain("reminders.write", identity.GrantedScopes);
-        Assert.Equal(3, identity.GrantedScopes.Count);
+        Assert.Equal(7, identity.GrantedScopes.Count);
         using var persistedDocument = JsonDocument.Parse(persistedState);
-        Assert.Equal(2, persistedDocument.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.Equal(3, persistedDocument.RootElement.GetProperty("SchemaVersion").GetInt32());
 
         var repeatedBootstrap = await store.BootstrapAsync(CancellationToken.None);
         Assert.Equal(InstallationBootstrapStatus.AlreadyInitialized, repeatedBootstrap.Status);
@@ -62,7 +66,7 @@ public sealed class InstallationIdentityStoreTests
         Directory.CreateDirectory(stateDirectory.Path);
         var stateWithUnknownSchema = new
         {
-            SchemaVersion = 3,
+            SchemaVersion = 4,
             InstallationId = "8196f6e9b019487e927ca07f6d3855e9",
             OwnerPrincipalId = "owner-unknown-schema",
             ApiKeySha256 = Convert.ToHexString(
@@ -118,7 +122,11 @@ public sealed class InstallationIdentityStoreTests
         Assert.Contains("installation.owner", identity.GrantedScopes);
         Assert.Contains("memory.personal.read", identity.GrantedScopes);
         Assert.Contains("memory.personal.write", identity.GrantedScopes);
-        Assert.Equal(3, identity.GrantedScopes.Count);
+        Assert.Contains("profile.personal.read", identity.GrantedScopes);
+        Assert.Contains("profile.personal.write", identity.GrantedScopes);
+        Assert.Contains("household.profile.read", identity.GrantedScopes);
+        Assert.Contains("household.profile.write", identity.GrantedScopes);
+        Assert.Equal(7, identity.GrantedScopes.Count);
         Assert.NotNull(secondIdentity);
         Assert.Equal(identity.InstallationId, secondIdentity.InstallationId);
         Assert.Equal(identity.OwnerPrincipalId, secondIdentity.OwnerPrincipalId);
@@ -128,7 +136,7 @@ public sealed class InstallationIdentityStoreTests
             secondIdentity.GrantedScopes.Order(StringComparer.Ordinal));
         Assert.Equal(migratedState, stateAfterSecondRead);
         using var migratedDocument = JsonDocument.Parse(migratedState);
-        Assert.Equal(2, migratedDocument.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.Equal(3, migratedDocument.RootElement.GetProperty("SchemaVersion").GetInt32());
         Assert.Equal(
             initializedAtUtc,
             migratedDocument.RootElement.GetProperty("InitializedAtUtc").GetDateTimeOffset());

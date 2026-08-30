@@ -48,6 +48,13 @@ mensaje de sistema transitorio y no se persiste en conversaciones ni notas. No e
 un mecanismo que extraiga preferencias automáticamente desde texto de usuario ni un
 mapa genérico de valores que pueda modificar el modelo.
 
+Los perfiles estables de usuario y hogar son datos privados distintos de las notas y
+conversaciones. El servidor comprueba principal y scope antes de cargarlos en el
+contexto: una sesión anónima, invitada o de otro principal no recibe el perfil
+personal. Un dispositivo autenticado, diarización o reconocimiento probable de voz
+no son autenticación suficiente para revelar memoria personal ni ejecutar acciones
+sensibles.
+
 ## Amenazas relevantes
 
 - **Prompt injection:** texto del usuario, documentos o conectores pueden intentar
