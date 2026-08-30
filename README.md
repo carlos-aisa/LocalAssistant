@@ -54,6 +54,8 @@ Implementado:
   siguen en memoria y son efímeras.
 - Retención configurable de conversaciones persistidas, inicialmente 30 días, y
   borrado selectivo interno protegido por propietario.
+- Recuperación literal opcional de conversaciones autenticadas anteriores mediante
+  índice FTS5 local, limitada al propietario y a contexto transitorio no persistido.
 - Raíz documental local permitida, con búsqueda por metadatos, lectura textual
   limitada y búsqueda textual como capacidades y permisos independientes.
 - Logging estructurado sin contenido de conversación.
@@ -61,7 +63,8 @@ Implementado:
 - Contratos de proveedor reutilizados por el fake y el adaptador de Ollama.
 - Evaluación local reproducible de decisiones de tool calling por modelo.
 
-No implementado: detección automática de capacidades por modelo, acceso real a
+No implementado: indexación semántica y resúmenes automáticos de conversaciones,
+detección automática de capacidades por modelo, acceso real a
 Internet, proveedores cloud, retención y auditoría durable, gestión de usuarios, voz, wake word,
 RAG, agenda durable o notificaciones, Home Assistant, MQTT, MCP, interfaz gráfica ni
 ejecución de comandos.

@@ -147,6 +147,11 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
   con propiedad, scopes independientes, retención y borrado selectivo. No se
   recuperan para el modelo; memoria compartida, de módulo y administrativa siguen
   requiriendo sus propios contratos y autorización.
+- Recuperar conversaciones autenticadas del propietario mediante un índice híbrido
+  local de texto, tema, resumen, palabras clave y similitud semántica. La indexación
+  se actualizará automáticamente tras quince minutos de inactividad; la recuperación
+  será selectiva, acotada y con desambiguación cuando existan varios temas plausibles.
+  No incluirá conversaciones anónimas, memoria genérica ni reconocimiento de voz.
 - [x] Evaluar protección en reposo y consecuencias de backup y restauración según el
   almacenamiento y despliegue elegidos. La política operativa exige controles del
   despliegue para rutas, permisos, cifrado de volumen y copias, sin introducir todavía

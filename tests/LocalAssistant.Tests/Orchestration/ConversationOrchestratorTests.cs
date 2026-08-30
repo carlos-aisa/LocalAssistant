@@ -77,6 +77,48 @@ public sealed class ConversationOrchestratorTests
     }
 
     [Fact]
+    public async Task AddsRetrievedPrivateContextAsNonPersistedSystemMessage()
+    {
+        var owner = new ToolPolicyContext(
+            "owner-a",
+            new HashSet<string>(StringComparer.Ordinal));
+        var contextRetriever = new StaticConversationContextRetriever(
+            new ConversationRetrievedContext(
+                Guid.NewGuid(),
+                FixedUtcNow.AddDays(-1),
+                "Week menus",
+                "We planned weekday meals.",
+                "Monday pasta.",
+                1));
+        var provider = new ScriptedLanguageProvider(
+        [
+            request =>
+            {
+                Assert.Contains(
+                    request.Messages,
+                    message => message.Role == ConversationRole.System &&
+                               message.Content!.Contains("Week menus", StringComparison.Ordinal));
+                return LanguageProviderResponse.Final("Let's continue with the menus.");
+            },
+        ]);
+        var store = new InMemoryConversationStore();
+        var sut = CreateOrchestrator(
+            store: store,
+            toolPolicyContextAccessor: new MutableToolPolicyContextAccessor(owner),
+            conversationContextRetriever: contextRetriever);
+
+        var result = await sut.ProcessAsync(
+            new ConversationTurnRequest("Tengo más ideas para los menús de la semana."),
+            provider,
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, contextRetriever.CallCount);
+        var history = await store.GetMessagesAsync(result.ConversationId, CancellationToken.None);
+        Assert.DoesNotContain(history, message => message.Role == ConversationRole.System);
+    }
+
+    [Fact]
     public async Task RefreshesTheAssistantProfileAfterAnApprovedNameChange()
     {
         var profiles = new MutableAssistantProfileStore(AssistantProfile.DefaultDisplayName);
@@ -875,13 +917,15 @@ public sealed class ConversationOrchestratorTests
         OrchestrationOptions? options = null,
         IToolPolicyContextAccessor? toolPolicyContextAccessor = null,
         IToolAuditSink? auditSink = null,
-        IAssistantProfileStore? profiles = null)
+        IAssistantProfileStore? profiles = null,
+        IConversationContextRetriever? conversationContextRetriever = null)
     {
         timeProvider ??= new ManualTimeProvider(FixedUtcNow);
         tools ??= [new CurrentTimeTool(timeProvider)];
 
         return new ConversationOrchestrator(
             store ?? new InMemoryConversationStore(),
+            conversationContextRetriever ?? new NullConversationContextRetriever(),
             profiles ?? new MutableAssistantProfileStore(AssistantProfile.DefaultDisplayName),
             new ToolRegistry(tools),
             new DefaultToolRiskPolicy(),
@@ -911,6 +955,22 @@ public sealed class ConversationOrchestratorTests
             cancellationToken.ThrowIfCancellationRequested();
             _profile = AssistantProfile.Create(displayName);
             return ValueTask.FromResult(_profile);
+        }
+    }
+
+    private sealed class StaticConversationContextRetriever(
+        ConversationRetrievedContext context) : IConversationContextRetriever
+    {
+        public int CallCount { get; private set; }
+
+        public ValueTask<ConversationRetrievalResult> RetrieveAsync(
+            string ownerPrincipalId,
+            Guid currentConversationId,
+            string message,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return ValueTask.FromResult(new ConversationRetrievalResult([context]));
         }
     }
 

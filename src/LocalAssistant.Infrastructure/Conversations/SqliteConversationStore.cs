@@ -16,19 +16,24 @@ public sealed class SqliteConversationStoreOptions
     public int RetentionDays { get; set; } = 30;
 }
 
-public sealed class SqliteConversationStore : IConversationStore
+public sealed class SqliteConversationStore : IConversationStore, IConversationContextRetriever
 {
     private readonly string _connectionString;
     private readonly object _initializationSync = new();
     private readonly TimeProvider _clock;
     private readonly TimeSpan _retention;
+    private readonly ConversationRetrievalOptions _retrievalOptions;
     private Task? _initialization;
 
-    public SqliteConversationStore(IOptions<SqliteConversationStoreOptions> options, TimeProvider clock)
+    public SqliteConversationStore(
+        IOptions<SqliteConversationStoreOptions> options,
+        IOptions<ConversationRetrievalOptions> retrievalOptions,
+        TimeProvider clock)
     {
         _clock = clock;
         if (options.Value.RetentionDays <= 0) throw new ArgumentOutOfRangeException(nameof(options));
         _retention = TimeSpan.FromDays(options.Value.RetentionDays);
+        _retrievalOptions = retrievalOptions.Value;
         var databasePath = ResolveDatabasePath(options.Value.DatabasePath);
         _connectionString = new SqliteConnectionStringBuilder
         {
@@ -48,7 +53,8 @@ public sealed class SqliteConversationStore : IConversationStore
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
         var identifier = conversationId.ToString("N");
         await DeleteExpiredAsync(connection, transaction, cancellationToken);
-        await ExecuteAsync(connection, transaction, "INSERT OR IGNORE INTO Conversations (ConversationId, OwnerPrincipalId, ExpiresAtUnixMilliseconds) VALUES ($id, $owner, $expires);", cancellationToken, ("$id", (object)identifier), ("$owner", ownerPrincipalId), ("$expires", _clock.GetUtcNow().Add(_retention).ToUnixTimeMilliseconds()));
+        var now = _clock.GetUtcNow();
+        await ExecuteAsync(connection, transaction, "INSERT OR IGNORE INTO Conversations (ConversationId, OwnerPrincipalId, ExpiresAtUnixMilliseconds, LastActivityUnixMilliseconds) VALUES ($id, $owner, $expires, $lastActivity);", cancellationToken, ("$id", (object)identifier), ("$owner", ownerPrincipalId), ("$expires", now.Add(_retention).ToUnixTimeMilliseconds()), ("$lastActivity", now.ToUnixTimeMilliseconds()));
         var owner = await ScalarAsync(connection, transaction, "SELECT OwnerPrincipalId FROM Conversations WHERE ConversationId = $id;", cancellationToken, ("$id", (object)identifier));
         await transaction.CommitAsync(cancellationToken);
         return new(conversationId, owner ?? throw new InvalidOperationException("The persisted conversation metadata is invalid."));
@@ -92,6 +98,8 @@ public sealed class SqliteConversationStore : IConversationStore
         }
 
         await ExecuteAsync(connection, transaction, "INSERT INTO ConversationMessages (ConversationId, SequenceNumber, PayloadJson) SELECT $id, COALESCE(MAX(SequenceNumber) + 1, 0), $payload FROM ConversationMessages WHERE ConversationId = $id;", cancellationToken, ("$id", (object)identifier), ("$payload", JsonSerializer.Serialize(message, SerializerOptions)));
+        await ExecuteAsync(connection, transaction, "UPDATE Conversations SET LastActivityUnixMilliseconds = $lastActivity WHERE ConversationId = $id;", cancellationToken, ("$id", (object)identifier), ("$lastActivity", _clock.GetUtcNow().ToUnixTimeMilliseconds()));
+        await RefreshSearchDocumentAsync(connection, transaction, identifier, owner, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
 
@@ -100,6 +108,7 @@ public sealed class SqliteConversationStore : IConversationStore
         await using var connection = await OpenAsync(cancellationToken);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
         var identifier = conversationId.ToString("N");
+        await ExecuteAsync(connection, transaction, "DELETE FROM ConversationSearchDocuments WHERE ConversationId = $id AND OwnerPrincipalId = $owner; DELETE FROM ConversationSearch WHERE ConversationId = $id AND OwnerPrincipalId = $owner;", cancellationToken, ("$id", (object)identifier), ("$owner", ownerPrincipalId));
         await ExecuteAsync(connection, transaction, "DELETE FROM ConversationMessages WHERE ConversationId = $id AND EXISTS (SELECT 1 FROM Conversations WHERE ConversationId = $id AND OwnerPrincipalId = $owner);", cancellationToken, ("$id", (object)identifier), ("$owner", ownerPrincipalId));
         var deleted = await ExecuteAsync(connection, transaction, "DELETE FROM Conversations WHERE ConversationId = $id AND OwnerPrincipalId = $owner;", cancellationToken, ("$id", (object)identifier), ("$owner", ownerPrincipalId));
         await transaction.CommitAsync(cancellationToken);
@@ -113,6 +122,57 @@ public sealed class SqliteConversationStore : IConversationStore
         var deleted = await DeleteExpiredAsync(connection, transaction, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return deleted;
+    }
+
+    public async ValueTask<ConversationRetrievalResult> RetrieveAsync(
+        string ownerPrincipalId,
+        Guid currentConversationId,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(ownerPrincipalId) ||
+            string.IsNullOrWhiteSpace(message))
+        {
+            return ConversationRetrievalResult.Empty;
+        }
+
+        if (!_retrievalOptions.Enabled)
+        {
+            return ConversationRetrievalResult.Empty;
+        }
+
+        var query = CreateSearchQuery(message);
+        if (query is null)
+        {
+            return ConversationRetrievalResult.Empty;
+        }
+
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT document.ConversationId, document.LastActivityUnixMilliseconds, document.SearchText FROM ConversationSearch search INNER JOIN ConversationSearchDocuments document ON document.ConversationId = search.ConversationId AND document.OwnerPrincipalId = search.OwnerPrincipalId WHERE search.OwnerPrincipalId = $owner AND search.ConversationId <> $currentConversationId AND search.SearchText MATCH $query ORDER BY rank LIMIT $limit;";
+        command.Parameters.AddWithValue("$owner", ownerPrincipalId);
+        command.Parameters.AddWithValue("$currentConversationId", currentConversationId.ToString("N"));
+        command.Parameters.AddWithValue("$query", query);
+        command.Parameters.AddWithValue("$limit", _retrievalOptions.MaximumMatches);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var matches = new List<ConversationRetrievedContext>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var text = reader.GetString(2);
+            var fragment = LimitText(text, _retrievalOptions.MaximumContextCharacters);
+            matches.Add(new ConversationRetrievedContext(
+                Guid.ParseExact(reader.GetString(0), "N"),
+                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(1)),
+                LimitText(text, 80),
+                LimitText(text, 300),
+                fragment,
+                1));
+        }
+
+        return matches.Count == 0
+            ? ConversationRetrievalResult.Empty
+            : new ConversationRetrievalResult(matches);
     }
 
     private async ValueTask<SqliteConnection> OpenAsync(CancellationToken cancellationToken)
@@ -141,7 +201,7 @@ public sealed class SqliteConversationStore : IConversationStore
         Directory.CreateDirectory(Path.GetDirectoryName(databasePath) ?? throw new InvalidOperationException("The conversation database directory is invalid."));
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
-        await ExecuteAsync(connection, null, "CREATE TABLE IF NOT EXISTS Conversations (ConversationId TEXT PRIMARY KEY NOT NULL, OwnerPrincipalId TEXT NOT NULL, ExpiresAtUnixMilliseconds INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS ConversationMessages (ConversationId TEXT NOT NULL, SequenceNumber INTEGER NOT NULL, PayloadJson TEXT NOT NULL, PRIMARY KEY (ConversationId, SequenceNumber), FOREIGN KEY (ConversationId) REFERENCES Conversations(ConversationId));", CancellationToken.None);
+        await ExecuteAsync(connection, null, "CREATE TABLE IF NOT EXISTS Conversations (ConversationId TEXT PRIMARY KEY NOT NULL, OwnerPrincipalId TEXT NOT NULL, ExpiresAtUnixMilliseconds INTEGER NOT NULL, LastActivityUnixMilliseconds INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS ConversationMessages (ConversationId TEXT NOT NULL, SequenceNumber INTEGER NOT NULL, PayloadJson TEXT NOT NULL, PRIMARY KEY (ConversationId, SequenceNumber), FOREIGN KEY (ConversationId) REFERENCES Conversations(ConversationId)); CREATE TABLE IF NOT EXISTS ConversationSearchDocuments (ConversationId TEXT PRIMARY KEY NOT NULL, OwnerPrincipalId TEXT NOT NULL, LastActivityUnixMilliseconds INTEGER NOT NULL, SearchText TEXT NOT NULL); CREATE VIRTUAL TABLE IF NOT EXISTS ConversationSearch USING fts5(ConversationId UNINDEXED, OwnerPrincipalId UNINDEXED, SearchText);", CancellationToken.None);
         try
         {
             await ExecuteAsync(connection, null, "ALTER TABLE Conversations ADD COLUMN ExpiresAtUnixMilliseconds INTEGER NOT NULL DEFAULT 0;", CancellationToken.None);
@@ -149,10 +209,71 @@ public sealed class SqliteConversationStore : IConversationStore
         catch (SqliteException exception) when (exception.SqliteErrorCode == 1 && exception.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
         {
         }
+        try
+        {
+            await ExecuteAsync(connection, null, "ALTER TABLE Conversations ADD COLUMN LastActivityUnixMilliseconds INTEGER NOT NULL DEFAULT 0;", CancellationToken.None);
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 1 && exception.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
+        {
+        }
     }
 
     private async Task<int> DeleteExpiredAsync(SqliteConnection connection, SqliteTransaction transaction, CancellationToken cancellationToken) =>
-        await ExecuteAsync(connection, transaction, "DELETE FROM ConversationMessages WHERE ConversationId IN (SELECT ConversationId FROM Conversations WHERE ExpiresAtUnixMilliseconds <= $now); DELETE FROM Conversations WHERE ExpiresAtUnixMilliseconds <= $now;", cancellationToken, ("$now", _clock.GetUtcNow().ToUnixTimeMilliseconds()));
+        await ExecuteAsync(connection, transaction, "DELETE FROM ConversationSearchDocuments WHERE ConversationId IN (SELECT ConversationId FROM Conversations WHERE ExpiresAtUnixMilliseconds <= $now); DELETE FROM ConversationSearch WHERE ConversationId IN (SELECT ConversationId FROM Conversations WHERE ExpiresAtUnixMilliseconds <= $now); DELETE FROM ConversationMessages WHERE ConversationId IN (SELECT ConversationId FROM Conversations WHERE ExpiresAtUnixMilliseconds <= $now); DELETE FROM Conversations WHERE ExpiresAtUnixMilliseconds <= $now;", cancellationToken, ("$now", _clock.GetUtcNow().ToUnixTimeMilliseconds()));
+
+    private static async Task RefreshSearchDocumentAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string conversationId,
+        string ownerPrincipalId,
+        CancellationToken cancellationToken)
+    {
+        await using var select = connection.CreateCommand();
+        select.Transaction = transaction;
+        select.CommandText = "SELECT PayloadJson FROM ConversationMessages WHERE ConversationId = $id ORDER BY SequenceNumber;";
+        select.Parameters.AddWithValue("$id", conversationId);
+        await using var reader = await select.ExecuteReaderAsync(cancellationToken);
+        var contents = new List<string>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var message = JsonSerializer.Deserialize<ConversationMessage>(reader.GetString(0), SerializerOptions);
+            if (message is not null &&
+                message.Role is ConversationRole.User or ConversationRole.Assistant &&
+                !string.IsNullOrWhiteSpace(message.Content))
+            {
+                contents.Add(message.Content);
+            }
+        }
+
+        var searchText = string.Join(Environment.NewLine, contents);
+        await ExecuteAsync(connection, transaction, "DELETE FROM ConversationSearchDocuments WHERE ConversationId = $id; DELETE FROM ConversationSearch WHERE ConversationId = $id;", cancellationToken, ("$id", conversationId));
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            return;
+        }
+
+        await ExecuteAsync(connection, transaction, "INSERT INTO ConversationSearchDocuments (ConversationId, OwnerPrincipalId, LastActivityUnixMilliseconds, SearchText) SELECT ConversationId, OwnerPrincipalId, LastActivityUnixMilliseconds, $text FROM Conversations WHERE ConversationId = $id AND OwnerPrincipalId = $owner; INSERT INTO ConversationSearch (ConversationId, OwnerPrincipalId, SearchText) VALUES ($id, $owner, $text);", cancellationToken, ("$id", conversationId), ("$owner", ownerPrincipalId), ("$text", searchText));
+    }
+
+    private static string? CreateSearchQuery(string message)
+    {
+        var tokens = message
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(token => new string(token.Where(char.IsLetterOrDigit).ToArray()))
+            .Where(token => token.Length >= 3)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(6)
+            .ToArray();
+
+        return tokens.Length == 0
+            ? null
+            : string.Join(" OR ", tokens.Select(token => $"\"{token}\""));
+    }
+
+    private static string LimitText(string text, int maximumLength) =>
+        text.Length <= maximumLength
+            ? text
+            : text[..maximumLength] + "…";
 
     private static async Task<int> ExecuteAsync(SqliteConnection connection, SqliteTransaction? transaction, string sql, CancellationToken cancellationToken, params (string Name, object Value)[] parameters)
     {
