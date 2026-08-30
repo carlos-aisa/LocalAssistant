@@ -422,7 +422,7 @@ components:
           type: string
           enum: [direct, time, temperature, reminder]
           default: direct
-          description: Development-only scenario, used only when provider is fake. The reminder scenario requires the reminders.write scope and confirmation.
+          description: Development-only scenario, used only when provider is fake. The reminder scenario requires the reminders.write scope and confirmation; it creates only a temporary in-memory experimental record and schedules no notification.
     ResolveToolConfirmationRequest:
       type: object
       required: [approved]

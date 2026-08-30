@@ -10,6 +10,28 @@ public sealed class CreateReminderToolTests
     private static readonly DateTimeOffset FixedUtcNow = new(2026, 8, 29, 10, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public async Task DefinitionAndResultDeclareTheTemporaryNonNotifyingSemantics()
+    {
+        var tool = CreateTool(out _);
+
+        Assert.Contains("temporary", tool.Definition.Metadata.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("in-memory", tool.Definition.Metadata.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("does not schedule or deliver a notification", tool.Definition.Metadata.Description, StringComparison.OrdinalIgnoreCase);
+
+        var result = await tool.ExecuteAsync(
+            new ToolExecutionContext(Guid.NewGuid(), "owner", Guid.NewGuid()),
+            Arguments("Prepare the presentation"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        using var document = JsonDocument.Parse(result.Content);
+        var root = document.RootElement;
+        Assert.Equal("in_memory", root.GetProperty("storage").GetString());
+        Assert.False(root.GetProperty("durable").GetBoolean());
+        Assert.False(root.GetProperty("notificationScheduled").GetBoolean());
+    }
+
+    [Fact]
     public async Task RepeatedOperationReturnsTheOriginalReminder()
     {
         var tool = CreateTool(out _);

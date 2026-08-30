@@ -8,6 +8,10 @@ public sealed class CreateReminderTool : ITool
     public const string ToolName = "create_reminder";
 
     private const int MaximumTitleLength = 200;
+    private const string Description =
+        "Creates a temporary private in-memory reminder record for experimental state-change " +
+        "testing after confirmation. The record is lost when the process restarts and does " +
+        "not schedule or deliver a notification when dueAtUtc is reached.";
 
     private static readonly JsonElement InputSchema = JsonSerializer.SerializeToElement(new
     {
@@ -44,7 +48,7 @@ public sealed class CreateReminderTool : ITool
     public ToolDefinition Definition { get; } = new(
         new ToolMetadata(
             ToolName,
-            "Creates one private local reminder after confirmation.",
+            Description,
             new ToolRiskProfile(
                 ToolOperationImpact.ChangesState,
                 ToolDataSensitivity.Private,
@@ -105,6 +109,9 @@ public sealed class CreateReminderTool : ITool
             title = reminder.Title,
             dueAtUtc = reminder.DueAtUtc,
             createdAtUtc = reminder.CreatedAtUtc,
+            storage = "in_memory",
+            durable = false,
+            notificationScheduled = false,
         });
 
         return ToolExecutionResult.Success(content);
