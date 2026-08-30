@@ -21,7 +21,7 @@ public static class DocumentEndpoints
             .WithSummary("Reads bounded text content from an authorized local document.");
         endpoints.MapGet("/api/documents/content-search", SearchContentAsync)
             .WithName("SearchDocumentContent")
-            .WithSummary("Searches authorized local text documents without returning their content.");
+            .WithSummary("Searches authorized local text documents with a bounded matching excerpt.");
 
         return endpoints;
     }

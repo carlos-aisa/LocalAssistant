@@ -410,11 +410,21 @@ rutas relativas bajo
 `ILocalDocumentRoot`, omiten enlaces y revalidan el destino antes de abrirlo.
 
 `GET /api/documents/content-search` es una tercera capacidad, protegida por el scope
-independiente `documents.content.search`. Abre únicamente los formatos de texto ya
-permitidos, de hasta 1 MiB, para comparar una frase literal sin distinción de
-mayúsculas. La respuesta es de metadatos seguros: no devuelve el texto, fragmentos
-ni rutas absolutas. Es una exploración directa sin índice, embeddings, retención ni
-tráfico a un proveedor.
+independiente `documents.content.search`. Combina la coincidencia literal con un
+índice SQLite privado de fragmentos y embeddings cuando la persistencia y un modelo
+de embeddings de Ollama local están configurados. Antes de cada búsqueda sincroniza
+solo la raíz permitida, reconstruye archivos nuevos o modificados y elimina entradas
+de archivos retirados; no hay watcher ni worker. La respuesta conserva metadatos
+seguros y puede incluir un extracto máximo de 280 caracteres, pero no devuelve texto
+completo, vectores, puntuaciones ni rutas absolutas. Un fallo del embedding degrada
+la operación a la búsqueda literal existente.
+
+`UntrustedDocumentEvidence` prepara el único formato permitido para que una capacidad
+futura lleve un fragmento documental al contexto de un modelo. Valida procedencia
+relativa y límite de extracto, y `UntrustedDocumentEvidenceContextComposer` lo delimita
+como evidencia no confiable. Ningún flujo actual compone ese bloque en
+`LanguageProviderRequest`: no se habilitan RAG, herramientas documentales ni cambios
+en la política de herramientas.
 
 ```mermaid
 flowchart LR

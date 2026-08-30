@@ -400,6 +400,11 @@ components:
         relativePath: { type: string }
         sizeBytes: { type: integer, format: int64, minimum: 0 }
         lastModifiedUtc: { type: string, format: date-time }
+        excerpt:
+          type: string
+          nullable: true
+          maxLength: 280
+          description: Bounded excerpt from the best matching document fragment, when semantic indexing is available.
     DocumentContentResponse:
       type: object
       required: [name, extension, relativePath, sizeBytes, lastModifiedUtc, text]

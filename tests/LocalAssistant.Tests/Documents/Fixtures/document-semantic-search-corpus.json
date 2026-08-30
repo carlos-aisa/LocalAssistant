@@ -1,0 +1,21 @@
+{
+  "version": "1",
+  "documents": [
+    { "id": "lisbon-expenses", "format": ".md", "content": "Travel expenses for Lisbon included hotel, tram, and museum tickets." },
+    { "id": "garden-schedule", "format": ".txt", "content": "Water the vegetable garden every Tuesday morning." },
+    { "id": "reading-list", "format": ".json", "content": "{ \"books\": [\"The Left Hand of Darkness\"] }" },
+    { "id": "meal-plan", "format": ".csv", "content": "day,dinner\nMonday,pasta\nTuesday,soup" },
+    { "id": "bike-repair", "format": ".md", "content": "Replace the worn chain and adjust the rear brake before cycling." },
+    { "id": "school-calendar", "format": ".txt", "content": "The children return to class on 8 September after the summer break." },
+    { "id": "electricity-bill", "format": ".json", "content": "{ \"utility\": \"electricity\", \"amount\": 48.20 }" },
+    { "id": "bread-recipe", "format": ".csv", "content": "ingredient,quantity\nflour,500g\nyeast,7g" }
+  ],
+  "cases": [
+    { "id": "trip-cost", "query": "Portugal holiday spending", "expectedDocumentId": "lisbon-expenses" },
+    { "id": "garden", "query": "when should I irrigate my plants", "expectedDocumentId": "garden-schedule" },
+    { "id": "bicycle", "query": "how do I fix my bike stopping safely", "expectedDocumentId": "bike-repair" },
+    { "id": "school", "query": "when do lessons resume after holidays", "expectedDocumentId": "school-calendar" },
+    { "id": "utility", "query": "how much was the power invoice", "expectedDocumentId": "electricity-bill" },
+    { "id": "baking", "query": "what do I need to make a loaf", "expectedDocumentId": "bread-recipe" }
+  ]
+}

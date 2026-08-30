@@ -189,15 +189,23 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
 - [x] Incorporar búsqueda textual literal y acotada en los formatos textuales ya
   permitidos, con el scope independiente `documents.content.search`. Devuelve solo
   metadatos y no crea índice, embeddings ni retención de contenido.
-- Evaluar índice local, embeddings locales y búsqueda semántica después de medir
-  corpus, latencia y calidad; no introducir todavía base vectorial, watcher ni worker.
+- [x] Evaluar e implementar índice local, embeddings locales y búsqueda semántica
+  híbrida para documentos permitidos. `embeddinggemma` recuperó 6 de 6 paráfrasis en
+  primera posición, frente a 0 de 6 de la búsqueda literal, con 52 ms de media por
+  consulta y 4,0 s de preparación para ocho documentos. El índice derivado persiste
+  en SQLite privado, se sincroniza de forma perezosa antes de buscar y degrada a la
+  búsqueda literal si Ollama local no está disponible; no introduce base vectorial,
+  watcher ni worker.
 - Mantener la ingesta RAG como una decisión separada y explícita: buscar o leer un
   archivo no lo convertirá automáticamente en conocimiento persistente.
 - Mantener repositorios y búsqueda de código fuera de las fuentes documentales; una
   futura capacidad `LocalCodeSource` tendrá requisitos propios.
 - Conservar procedencia y frescura de evidencias externas sin retener páginas
   completas por defecto; decidir la caché después de medir el patrón de acceso.
-- Protección frente a prompt injection procedente de documentos.
+- [x] Preparar una frontera contractual frente a prompt injection procedente de
+  documentos: evidencia acotada, ruta relativa validada y delimitadores explícitos
+  para un futuro contexto del modelo. No habilita todavía RAG ni entrega documentos a
+  Jarvis; la autorización de herramientas continúa exclusivamente en el servidor.
 
 **Capacidades excluidas:** repositorios, escritura arbitraria, RAG automático, OCR,
 watchers, base vectorial y acceso de módulos a carpetas no registradas.
