@@ -151,7 +151,10 @@ public sealed class SqliteConversationStoreTests
             clock,
             retrievalEnabled: true);
         var provider = new CountingEmbeddingProvider();
-        var coordinator = new ConversationIndexingCoordinator(store, provider);
+        var coordinator = new ConversationIndexingCoordinator(
+            store,
+            provider,
+            new StaticSummaryProvider());
         var conversationId = Guid.NewGuid();
         await store.GetOrCreateMetadataAsync(conversationId, "owner-a", CancellationToken.None);
         await store.AppendAsync(
@@ -177,7 +180,10 @@ public sealed class SqliteConversationStoreTests
             clock,
             retrievalEnabled: true);
         var embeddingProvider = new CountingEmbeddingProvider();
-        var coordinator = new ConversationIndexingCoordinator(store, embeddingProvider);
+        var coordinator = new ConversationIndexingCoordinator(
+            store,
+            embeddingProvider,
+            new StaticSummaryProvider());
         var indexedConversationId = Guid.NewGuid();
         await store.GetOrCreateMetadataAsync(
             indexedConversationId,
@@ -202,7 +208,56 @@ public sealed class SqliteConversationStoreTests
             "Tengo nuevas ideas culinarias.",
             CancellationToken.None);
 
-        Assert.Equal(indexedConversationId, Assert.Single(result.Matches).ConversationId);
+        var match = Assert.Single(result.Matches);
+        Assert.Equal(indexedConversationId, match.ConversationId);
+        Assert.Equal("Meals", match.Topic);
+        Assert.Equal("Meal planning.", match.Summary);
+    }
+
+    [Fact]
+    public async Task KeepsTheEmbeddingWhenTheSummaryCannotBeGenerated()
+    {
+        using var directory = new LocalAssistant.Tests.Api.TemporaryInstallationStateDirectory();
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 8, 30, 9, 0, 0, TimeSpan.Zero));
+        var store = CreateStore(
+            Path.Combine(directory.Path, "conversations.db"),
+            clock,
+            retrievalEnabled: true);
+        var embeddingProvider = new CountingEmbeddingProvider();
+        var coordinator = new ConversationIndexingCoordinator(
+            store,
+            embeddingProvider,
+            new FailingSummaryProvider());
+        var indexedConversationId = Guid.NewGuid();
+        await store.GetOrCreateMetadataAsync(
+            indexedConversationId,
+            "owner-a",
+            CancellationToken.None);
+        await store.AppendAsync(
+            indexedConversationId,
+            new ConversationMessage(ConversationRole.User, "Planificamos comidas para los próximos días."),
+            CancellationToken.None);
+        clock.Advance(TimeSpan.FromMinutes(15));
+
+        Assert.Equal(1, await coordinator.ProcessPendingAsync(CancellationToken.None));
+
+        var matches = await store.RetrieveByEmbeddingAsync(
+            "owner-a",
+            Guid.NewGuid(),
+            new TextEmbedding("test-model", [0.25f, -0.5f]),
+            CancellationToken.None);
+
+        var match = Assert.Single(matches);
+        Assert.Equal(indexedConversationId, match.ConversationId);
+        Assert.Contains("Planificamos comidas", match.Summary);
+
+        var recoveredCoordinator = new ConversationIndexingCoordinator(
+            store,
+            embeddingProvider,
+            new StaticSummaryProvider());
+
+        Assert.Equal(1, await recoveredCoordinator.ProcessPendingAsync(CancellationToken.None));
+        Assert.Equal(1, embeddingProvider.CallCount);
     }
 
     private static SqliteConversationStore CreateStore(
@@ -232,5 +287,23 @@ public sealed class SqliteConversationStoreTests
             CallCount++;
             return ValueTask.FromResult(new TextEmbedding("test-model", [0.25f, -0.5f]));
         }
+    }
+
+    private sealed class StaticSummaryProvider : IConversationIndexSummaryProvider
+    {
+        public ValueTask<ConversationIndexSummary> SummarizeAsync(
+            string text,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(
+                new ConversationIndexSummary("Meals", "Meal planning.", ["meals"]));
+    }
+
+    private sealed class FailingSummaryProvider : IConversationIndexSummaryProvider
+    {
+        public ValueTask<ConversationIndexSummary> SummarizeAsync(
+            string text,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromException<ConversationIndexSummary>(
+                new InvalidOperationException("The local chat model is unavailable."));
     }
 }

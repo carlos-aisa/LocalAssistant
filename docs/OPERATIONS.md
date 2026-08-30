@@ -68,6 +68,13 @@ la actualización se descarta y esa conversación vuelve a esperar el periodo co
 Un fallo de Ollama se registra sin contenido conversacional y se reintenta en el
 siguiente sondeo; la recuperación literal continúa disponible.
 
+Cuando `LocalAssistant:Ollama:Model` también está configurado, el indexador pide a ese
+Ollama local un tema, un resumen y palabras clave de la conversación inactiva. Se
+guardan en la misma base SQLite como datos derivados privados y se validan antes de
+usarse. Si el resumen no se puede obtener, la conversación conserva su embedding y la
+recuperación usa un fragmento limitado del texto original; no se envía nada a un
+servicio externo.
+
 El índice es dato privado derivado: comparte la ruta, permisos operativos, backup,
 retención y borrado de `conversations.db`. No deben registrarse consultas ni
 fragmentos recuperados en logs o auditoría.

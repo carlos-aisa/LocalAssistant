@@ -85,6 +85,8 @@ builder.Services.AddSingleton<FakeLanguageProviderFactory>();
 builder.Services.AddHttpClient<OllamaLanguageProvider>();
 builder.Services.AddHttpClient<OllamaTextEmbeddingProvider>();
 builder.Services.AddSingleton<ITextEmbeddingProvider, OllamaTextEmbeddingProvider>();
+builder.Services.AddHttpClient<OllamaConversationIndexSummaryProvider>();
+builder.Services.AddSingleton<IConversationIndexSummaryProvider, OllamaConversationIndexSummaryProvider>();
 builder.Services.AddHostedService<ConversationIndexingHostedService>();
 builder.Services.AddHttpClient<OllamaModelInspector>();
 builder.Services.AddSingleton<OllamaModelValidationCache>();

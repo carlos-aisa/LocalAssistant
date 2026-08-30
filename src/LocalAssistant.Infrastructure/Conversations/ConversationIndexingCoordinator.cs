@@ -6,13 +6,16 @@ public sealed class ConversationIndexingCoordinator
 {
     private readonly SqliteConversationStore _store;
     private readonly ITextEmbeddingProvider _embeddingProvider;
+    private readonly IConversationIndexSummaryProvider _summaryProvider;
 
     public ConversationIndexingCoordinator(
         SqliteConversationStore store,
-        ITextEmbeddingProvider embeddingProvider)
+        ITextEmbeddingProvider embeddingProvider,
+        IConversationIndexSummaryProvider summaryProvider)
     {
         _store = store;
         _embeddingProvider = embeddingProvider;
+        _summaryProvider = summaryProvider;
     }
 
     public async Task<int> ProcessPendingAsync(CancellationToken cancellationToken)
@@ -21,10 +24,31 @@ public sealed class ConversationIndexingCoordinator
         var indexed = 0;
         foreach (var candidate in candidates)
         {
-            var embedding = await _embeddingProvider.EmbedAsync(
-                candidate.Text,
-                cancellationToken);
-            if (await _store.StoreEmbeddingAsync(candidate, embedding, cancellationToken))
+            TextEmbedding? embedding = null;
+            if (candidate.RequiresEmbedding)
+            {
+                embedding = await _embeddingProvider.EmbedAsync(
+                    candidate.Text,
+                    cancellationToken);
+            }
+
+            ConversationIndexSummary? summary = null;
+            if (candidate.RequiresSummary)
+            {
+                try
+                {
+                    summary = await _summaryProvider.SummarizeAsync(candidate.Text, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            if (await _store.StoreIndexAsync(candidate, embedding, summary, cancellationToken))
             {
                 indexed++;
             }

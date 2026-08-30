@@ -702,6 +702,7 @@ public sealed class LocalAssistantApiFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        builder.UseEnvironment("Testing");
         builder.UseSetting(
             "LocalAssistant:Installation:StateDirectory",
             _installationStateDirectory);
