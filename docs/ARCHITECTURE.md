@@ -61,6 +61,16 @@ sequenceDiagram
 El modelo nunca ejecuta código. Devuelve una solicitud estructurada y el
 orquestador solo puede resolverla contra `IToolRegistry`.
 
+Las consultas deterministas de fecha u hora actual constituyen una excepción a la
+secuencia de decisión del modelo: una política pequeña las detecta antes de llamar
+al proveedor y `AuthoritativeCurrentTimeResolver` obtiene UTC desde `TimeProvider`.
+Si el principal dispone de `household.profile.read`, convierte esa hora con la zona
+IANA almacenada para el hogar, incluidos los cambios estacionales; en otro caso solo
+proporciona UTC y la limitación. El dato se inyecta como contexto de sistema no
+persistido y queda trazado como `authoritative-current-time`. Por tanto, un proveedor
+que responda directamente no puede inventar una hora actual ni atribuirla a Internet,
+datos de entrenamiento o una herramienta inexistente.
+
 ## Contratos principales
 
 El perfil global del asistente contiene por ahora solo `DisplayName`. El orquestador

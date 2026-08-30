@@ -50,7 +50,7 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
     }
 
     [Fact]
-    public async Task TimeScenarioExecutesToolAndReturnsDeterministicTime()
+    public async Task TimeScenarioIncludesAuthoritativeTimeBeforeTheProviderToolCall()
     {
         using var response = await _client.PostAsJsonAsync(
             "/api/conversations/messages",
@@ -66,9 +66,17 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
             "Current UTC time is 2026-08-17T14:30:00.0000000+00:00.",
             root.GetProperty("content").GetString());
         Assert.Equal(2, root.GetProperty("iterations").GetInt32());
-        var tool = Assert.Single(root.GetProperty("tools").EnumerateArray());
-        Assert.Equal("get_current_time", tool.GetProperty("toolName").GetString());
-        Assert.True(tool.GetProperty("succeeded").GetBoolean());
+        var tools = root.GetProperty("tools").EnumerateArray().ToArray();
+        Assert.Contains(
+            tools,
+            tool => tool.GetProperty("toolCallId").GetString() == "authoritative-current-time" &&
+                    tool.GetProperty("toolName").GetString() == "get_current_time" &&
+                    tool.GetProperty("succeeded").GetBoolean());
+        Assert.Contains(
+            tools,
+            tool => tool.GetProperty("toolCallId").GetString() == "fake-time-call-1" &&
+                    tool.GetProperty("toolName").GetString() == "get_current_time" &&
+                    tool.GetProperty("succeeded").GetBoolean());
     }
 
     [Fact]

@@ -58,7 +58,8 @@ public sealed class ConversationOrchestratorTests
             {
                 var systemMessage = Assert.Single(
                     request.Messages,
-                    message => message.Role == ConversationRole.System);
+                    message => message.Role == ConversationRole.System &&
+                               message.Content!.Contains("configured display name", StringComparison.Ordinal));
                 Assert.Contains("Jarvis", systemMessage.Content, StringComparison.Ordinal);
                 return LanguageProviderResponse.Final("It is 14:30 UTC.");
             },
@@ -362,7 +363,7 @@ public sealed class ConversationOrchestratorTests
 
         Assert.True(result.IsSuccess, result.Error?.Code + ": " + result.Error?.Message);
         Assert.Contains("2026-08-17T14:30:00.0000000+00:00", result.Content);
-        var trace = Assert.Single(result.Tools);
+        var trace = Assert.Single(result.Tools, trace => trace.ToolCallId == "call-time");
         Assert.Equal(CurrentTimeTool.ToolName, trace.ToolName);
         Assert.True(trace.Succeeded);
         Assert.Equal(2, result.Iterations);
@@ -910,6 +911,92 @@ public sealed class ConversationOrchestratorTests
         Assert.Equal(1, executions);
     }
 
+    [Fact]
+    public async Task SuppliesAuthoritativeTimeBeforeAProviderRespondsDirectly()
+    {
+        var clock = new ManualTimeProvider(
+            new DateTimeOffset(2026, 8, 30, 12, 4, 0, TimeSpan.Zero));
+        var provider = new ScriptedLanguageProvider(
+        [
+            request =>
+            {
+                var timeContext = Assert.Single(
+                    request.Messages,
+                    message => message.Role == ConversationRole.System &&
+                               message.Content!.Contains("Authoritative current time", StringComparison.Ordinal));
+                Assert.Contains("2026-08-30T12:04:00.0000000+00:00", timeContext.Content, StringComparison.Ordinal);
+                return LanguageProviderResponse.Final("The authoritative time is 12:04 UTC.");
+            },
+        ]);
+        var sut = CreateOrchestrator(timeProvider: clock);
+
+        var result = await sut.ProcessAsync(
+            new ConversationTurnRequest("Hola Jarvis. ¿Puedes darme la hora local?"),
+            provider,
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var trace = Assert.Single(result.Tools);
+        Assert.Equal("authoritative-current-time", trace.ToolCallId);
+        Assert.Equal(CurrentTimeTool.ToolName, trace.ToolName);
+    }
+
+    [Theory]
+    [InlineData("Explícame qué es UTC")]
+    [InlineData("Escribe literalmente get_current_time")]
+    [InlineData("Convierte las 15:00 de Madrid a Nueva York")]
+    public async Task DoesNotResolveCurrentTimeForExcludedRequests(string message)
+    {
+        var provider = new ScriptedLanguageProvider(
+        [
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.Final("Explanation.")),
+        ]);
+        var sut = CreateOrchestrator();
+
+        var result = await sut.ProcessAsync(
+            new ConversationTurnRequest(message),
+            provider,
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Tools);
+    }
+
+    [Fact]
+    public async Task ReturnsAControlledErrorForAnInvalidAuthorizedHouseholdTimeZone()
+    {
+        var householdProfile = new HouseholdProfile(
+            "Unknown",
+            "Invalid/TimeZone",
+            FixedUtcNow,
+            "test");
+        var policyContext = new ToolPolicyContext(
+            "owner",
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "household.profile.read",
+            });
+        var provider = new ScriptedLanguageProvider(
+        [
+            ScriptedLanguageProvider.Return(LanguageProviderResponse.Final("Unreachable.")),
+        ]);
+        var sut = CreateOrchestrator(
+            toolPolicyContextAccessor: new MutableToolPolicyContextAccessor(policyContext),
+            householdProfiles: new StaticHouseholdProfileStore(householdProfile));
+
+        var result = await sut.ProcessAsync(
+            new ConversationTurnRequest("¿Qué hora es?"),
+            provider,
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("invalid_household_time_zone", result.Error?.Code);
+        Assert.Equal(0, provider.CallCount);
+        var trace = Assert.Single(result.Tools);
+        Assert.Equal("authoritative-current-time", trace.ToolCallId);
+        Assert.False(trace.Succeeded);
+    }
+
     private static ConversationOrchestrator CreateOrchestrator(
         IEnumerable<ITool>? tools = null,
         ManualTimeProvider? timeProvider = null,
@@ -918,7 +1005,8 @@ public sealed class ConversationOrchestratorTests
         IToolPolicyContextAccessor? toolPolicyContextAccessor = null,
         IToolAuditSink? auditSink = null,
         IAssistantProfileStore? profiles = null,
-        IConversationContextRetriever? conversationContextRetriever = null)
+        IConversationContextRetriever? conversationContextRetriever = null,
+        IHouseholdProfileStore? householdProfiles = null)
     {
         timeProvider ??= new ManualTimeProvider(FixedUtcNow);
         tools ??= [new CurrentTimeTool(timeProvider)];
@@ -935,7 +1023,8 @@ public sealed class ConversationOrchestratorTests
             new InMemoryConversationExecutionLock(),
             timeProvider,
             Options.Create(options ?? new OrchestrationOptions()),
-            NullLogger<ConversationOrchestrator>.Instance);
+            NullLogger<ConversationOrchestrator>.Instance,
+            householdProfiles: householdProfiles);
     }
 
     private sealed class MutableAssistantProfileStore(string displayName) : IAssistantProfileStore
@@ -956,6 +1045,23 @@ public sealed class ConversationOrchestratorTests
             _profile = AssistantProfile.Create(displayName);
             return ValueTask.FromResult(_profile);
         }
+    }
+
+    private sealed class StaticHouseholdProfileStore(HouseholdProfile profile) : IHouseholdProfileStore
+    {
+        public ValueTask<HouseholdProfile?> GetAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult<HouseholdProfile?>(profile);
+        }
+
+        public ValueTask<HouseholdProfile> SetLocationAsync(
+            string location,
+            string timeZoneId,
+            string source,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromException<HouseholdProfile>(
+                new InvalidOperationException("The test store is read-only."));
     }
 
     private sealed class StaticConversationContextRetriever(

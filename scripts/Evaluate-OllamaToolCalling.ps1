@@ -20,41 +20,49 @@ $cases = @(
         Id = "current-time-es"
         Prompt = "¿Qué hora UTC es ahora?"
         ExpectedTool = "get_current_time"
+        ExpectedAuthoritativeTime = $true
     },
     [pscustomobject]@{
         Id = "event-time-es"
         Prompt = "Necesito la hora actual en UTC para registrar este evento."
         ExpectedTool = "get_current_time"
+        ExpectedAuthoritativeTime = $true
     },
     [pscustomobject]@{
         Id = "current-time-en"
         Prompt = "What is the current UTC time?"
         ExpectedTool = "get_current_time"
+        ExpectedAuthoritativeTime = $true
     },
     [pscustomobject]@{
         Id = "temperature-celsius-to-fahrenheit-es"
         Prompt = "Convierte 100 grados Celsius a Fahrenheit."
         ExpectedTool = "convert_temperature"
+        ExpectedAuthoritativeTime = $false
     },
     [pscustomobject]@{
         Id = "temperature-fahrenheit-to-celsius-en"
         Prompt = "Convert 32 degrees Fahrenheit to Celsius."
         ExpectedTool = "convert_temperature"
+        ExpectedAuthoritativeTime = $false
     },
     [pscustomobject]@{
         Id = "utc-explanation-es"
         Prompt = "Explícame qué significa UTC sin consultar la hora actual."
         ExpectedTool = $null
+        ExpectedAuthoritativeTime = $false
     },
     [pscustomobject]@{
         Id = "temperature-explanation-es"
         Prompt = "Explícame cómo se convierten Celsius y Fahrenheit sin hacer una conversión."
         ExpectedTool = $null
+        ExpectedAuthoritativeTime = $false
     },
     [pscustomobject]@{
         Id = "tool-name-literal-es"
         Prompt = "Escribe literalmente el nombre get_current_time y nada más."
         ExpectedTool = $null
+        ExpectedAuthoritativeTime = $false
     }
 )
 
@@ -81,16 +89,24 @@ foreach ($run in 1..$Runs) {
 
             $tools = @($response.tools)
             $toolNames = @($tools | ForEach-Object { $_.toolName })
+            $hasAuthoritativeTime = @(
+                $tools | Where-Object {
+                    $_.toolCallId -eq "authoritative-current-time" -and
+                    $_.toolName -eq "get_current_time" -and
+                    $_.succeeded -eq $true
+                }).Count -eq 1
             $hasExpectedTool =
                 $tools.Count -eq 1 -and
                 $tools[0].toolName -eq $case.ExpectedTool -and
                 $tools[0].succeeded -eq $true
-            $hasNoTools = $tools.Count -eq 0
-            $toolDecisionPassed = if ($null -ne $case.ExpectedTool) {
+            $toolDecisionPassed = if ($case.ExpectedAuthoritativeTime) {
+                $hasAuthoritativeTime
+            }
+            elseif ($null -ne $case.ExpectedTool) {
                 $hasExpectedTool -and $response.iterations -ge 2
             }
             else {
-                $hasNoTools -and $response.iterations -eq 1
+                $tools.Count -eq 0 -and $response.iterations -eq 1
             }
             $passed =
                 $null -eq $response.error -and
@@ -101,6 +117,7 @@ foreach ($run in 1..$Runs) {
                 run = $run
                 caseId = $case.Id
                 expectedTool = $case.ExpectedTool
+                expectedAuthoritativeTime = $case.ExpectedAuthoritativeTime
                 passed = $passed
                 iterations = $response.iterations
                 toolNames = $toolNames

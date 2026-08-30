@@ -16,6 +16,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
     private readonly IAssistantProfileStore _profiles;
     private readonly IUserProfileStore _userProfiles;
     private readonly IHouseholdProfileStore _householdProfiles;
+    private readonly AuthoritativeCurrentTimeResolver _currentTimeResolver;
     private readonly IToolRegistry _tools;
     private readonly IToolRiskPolicy _toolRiskPolicy;
     private readonly IToolPolicyContextAccessor _toolPolicyContextAccessor;
@@ -46,6 +47,9 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         _profiles = profiles;
         _userProfiles = userProfiles ?? new NullUserProfileStore();
         _householdProfiles = householdProfiles ?? new NullHouseholdProfileStore();
+        _currentTimeResolver = new AuthoritativeCurrentTimeResolver(
+            clock,
+            _householdProfiles);
         _tools = tools;
         _toolRiskPolicy = toolRiskPolicy;
         _toolPolicyContextAccessor = toolPolicyContextAccessor;
@@ -81,8 +85,45 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         if (await _confirmations.GetAsync(id, ct) is not null)
             return Result(id, null, [], 0, TimeSpan.Zero, TimeSpan.Zero, new("confirmation_pending", "A tool confirmation is already pending."));
 
+        var traces = new List<ToolExecutionTrace>();
+        var toolsTime = TimeSpan.Zero;
+        AuthoritativeCurrentTime? currentTime = null;
+        if (CurrentTimeRequestPolicy.RequiresAuthoritativeTime(request.Message))
+        {
+            var start = _clock.GetTimestamp();
+            try
+            {
+                currentTime = await _currentTimeResolver.ResolveAsync(policyContext, ct);
+                toolsTime = _clock.GetElapsedTime(start);
+                traces.Add(new(
+                    "authoritative-current-time",
+                    CurrentTimeTool.ToolName,
+                    true,
+                    toolsTime.TotalMilliseconds));
+            }
+            catch (Exception exception) when (exception is TimeZoneNotFoundException or
+                                             InvalidTimeZoneException)
+            {
+                toolsTime = _clock.GetElapsedTime(start);
+                traces.Add(new(
+                    "authoritative-current-time",
+                    CurrentTimeTool.ToolName,
+                    false,
+                    toolsTime.TotalMilliseconds,
+                    "invalid_household_time_zone"));
+                return Result(
+                    id,
+                    null,
+                    traces,
+                    0,
+                    TimeSpan.Zero,
+                    toolsTime,
+                    new("invalid_household_time_zone", "The authorized household time zone is invalid."));
+            }
+        }
+
         await _store.AppendAsync(id, new(ConversationRole.User, request.Message), ct);
-        return await ContinueAsync(id, provider, policyContext, [], 0, TimeSpan.Zero, ct);
+        return await ContinueAsync(id, provider, policyContext, traces, 0, toolsTime, currentTime, ct);
     }
 
     public async Task<ConversationTurnResult> ResolveConfirmationAsync(Guid id, Guid confirmationId, bool approved, ILanguageProvider provider, CancellationToken ct)
@@ -171,7 +212,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
             if (outcome.Error is not null || outcome.Confirmation is not null)
                 return Result(id, null, traces, 0, TimeSpan.Zero, toolsTime, outcome.Error, outcome.Confirmation);
         }
-        return await ContinueAsync(id, provider, policyContext, traces, 0, toolsTime, ct);
+        return await ContinueAsync(id, provider, policyContext, traces, 0, toolsTime, null, ct);
     }
 
     private async Task<ConversationTurnResult> ContinueAsync(Guid id,
@@ -180,6 +221,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
                                                              List<ToolExecutionTrace> traces,
                                                              int completedIterations,
                                                              TimeSpan toolsTime,
+                                                             AuthoritativeCurrentTime? currentTime,
                                                              CancellationToken ct)
     {
         var providerTime = TimeSpan.Zero;
@@ -197,6 +239,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
                                                                   id,
                                                                   policyContext,
                                                                   iteration == completedIterations + 1,
+                                                                  currentTime,
                                                                   ct),
                                                               GetAvailableDefinitions(policyContext)),
                                                           timeout.Token);
@@ -242,6 +285,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         Guid conversationId,
         ToolPolicyContext policyContext,
         bool mayRetrieveContext,
+        AuthoritativeCurrentTime? currentTime,
         CancellationToken cancellationToken)
     {
         var profile = await _profiles.GetAsync(cancellationToken);
@@ -250,8 +294,16 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         {
             new(
                 ConversationRole.System,
-                $"The assistant's configured display name for this installation is '{profile.DisplayName}'."),
+                $"The assistant's configured display name for this installation is '{profile.DisplayName}'. " +
+                "The assistant has no direct Internet access and no source of dynamic facts except server-provided context and recorded tool results. Training data cannot provide the current time, date, weather, or other real-time facts. Never claim a tool ran unless its result is present; state the limitation when no authoritative source is available."),
         };
+
+        if (currentTime is not null)
+        {
+            messages.Add(new ConversationMessage(
+                ConversationRole.System,
+                currentTime.ToSystemMessage()));
+        }
 
         await AddStableProfileContextAsync(
             messages,

@@ -67,8 +67,15 @@ public sealed class CurrentTimeTool : ITool
             utc = utcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
             local = local.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
             timeZoneId = householdProfile?.TimeZoneId ?? "UTC",
+            utcOffset = FormatUtcOffset(local.Offset),
         });
 
         return ToolExecutionResult.Success(content);
+    }
+
+    private static string FormatUtcOffset(TimeSpan offset)
+    {
+        var sign = offset < TimeSpan.Zero ? "-" : "+";
+        return $"{sign}{offset.Duration():hh\\:mm}";
     }
 }

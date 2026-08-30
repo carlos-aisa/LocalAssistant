@@ -1,8 +1,8 @@
 # Evaluación de tool calling con Ollama
 
-Esta evaluación manual mide si un modelo decide correctamente cuándo invocar una de
-las herramientas disponibles en LocalAssistant. No forma parte de CI porque depende
-de Ollama, del modelo instalado y del hardware local.
+Esta evaluación manual mide el comportamiento de herramientas con un modelo Ollama
+local. No forma parte de CI porque depende de Ollama, del modelo instalado y del
+hardware local.
 
 ## Casos y criterio
 
@@ -15,11 +15,14 @@ de Ollama, del modelo instalado y del hardware local.
 - una petición que menciona literalmente `get_current_time`, pero no debe ejecutar
   ninguna herramienta.
 
-Cada caso se repite tres veces por defecto. Un caso que requiere herramienta solo
-supera la evaluación cuando existe una única traza correcta con el nombre esperado,
-la ejecución tiene éxito, se necesitan al menos dos iteraciones y hay respuesta
-final. Un caso sin herramienta exige cero trazas, una iteración y respuesta final.
-Todos los casos requieren además ausencia de error de orquestación.
+Cada caso se repite tres veces por defecto. Las preguntas de fecha u hora actual no
+dependen de que el modelo solicite una herramienta: el servidor añade antes de la
+llamada al proveedor la traza exitosa `authoritative-current-time` con el nombre
+`get_current_time`. El evaluador exige esa traza, aunque el modelo responda de forma
+directa. Una conversión de temperatura solo supera la evaluación cuando existe una
+única traza correcta con el nombre esperado y una respuesta final después de al
+menos dos iteraciones. Un caso explicativo exige cero trazas y una iteración. Todos
+los casos requieren además ausencia de error de orquestación.
 
 El informe JSON incluye identificadores de caso, decisiones, iteraciones y tiempos.
 No conserva prompts ni respuestas. La etiqueta `-Model` debe coincidir manualmente
