@@ -25,5 +25,10 @@ calibrar. El valor predeterminado es `0.78`, igual que la configuración de ejem
 pero el informe registra siempre el valor recibido. La evaluación no modifica la
 configuración ni ajusta el umbral automáticamente.
 
+El entorno Development configura `0.40` para `embeddinggemma`, a partir del corpus
+sintético versión 2: seis positivos entre `0.502` y `0.612`, y dos negativos con un
+máximo de `0.299`. Es una calibración local provisional; la configuración base
+mantiene `0.78` hasta contar con una muestra más amplia y evaluar otros modelos.
+
 Si Ollama no está disponible o el modelo no existe, el comando falla y no produce una
 medición semántica válida.
