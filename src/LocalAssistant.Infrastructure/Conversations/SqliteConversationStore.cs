@@ -175,6 +175,53 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
             : new ConversationRetrievalResult(matches);
     }
 
+    public async ValueTask<IReadOnlyList<ConversationRetrievedContext>>
+        RetrieveByEmbeddingAsync(
+            string ownerPrincipalId,
+            Guid currentConversationId,
+            TextEmbedding queryEmbedding,
+            CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(queryEmbedding);
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT ConversationId, LastActivityUnixMilliseconds, SearchText, EmbeddingJson FROM ConversationSearchDocuments WHERE OwnerPrincipalId = $owner AND ConversationId <> $currentConversationId AND EmbeddingModel = $model AND EmbeddingJson IS NOT NULL ORDER BY LastActivityUnixMilliseconds DESC LIMIT 50;";
+        command.Parameters.AddWithValue("$owner", ownerPrincipalId);
+        command.Parameters.AddWithValue("$currentConversationId", currentConversationId.ToString("N"));
+        command.Parameters.AddWithValue("$model", queryEmbedding.Model);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var matches = new List<ConversationRetrievedContext>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var values = JsonSerializer.Deserialize<IReadOnlyList<float>>(
+                reader.GetString(3),
+                SerializerOptions);
+            if (values is null || values.Count != queryEmbedding.Values.Count ||
+                values.Any(value => !float.IsFinite(value)))
+            {
+                continue;
+            }
+
+            var score = CalculateCosineSimilarity(queryEmbedding.Values, values);
+            if (score < 0.65)
+            {
+                continue;
+            }
+
+            var text = reader.GetString(2);
+            matches.Add(new ConversationRetrievedContext(
+                Guid.ParseExact(reader.GetString(0), "N"),
+                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(1)),
+                LimitText(text, 80),
+                LimitText(text, 300),
+                LimitText(text, _retrievalOptions.MaximumContextCharacters),
+                score));
+        }
+
+        return matches;
+    }
+
     public async ValueTask<IReadOnlyList<ConversationEmbeddingIndexCandidate>>
         ListPendingEmbeddingIndexesAsync(CancellationToken cancellationToken)
     {
@@ -324,6 +371,28 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
         text.Length <= maximumLength
             ? text
             : text[..maximumLength] + "…";
+
+    private static double CalculateCosineSimilarity(
+        IReadOnlyList<float> left,
+        IReadOnlyList<float> right)
+    {
+        double dotProduct = 0;
+        double leftMagnitude = 0;
+        double rightMagnitude = 0;
+        for (var index = 0; index < left.Count; index++)
+        {
+            dotProduct += left[index] * right[index];
+            leftMagnitude += left[index] * left[index];
+            rightMagnitude += right[index] * right[index];
+        }
+
+        if (leftMagnitude == 0 || rightMagnitude == 0)
+        {
+            return 0;
+        }
+
+        return dotProduct / Math.Sqrt(leftMagnitude * rightMagnitude);
+    }
 
     private static async Task AddSearchDocumentColumnIfMissingAsync(
         SqliteConnection connection,

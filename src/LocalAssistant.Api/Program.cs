@@ -40,11 +40,16 @@ builder.Services.AddSingleton<InMemoryConversationStore>();
 builder.Services.AddSingleton<SqliteConversationStore>();
 builder.Services.AddSingleton<ConversationIndexingCoordinator>();
 builder.Services.AddSingleton<NullConversationContextRetriever>();
+builder.Services.AddSingleton<HybridConversationContextRetriever>(services =>
+    new HybridConversationContextRetriever(
+        services.GetRequiredService<SqliteConversationStore>(),
+        services.GetRequiredService<ITextEmbeddingProvider>(),
+        services.GetRequiredService<IOptions<ConversationRetrievalOptions>>().Value));
 builder.Services.AddSingleton<IConversationContextRetriever>(services =>
 {
     var options = services.GetRequiredService<IOptions<SqliteConversationStoreOptions>>().Value;
     return options.Enabled
-        ? services.GetRequiredService<SqliteConversationStore>()
+        ? services.GetRequiredService<HybridConversationContextRetriever>()
         : services.GetRequiredService<NullConversationContextRetriever>();
 });
 builder.Services.AddSingleton<IPersonalMemoryStore, SqlitePersonalMemoryStore>();

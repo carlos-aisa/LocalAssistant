@@ -167,6 +167,44 @@ public sealed class SqliteConversationStoreTests
         Assert.Equal(0, await coordinator.ProcessPendingAsync(CancellationToken.None));
     }
 
+    [Fact]
+    public async Task FindsAnInactiveConversationThroughItsLocalEmbedding()
+    {
+        using var directory = new LocalAssistant.Tests.Api.TemporaryInstallationStateDirectory();
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 8, 30, 9, 0, 0, TimeSpan.Zero));
+        var store = CreateStore(
+            Path.Combine(directory.Path, "conversations.db"),
+            clock,
+            retrievalEnabled: true);
+        var embeddingProvider = new CountingEmbeddingProvider();
+        var coordinator = new ConversationIndexingCoordinator(store, embeddingProvider);
+        var indexedConversationId = Guid.NewGuid();
+        await store.GetOrCreateMetadataAsync(
+            indexedConversationId,
+            "owner-a",
+            CancellationToken.None);
+        await store.AppendAsync(
+            indexedConversationId,
+            new ConversationMessage(
+                ConversationRole.User,
+                "Planificamos comidas para los próximos días."),
+            CancellationToken.None);
+        clock.Advance(TimeSpan.FromMinutes(15));
+        await coordinator.ProcessPendingAsync(CancellationToken.None);
+        var retriever = new HybridConversationContextRetriever(
+            store,
+            embeddingProvider,
+            new ConversationRetrievalOptions { Enabled = true });
+
+        var result = await retriever.RetrieveAsync(
+            "owner-a",
+            Guid.NewGuid(),
+            "Tengo nuevas ideas culinarias.",
+            CancellationToken.None);
+
+        Assert.Equal(indexedConversationId, Assert.Single(result.Matches).ConversationId);
+    }
+
     private static SqliteConversationStore CreateStore(
         string databasePath,
         TimeProvider? clock = null,
