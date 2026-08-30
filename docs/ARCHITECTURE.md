@@ -908,3 +908,5 @@ posponen hasta que exista un consumidor concreto de trazas o métricas.
 repositorio deja el modelo vacío para que Ollama permanezca desactivado por defecto.
 El timeout de proveedor es global y vale tres minutos para tolerar inferencia local
 en CPU. No se guardan secretos ni configuraciones personales en el repositorio.
+`LocalAssistant:ConversationRetrieval` mantiene la recuperación desactivada por
+defecto y configura sus límites, el retraso de indexación y la frecuencia de sondeo.

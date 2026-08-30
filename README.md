@@ -65,9 +65,8 @@ Implementado:
 - Contratos de proveedor reutilizados por el fake y el adaptador de Ollama.
 - Evaluación local reproducible de decisiones de tool calling por modelo.
 
-No implementado: indexación semántica y resúmenes automáticos de conversaciones,
-detección automática de capacidades por modelo, acceso real a
-Internet, proveedores cloud, retención y auditoría durable, gestión de usuarios, voz, wake word,
+No implementado: detección automática de capacidades por modelo, acceso real a
+Internet, proveedores cloud, auditoría durable, gestión de usuarios, voz, wake word,
 RAG, agenda durable o notificaciones, Home Assistant, MQTT, MCP, interfaz gráfica ni
 ejecución de comandos.
 
@@ -389,19 +388,22 @@ siguiente petición para permitir instalar o corregir el modelo sin reiniciar la
 Si `/api/show` publica un valor `*.context_length`, la configuración tampoco puede
 superarlo.
 
-Para activar la recuperación semántica de conversaciones persistidas se configura,
-además, `LocalAssistant:Ollama:EmbeddingModel`. El servicio local valida con
-`POST /api/show` que ese modelo está instalado y solo después procesa conversaciones
-inactivas. Por ejemplo:
+Para activar la recuperación híbrida de conversaciones persistidas, habilita
+`LocalAssistant:ConversationRetrieval:Enabled` y configura
+`LocalAssistant:Ollama:EmbeddingModel`. El servicio local valida con `POST /api/show`
+que ese modelo está instalado y solo después procesa conversaciones inactivas. Por
+ejemplo:
 
 ```powershell
 ollama pull embeddinggemma
+$env:LocalAssistant__ConversationRetrieval__Enabled = "true"
 $env:LocalAssistant__Ollama__EmbeddingModel = "embeddinggemma"
 ```
 
 El modelo de chat configurado produce también un tema, resumen y palabras clave
-acotados. Todo este procesamiento usa el endpoint de Ollama configurado; no se envía
-contenido de conversaciones a servicios externos.
+acotados. Sin modelo de embeddings, la recuperación permanece literal. Todo este
+procesamiento usa el endpoint de Ollama configurado; no se envía contenido de
+conversaciones a servicios externos.
 
 ### Cliente de terminal para pruebas manuales
 

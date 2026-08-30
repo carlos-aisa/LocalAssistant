@@ -68,8 +68,9 @@ mapa genérico de valores que pueda modificar el modelo.
   conectarse a esos destinos.
 - **Denegación de servicio:** el límite de iteraciones y los timeouts reducen bucles
   y esperas, pero faltan cuotas, límites de tamaño y rate limiting.
-- **Memoria sensible:** las conversaciones permanecen en RAM hasta terminar el
-  proceso. No hay cifrado, borrado selectivo ni política de retención.
+- **Memoria sensible:** las conversaciones anónimas permanecen en RAM hasta terminar
+  el proceso. Las autenticadas pueden persistirse de forma opt-in con retención y
+  borrado selectivo por propietario, pero SQLite no cifra los datos en reposo.
 - **Endpoint de inferencia:** la URL de Ollama es configuración de confianza y no
   procede de cada petición. Apuntarla a otro host puede enviarle conversaciones y
   resultados de herramientas.
