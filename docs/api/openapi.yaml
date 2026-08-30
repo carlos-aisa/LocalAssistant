@@ -97,7 +97,7 @@ paths:
   /api/documents/content-search:
     get:
       operationId: searchDocumentContent
-      summary: Search authorized local text documents without returning their content.
+      summary: Search authorized local text documents and return an excerpt only with documents.read.
       security:
         - LocalApiKey: []
       parameters:
@@ -404,7 +404,7 @@ components:
           type: string
           nullable: true
           maxLength: 280
-          description: Bounded excerpt from the best matching document fragment, when semantic indexing is available.
+          description: Bounded excerpt from the best matching fragment. It is null unless the principal also has documents.read.
     DocumentContentResponse:
       type: object
       required: [name, extension, relativePath, sizeBytes, lastModifiedUtc, text]

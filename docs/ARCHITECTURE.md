@@ -419,10 +419,16 @@ seguros y puede incluir un extracto máximo de 280 caracteres, pero no devuelve 
 completo, vectores, puntuaciones ni rutas absolutas. Un fallo del embedding degrada
 la operación a la búsqueda literal existente.
 
+El scope `documents.content.search` autoriza el ranking y los metadatos. El servidor
+solo serializa `excerpt` cuando el mismo principal también tiene `documents.read`;
+el cliente no decide ese filtrado. La similitud semántica usa un umbral configurable
+conservador y un presupuesto corto por consulta: si se agota, la respuesta literal
+sigue disponible y el índice podrá continuar en la siguiente búsqueda.
+
 `UntrustedDocumentEvidence` prepara el único formato permitido para que una capacidad
 futura lleve un fragmento documental al contexto de un modelo. Valida procedencia
-relativa y límite de extracto, y `UntrustedDocumentEvidenceContextComposer` lo delimita
-como evidencia no confiable. Ningún flujo actual compone ese bloque en
+relativa y límite de extracto, y `UntrustedDocumentEvidenceContextComposer` lo
+serializa como JSON de datos no confiables. Ningún flujo actual compone ese bloque en
 `LanguageProviderRequest`: no se habilitan RAG, herramientas documentales ni cambios
 en la política de herramientas.
 

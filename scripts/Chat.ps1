@@ -248,25 +248,26 @@ function Send-ConversationMessage {
 
 function Complete-Conversation {
     if ($null -eq $conversationId) {
-        return
+        return $true
     }
 
     $response = Invoke-ApiRequest -Method POST -Path "/api/conversations/$conversationId/completion"
     if ($null -ne $response.ConnectionError -or $response.StatusCode -lt 200 -or $response.StatusCode -ge 300) {
         Show-ApiError $response
-        return
+        return $false
     }
 
     Write-Host "Conversation marked for background indexing."
+    return $true
 }
 
 function Show-Help {
     Write-Host @"
 Commands:
   /help                 Show this help.
-  /new                  Start a new conversation locally.
-  /provider fake        Use the deterministic fake provider and start a new conversation.
-  /provider ollama      Use Ollama and start a new conversation.
+  /new                  Complete the current conversation, then start a new one.
+  /provider fake        Complete the current conversation, then switch provider.
+  /provider ollama      Complete the current conversation, then switch provider.
   /scenario <name>      Set the fake scenario (direct, time, temperature).
   /info                 Show the current local client state.
   /exit                 Mark this conversation for indexing, then exit the client.
@@ -294,6 +295,11 @@ function Handle-Command {
     switch ($command) {
         "/help" { Show-Help; return $true }
         "/new" {
+            if (-not (Complete-Conversation)) {
+                Write-Host "The current conversation was kept. Retry /new after completion succeeds." -ForegroundColor Yellow
+                return $true
+            }
+
             $script:conversationId = $null
             Write-Host "Started a new conversation."
             return $true
@@ -302,6 +308,11 @@ function Handle-Command {
             $newProvider = $argument.ToLowerInvariant()
             if ($newProvider -notin @("fake", "ollama")) {
                 Write-Host "Usage: /provider fake or /provider ollama" -ForegroundColor Yellow
+                return $true
+            }
+
+            if (-not (Complete-Conversation)) {
+                Write-Host "The current conversation was kept. Provider was not changed." -ForegroundColor Yellow
                 return $true
             }
 
@@ -332,7 +343,14 @@ function Handle-Command {
             return $true
         }
         "/info" { Show-Info; return $true }
-        "/exit" { Complete-Conversation; return $false }
+        "/exit" {
+            if (Complete-Conversation) {
+                return $false
+            }
+
+            Write-Host "The client remains open so completion can be retried." -ForegroundColor Yellow
+            return $true
+        }
         default {
             Write-Host "Unknown command. Type /help for available commands." -ForegroundColor Yellow
             return $true

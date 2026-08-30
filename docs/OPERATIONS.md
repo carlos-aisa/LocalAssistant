@@ -8,6 +8,13 @@ usa por defecto `%LOCALAPPDATA%\LocalAssistant\conversations.db`. Las rutas de b
 de datos configuradas deben ser absolutas. Cuando se configura un modelo de embeddings
 local, `documents.db` se crea en el mismo directorio como índice privado derivado.
 
+`documents.db` conserva texto fragmentado y embeddings derivados de los documentos
+permitidos. Desactivar el modelo de embeddings detiene su uso y actualización, pero no
+borra ese archivo. Para eliminarlo, detenga la aplicación y elimine `documents.db` y
+los archivos auxiliares SQLite que existan junto a él; la siguiente sincronización lo
+recreará. Los backups y restauraciones de ese archivo conservan la misma sensibilidad
+que los documentos fuente.
+
 El bootstrap de identidad guarda también
 `%LOCALAPPDATA%\LocalAssistant\installation-identity.json` por defecto. El directorio
 de estado configurado debe ser absoluto. Aunque el archivo no guarda la API key en
@@ -68,6 +75,10 @@ embedding mediante el Ollama local configurado. Si llega un mensaje durante el t
 la actualización se descarta y esa conversación vuelve a esperar el periodo completo.
 Un fallo de Ollama se registra sin contenido conversacional y se reintenta en el
 siguiente sondeo; la recuperación literal continúa disponible.
+
+Una finalización explícita de conversación solicita el procesamiento inmediato. La
+solicitud se consume solo cuando embedding y resumen corresponden a la misma revisión
+del historial; un mensaje nuevo la descarta y devuelve la conversación al debounce.
 
 Cuando `LocalAssistant:Ollama:Model` también está configurado, el indexador pide a ese
 Ollama local un tema, un resumen y palabras clave de la conversación inactiva. Se
