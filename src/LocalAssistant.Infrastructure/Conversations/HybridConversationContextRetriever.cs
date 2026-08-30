@@ -24,6 +24,11 @@ public sealed class HybridConversationContextRetriever : IConversationContextRet
         string message,
         CancellationToken cancellationToken)
     {
+        if (!_options.Enabled)
+        {
+            return ConversationRetrievalResult.Empty;
+        }
+
         var literal = await _store.RetrieveAsync(
             ownerPrincipalId,
             currentConversationId,

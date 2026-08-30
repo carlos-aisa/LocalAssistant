@@ -218,6 +218,38 @@ public sealed class SqliteConversationStoreTests
     }
 
     [Fact]
+    public async Task DoesNotRetrieveConversationContextWhenRetrievalIsDisabled()
+    {
+        using var directory = new LocalAssistant.Tests.Api.TemporaryInstallationStateDirectory();
+        var store = CreateStore(
+            Path.Combine(directory.Path, "conversations.db"),
+            retrievalEnabled: true);
+        var indexedConversationId = Guid.NewGuid();
+        await store.GetOrCreateMetadataAsync(
+            indexedConversationId,
+            "owner-a",
+            CancellationToken.None);
+        await store.AppendAsync(
+            indexedConversationId,
+            new ConversationMessage(ConversationRole.User, "Plan weekly meals."),
+            CancellationToken.None);
+        var embeddingProvider = new CountingEmbeddingProvider();
+        var retriever = new HybridConversationContextRetriever(
+            store,
+            embeddingProvider,
+            new ConversationRetrievalOptions { Enabled = false });
+
+        var result = await retriever.RetrieveAsync(
+            "owner-a",
+            Guid.NewGuid(),
+            "More meal ideas.",
+            CancellationToken.None);
+
+        Assert.Empty(result.Matches);
+        Assert.Equal(0, embeddingProvider.CallCount);
+    }
+
+    [Fact]
     public async Task KeepsTheEmbeddingWhenTheSummaryCannotBeGenerated()
     {
         using var directory = new LocalAssistant.Tests.Api.TemporaryInstallationStateDirectory();
