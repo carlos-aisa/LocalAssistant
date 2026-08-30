@@ -218,6 +218,18 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
             ct);
         traces.AddRange(continuationTime.Traces);
         toolsTime += continuationTime.Elapsed;
+        if (continuationTime.Error is not null)
+        {
+            return Result(
+                id,
+                null,
+                traces,
+                0,
+                TimeSpan.Zero,
+                toolsTime,
+                continuationTime.Error);
+        }
+
         return await ContinueAsync(
             id,
             provider,
@@ -379,22 +391,44 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         }
 
         var start = _clock.GetTimestamp();
-        var currentTime = await _currentTimeResolver.ResolveAsync(policyContext, cancellationToken);
-        var elapsed = _clock.GetElapsedTime(start);
-        return new(
-            currentTime,
-            elapsed,
-            [new ToolExecutionTrace(
-                "authoritative-current-time",
-                CurrentTimeTool.ToolName,
-                true,
-                elapsed.TotalMilliseconds)]);
+        try
+        {
+            var currentTime = await _currentTimeResolver.ResolveAsync(policyContext, cancellationToken);
+            var elapsed = _clock.GetElapsedTime(start);
+            return new(
+                currentTime,
+                elapsed,
+                [new ToolExecutionTrace(
+                    "authoritative-current-time",
+                    CurrentTimeTool.ToolName,
+                    true,
+                    elapsed.TotalMilliseconds)],
+                null);
+        }
+        catch (Exception exception) when (exception is TimeZoneNotFoundException or
+                                         InvalidTimeZoneException)
+        {
+            var elapsed = _clock.GetElapsedTime(start);
+            return new(
+                null,
+                elapsed,
+                [new ToolExecutionTrace(
+                    "authoritative-current-time",
+                    CurrentTimeTool.ToolName,
+                    false,
+                    elapsed.TotalMilliseconds,
+                    "invalid_household_time_zone")],
+                new OrchestrationError(
+                    "invalid_household_time_zone",
+                    "The authorized household time zone is invalid."));
+        }
     }
 
     private sealed record ContinuationCurrentTime(
         AuthoritativeCurrentTime? CurrentTime,
         TimeSpan Elapsed,
-        IReadOnlyList<ToolExecutionTrace> Traces);
+        IReadOnlyList<ToolExecutionTrace> Traces,
+        OrchestrationError? Error = null);
 
     private static void AddRetrievedContext(
         List<ConversationMessage> messages,
