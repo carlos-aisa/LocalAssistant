@@ -163,10 +163,10 @@ orden y cada uno incluye sus pruebas y documentación.
 - [x] Migrar de forma compatible la identidad de instalación para conceder al
   propietario los scopes personales de memoria ya implementados, sin crear un bypass
   de autorización ni ampliar otros permisos.
-- Sustituir la API key educativa por autenticación adecuada para las interfaces
+- [x] Sustituir la API key educativa por autenticación adecuada para las interfaces
   escritas cuando exista el primer dato privado persistente; no elegir proveedor de
   identidad antes de concretar el despliegue.
-- Separar desde el modelo de datos memoria personal, compartida del hogar, de módulo,
+- [x] Separar desde el modelo de datos memoria personal, compartida del hogar, de módulo,
   administrativa y efímera; aplicar autorización antes de recuperar contexto para el
   modelo.
 - [x] Aprobar un modelo de privacidad de almacenamiento con propiedad, retención,
