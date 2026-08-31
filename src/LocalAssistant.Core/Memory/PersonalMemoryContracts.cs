@@ -6,7 +6,10 @@ public sealed record PersonalMemory(
     string Text,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset ModifiedAtUtc,
-    DateTimeOffset ExpiresAtUtc);
+    DateTimeOffset ExpiresAtUtc)
+{
+    public MemoryPartition Partition => MemoryPartition.Personal(OwnerPrincipalId);
+}
 
 public sealed class PersonalMemoryDraft
 {
