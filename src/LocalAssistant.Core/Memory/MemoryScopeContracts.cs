@@ -5,7 +5,6 @@ public enum MemoryScopeKind
     Personal,
     HouseholdShared,
     Module,
-    Administrative,
     Ephemeral,
 }
 
@@ -15,14 +14,12 @@ public sealed record MemoryPartition
         MemoryScopeKind scope,
         string? ownerPrincipalId,
         string? householdId,
-        string? moduleId,
-        string? installationId)
+        string? moduleId)
     {
         Scope = scope;
         OwnerPrincipalId = ownerPrincipalId;
         HouseholdId = householdId;
         ModuleId = moduleId;
-        InstallationId = installationId;
     }
 
     public MemoryScopeKind Scope { get; }
@@ -33,12 +30,9 @@ public sealed record MemoryPartition
 
     public string? ModuleId { get; }
 
-    public string? InstallationId { get; }
-
     public static MemoryPartition Personal(string ownerPrincipalId) => new(
         MemoryScopeKind.Personal,
         RequireIdentifier(ownerPrincipalId, nameof(ownerPrincipalId)),
-        null,
         null,
         null);
 
@@ -46,26 +40,16 @@ public sealed record MemoryPartition
         MemoryScopeKind.HouseholdShared,
         null,
         RequireIdentifier(householdId, nameof(householdId)),
-        null,
         null);
 
     public static MemoryPartition Module(string householdId, string moduleId) => new(
         MemoryScopeKind.Module,
         null,
         RequireIdentifier(householdId, nameof(householdId)),
-        RequireIdentifier(moduleId, nameof(moduleId)),
-        null);
-
-    public static MemoryPartition Administrative(string installationId) => new(
-        MemoryScopeKind.Administrative,
-        null,
-        null,
-        null,
-        RequireIdentifier(installationId, nameof(installationId)));
+        RequireIdentifier(moduleId, nameof(moduleId)));
 
     public static MemoryPartition Ephemeral() => new(
         MemoryScopeKind.Ephemeral,
-        null,
         null,
         null,
         null);

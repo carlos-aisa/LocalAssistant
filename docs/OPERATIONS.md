@@ -1,5 +1,10 @@
 # Operación del almacenamiento privado local
 
+> Flujo actual: cree el propietario y el primer cliente local desde la consola, y use
+> `Chat.ps1` contra HTTP(S) loopback. La credencial se protege con DPAPI solo después de
+> una sesión correcta; el token bearer nunca se persiste. Los clientes remotos requieren
+> transporte autenticado y cifrado en una fase posterior.
+
 ## Estado de clientes privados
 
 El estado de clientes privados se guarda por defecto como `private-clients.db` en el

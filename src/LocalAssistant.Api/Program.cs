@@ -132,13 +132,17 @@ builder.Services.AddSingleton<IHouseholdProfileStore>(services =>
     services.GetRequiredService<FileStableProfileStores>());
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<ILoopbackRequestPolicy, ConnectionLoopbackRequestPolicy>();
-builder.Services.AddAuthentication(LocalApiKeyAuthenticationDefaults.SchemeName)
-    .AddScheme<AuthenticationSchemeOptions, LocalApiKeyAuthenticationHandler>(
-        LocalApiKeyAuthenticationDefaults.SchemeName,
-        _ => { })
+builder.Services.AddAuthentication(PrivateBearerAuthenticationDefaults.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, PrivateBearerAuthenticationHandler>(
         PrivateBearerAuthenticationDefaults.SchemeName,
         _ => { });
+if (builder.Environment.IsEnvironment("Testing"))
+{
+    builder.Services.AddAuthentication()
+        .AddScheme<AuthenticationSchemeOptions, LocalApiKeyAuthenticationHandler>(
+            LocalApiKeyAuthenticationDefaults.SchemeName,
+            _ => { });
+}
 builder.Services.AddSingleton<IToolPolicyContextAccessor, HttpContextToolPolicyContextAccessor>();
 builder.Services.AddSingleton<ITool, CurrentTimeTool>();
 builder.Services.AddSingleton<ITool, TemperatureConversionTool>();
@@ -388,19 +392,43 @@ app.Use(async (context, next) =>
 {
     if (context.Request.Path.StartsWithSegments("/api"))
     {
-        var scheme = context.Request.Headers.ContainsKey(LocalApiKeyAuthenticationDefaults.HeaderName)
-            ? LocalApiKeyAuthenticationDefaults.SchemeName
-            : context.Request.Headers.Authorization.Count > 0
-                ? PrivateBearerAuthenticationDefaults.SchemeName
-                : null;
-        if (scheme is not null)
+        var hasApiKey = context.Request.Headers.ContainsKey(LocalApiKeyAuthenticationDefaults.HeaderName);
+        var hasBearer = context.Request.Headers.Authorization.Count > 0;
+        if (hasApiKey && hasBearer)
         {
-            var authentication = await context.AuthenticateAsync(scheme);
+            await context.ChallengeAsync(PrivateBearerAuthenticationDefaults.SchemeName);
+            return;
+        }
+
+        if (hasApiKey)
+        {
+            if (app.Environment.IsEnvironment("Testing"))
+            {
+                var authentication = await context.AuthenticateAsync(
+                    LocalApiKeyAuthenticationDefaults.SchemeName);
+                if (authentication.Succeeded)
+                {
+                    context.User = authentication.Principal!;
+                    await next();
+                    return;
+                }
+            }
+
+            await context.ChallengeAsync(PrivateBearerAuthenticationDefaults.SchemeName);
+            return;
+        }
+
+        if (hasBearer)
+        {
+            var authentication = await context.AuthenticateAsync(
+                PrivateBearerAuthenticationDefaults.SchemeName);
             if (!authentication.Succeeded)
             {
-                await context.ChallengeAsync(scheme);
+                await context.ChallengeAsync(PrivateBearerAuthenticationDefaults.SchemeName);
                 return;
             }
+
+            context.User = authentication.Principal!;
         }
     }
 
