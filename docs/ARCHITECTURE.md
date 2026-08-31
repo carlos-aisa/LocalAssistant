@@ -246,7 +246,8 @@ podrá solicitar la capacidad visible. Una aprobación no elevará otros permiso
 autorizará una operación distinta.
 
 La memoria se dividirá en conocimiento general, memoria personal, memoria compartida
-del hogar, estado de módulo, memoria administrativa y sesión efímera. Cada elemento
+del hogar, estado de módulo y sesión efímera. Configuración, autorización y auditoría
+serán recursos administrativos separados, no una memoria genérica. Cada elemento
 persistido tendrá propietario, ámbito, autorización, fuente, sensibilidad, fechas,
 retención y borrado. Búsqueda, ranking y recuperación aplicarán el filtro antes de
 entregar fragmentos al modelo; ocultar después la respuesta sería demasiado tarde.

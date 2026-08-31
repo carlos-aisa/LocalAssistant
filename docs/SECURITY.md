@@ -320,7 +320,8 @@ tecnológicas actuales.
 ### Datos, RAG y respuestas compartidas
 
 Se separarán conocimiento general, memoria personal, memoria del hogar, memoria de
-módulo, memoria administrativa y sesión efímera. Cada elemento tendrá propietario,
+módulo y sesión efímera. Configuración, autorización y auditoría serán recursos
+administrativos separados, no una memoria genérica. Cada elemento tendrá propietario,
 ámbito, sujetos autorizados, fuente, sensibilidad, fecha, retención y borrado. La
 eliminación de una cuenta definirá por separado datos personales, elementos
 compartidos, automatizaciones, valoraciones, historial y auditoría obligatoria.

@@ -138,6 +138,7 @@ builder.Services.AddAuthentication(PrivateBearerAuthenticationDefaults.SchemeNam
         _ => { });
 if (builder.Environment.IsEnvironment("Testing"))
 {
+    // Legacy API-key authentication remains available only to preserve isolated test fixtures.
     builder.Services.AddAuthentication()
         .AddScheme<AuthenticationSchemeOptions, LocalApiKeyAuthenticationHandler>(
             LocalApiKeyAuthenticationDefaults.SchemeName,

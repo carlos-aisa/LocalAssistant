@@ -195,12 +195,25 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
         }).CreateClient();
         client.DefaultRequestHeaders.Add(LocalApiKeyAuthenticationDefaults.HeaderName, LocalApiKey);
 
-        using var response = await client.PostAsJsonAsync(
+        using var conversationResponse = await client.PostAsJsonAsync(
             "/api/conversations/messages",
             new { message = "Hello", scenario = "direct" },
             CancellationToken.None);
+        using var memoryResponse = await client.GetAsync(
+            "/api/memories/personal",
+            CancellationToken.None);
+        using var documentResponse = await client.GetAsync(
+            "/api/documents",
+            CancellationToken.None);
+        using var toolResponse = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "What time is it?", scenario = "time" },
+            CancellationToken.None);
 
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, conversationResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, memoryResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, documentResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, toolResponse.StatusCode);
     }
 
     [Fact]
