@@ -14,6 +14,10 @@ Modelar una conversación como perteneciente a un único dispositivo impediría 
 composición y mezclaría identidad de origen, contexto espacial y destino de la
 respuesta.
 
+La respuesta textual, la síntesis y la reproducción evolucionarán a ritmos distintos.
+Incorporar audio codificado al contrato normal de conversación o TTS al orquestador
+acoplaría el núcleo a un transporte, proveedor y ubicación de síntesis.
+
 ## Decisión
 
 Modelar entrada y salida como capacidades independientes. Una habitación podrá
@@ -25,6 +29,11 @@ Esta decisión no introduce todavía entidades, registros ni campos opcionales e
 los contratos actuales. Esos conceptos se añadirán con el primer pipeline de voz y
 satélite que pueda utilizarlos y probarlos.
 
+El plano de conversación y control produce una respuesta textual autorizada. Un plano
+multimedia distinto podrá sintetizarla centralmente o en el dispositivo según
+capacidades, privacidad, disponibilidad, coste y política de salida. No se eligen
+todavía protocolo, endpoint, formato, transporte ni proveedor.
+
 ## Consecuencias
 
 - Un satélite con micrófono podrá responder mediante un Nest Hub de su habitación.
@@ -35,5 +44,7 @@ satélite que pueda utilizarlos y probarlos.
   la conversación.
 - Autenticación, privacidad y estado operativo deberán evaluarse por dispositivo y
   por flujo de audio.
+- El cliente podrá reproducir audio sin decidir autorización, proveedor global ni
+  destino de una respuesta sensible.
 - El routing será más explícito y algo más complejo que asumir respuesta en el
   dispositivo de origen.

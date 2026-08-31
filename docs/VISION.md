@@ -49,12 +49,10 @@ especializados podrán ocuparse de inferencia, voz, automatización doméstica, 
 y búsqueda semántica. Los canales de texto, voz y programación compartirán políticas
 y capacidades, pero podrán adaptar su experiencia.
 
-Para preguntas que dependan de conocimiento externo o reciente, el núcleo podrá
-combinar búsqueda general, lectura web y fuentes especializadas. Seleccionará una o
-varias herramientas según la consulta, agregará evidencias atendiendo a procedencia,
-calidad, frescura y conflictos, y podrá explicar las fuentes utilizadas. La
-profundidad se adaptará automáticamente, con instrucciones naturales del usuario
-como criterio prioritario y con límites explícitos de privacidad, tiempo y coste.
+La primera herramienta externa será meteorología: una fuente estructurada y trazable
+para tiempo actual y previsión acotada. Después podrán llegar lectura web limitada,
+búsqueda, Maps, Calendar y consultas multifuente. El modelo nunca recibirá Internet
+libre; toda salida atravesará una pasarela autorizada y con límites explícitos.
 
 La política de privacidad distinguirá categorías de datos. El contexto privado
 podrá influir en decisiones locales, pero no pasará implícitamente a una petición
@@ -135,9 +133,9 @@ este modelo doméstico completo.
 
 Jarvis podrá actuar como tutor personal de inglés para conversación cotidiana y
 profesional, entrevistas, reuniones, presentaciones, incidencias, clientes y
-vocabulario de .NET, sistemas distribuidos, AMR e IA. Una primera experiencia escrita
-ofrecerá role-play, política de corrección configurable e informe de sesión antes de
-depender de la infraestructura de voz doméstica.
+vocabulario de .NET, sistemas distribuidos, AMR e IA. El núcleo se validará primero
+mediante texto, pero su producto objetivo es oral: no conocerá audio, micrófono,
+STT, TTS, wake word, habitación ni dispositivo.
 
 Conversar, evaluar y actualizar el perfil de aprendizaje serán responsabilidades
 distintas. El camino interactivo priorizará naturalidad y baja latencia; correcciones

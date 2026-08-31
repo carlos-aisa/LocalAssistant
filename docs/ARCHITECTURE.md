@@ -839,6 +839,28 @@ propios permisos, autoaprobarse ni elegir como destino la instancia activa. La
 instalación se hará desde artefactos revisados y versionados y permitirá suspender o
 volver a una versión conocida.
 
+## Planos futuros de conversación y multimedia
+
+El plano de conversación y control conserva mensajes, sesiones, respuestas
+textuales, tools, confirmaciones, cancelación, identidad, autorización y la
+selección autorizada del destino. El plano multimedia solicita síntesis, genera o
+adquiere audio, gestiona formato, buffering, reproducción, cancelación, latencia y
+destino de audio.
+
+`ConversationOrchestrator` produce significado y respuesta textual; no sintetiza ni
+incluye audio Base64 en la respuesta de conversación. Una política de salida posterior
+decidirá si materializa esa respuesta con síntesis central o local según capacidades,
+privacidad, disponibilidad, coste, red, proveedor autorizado y preferencias. HTTP
+streaming, WebSocket, gRPC, recursos temporales y otros transportes siguen sin elegir.
+
+```text
+Respuesta textual de Jarvis
+→ política de salida
+→ síntesis de voz
+→ transporte multimedia
+→ dispositivo
+```
+
 ## Topología futura de habitaciones
 
 La evolución de voz distinguirá cinco conceptos que hoy no necesitan tipos de
