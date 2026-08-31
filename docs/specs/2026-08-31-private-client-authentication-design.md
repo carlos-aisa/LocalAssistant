@@ -11,8 +11,11 @@ invitados, JWT, OAuth, proveedor de identidad ni acceso remoto.
 
 - El cliente y el propietario son identidades distintas. El servidor determina siempre
   el propietario y sus capacidades.
+- El bearer autenticado conserva por separado el propietario como `NameIdentifier`, el
+  cliente y la sesión como claims de servidor; la petición HTTP no puede elegirlos.
 - La credencial duradera del cliente y el access token de sesión son secretos distintos.
-  El servidor guarda exclusivamente hashes SHA-256 comparados con tiempo constante.
+  El servidor guarda exclusivamente hashes SHA-256. SQLite realiza igualdad de hashes
+  de secretos aleatorios de alta entropía; no se afirma comparación en tiempo constante.
 - La credencial se muestra una vez, se rota de forma atómica y puede recuperarse entre
   ejecuciones mediante DPAPI en Windows. Si DPAPI no está disponible, el cliente exige
   introducirla manualmente y no escribe secretos en texto plano.
@@ -22,13 +25,13 @@ invitados, JWT, OAuth, proveedor de identidad ni acceso remoto.
 - Los tokens bearer y los endpoints que los aceptan se limitan a loopback hasta disponer
   de TLS para clientes remotos. Loopback no protege frente a procesos locales maliciosos.
 - El bootstrap de una instalación nueva es local, de un uso y solo está disponible si no
-  existe ningún cliente. La API key educativa, desactivada por defecto, solo permite
-  migrar instalaciones existentes en `Development` con opción explícita y loopback.
+  existe ningún cliente. La clave API heredada no autentica HTTP general: una instalación
+  existente migra creando el primer cliente mediante bootstrap local.
 
 ## Flujo
 
 ```text
-Bootstrap local único o migración educativa controlada
+Bootstrap local del propietario y primer cliente
 → pairing de un uso
 → cliente Active + credencial mostrada una vez
 → creación de sesión
@@ -51,7 +54,7 @@ implementación. No habrá endpoint de registro público.
 La memoria compartida será un ámbito explícito del hogar. La memoria de módulo se
 aislará por hogar y módulo. Configuración, autorización y auditoría seguirán siendo
 recursos administrativos separados, no una memoria genérica. La caché y procedencia
-de evidencia externa pertenecen a la futura fase de meteorología.
+de evidencia externa pertenecen inequívocamente a la fase 6 de meteorología.
 
 ## Pruebas
 

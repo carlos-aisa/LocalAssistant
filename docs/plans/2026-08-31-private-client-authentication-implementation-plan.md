@@ -14,16 +14,15 @@ invitados y acceso remoto.
    operaciones SQLite transaccionales.
 2. [x] **Bootstrap y pairing local:** añadir servicios de pairing, clientes, credenciales y sesiones opacas con
    expiración basada en `TimeProvider`, rotación e invalidación en cascada.
-3. [x] **Sesiones bearer:** sustituir el handler normal de API key por autenticación bearer que resuelva
-   principal, cliente y sesión; conservar la API key solo tras todas las restricciones
-   de migración aprobadas.
-4. [x] **Migración del cliente:** añadir la frontera administrativa y los endpoints HTTP loopback; actualizar
+3. [ ] **Sesiones bearer:** sustituir el handler normal de API key por autenticación bearer que resuelva
+   principal, cliente y sesión; verificar propagación del principal y rechazar credenciales inválidas.
+4. [ ] **Migración del cliente:** añadir la frontera administrativa y los endpoints HTTP loopback; actualizar
    `docs/api/openapi.yaml` con solicitudes, respuestas, errores y seguridad reales.
-5. [x] **Cierre de fase:** migrar `Chat.ps1` a pairing/sesión y almacenamiento DPAPI, con entrada manual si
-   DPAPI no está disponible; nunca persistir tokens de acceso.
-6. [x] Actualizar arquitectura, seguridad, operaciones y roadmap: ámbitos de memoria
-   pendientes, evidencia externa movida a meteorología y cierre de fase 4.
-7. [x] Añadir pruebas unitarias e integración HTTP de estados, transacciones, revocación,
+5. [ ] **Cierre de fase:** migrar `Chat.ps1` a pairing/sesión y almacenamiento DPAPI, con entrada manual si
+   DPAPI no está disponible; nunca persistir tokens de acceso ni enviarlos fuera de loopback.
+6. [ ] Actualizar arquitectura, seguridad, operaciones y roadmap: ámbitos de memoria
+   sin administración genérica y evidencia externa situada en la fase 6 de meteorología.
+7. [ ] Añadir pruebas unitarias e integración HTTP de estados, transacciones, revocación,
    expiración, loopback, migración y ausencia de secretos en estado y logs.
 
 ## Verificación

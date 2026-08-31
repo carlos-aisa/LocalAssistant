@@ -20,17 +20,15 @@ public sealed class PersonalMemoryContractsTests
     }
 
     [Fact]
-    public void ScopeFactoriesKeepHouseholdModuleAndAdministrationPartitionsSeparate()
+    public void ScopeFactoriesKeepHouseholdModuleAndEphemeralPartitionsSeparate()
     {
         var shared = MemoryPartition.HouseholdShared("household-a");
         var module = MemoryPartition.Module("household-a", "meal-planning");
-        var administration = MemoryPartition.Administrative("installation-a");
         var ephemeral = MemoryPartition.Ephemeral();
 
         Assert.Equal(MemoryScopeKind.HouseholdShared, shared.Scope);
         Assert.Equal(MemoryScopeKind.Module, module.Scope);
         Assert.Equal("meal-planning", module.ModuleId);
-        Assert.Equal(MemoryScopeKind.Administrative, administration.Scope);
         Assert.Equal(MemoryScopeKind.Ephemeral, ephemeral.Scope);
     }
 

@@ -18,5 +18,9 @@ public sealed class OpenApiDocumentTests
         Assert.Contains("/api/documents", document.Paths.Keys);
         Assert.Contains("/api/documents/{id}/content", document.Paths.Keys);
         Assert.Contains("/api/conversations/messages", document.Paths.Keys);
+        var privateBearer = Assert.IsType<Microsoft.OpenApi.Models.OpenApiSecurityScheme>(
+            document.Components.SecuritySchemes["PrivateBearer"]);
+        Assert.Equal("bearer", privateBearer.Scheme);
+        Assert.False(document.Components.SecuritySchemes.ContainsKey("LocalApiKey"));
     }
 }

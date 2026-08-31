@@ -8,6 +8,8 @@ namespace LocalAssistant.Api.Security;
 public static class PrivateBearerAuthenticationDefaults
 {
     public const string SchemeName = "PrivateBearer";
+    public const string ClientIdClaimType = "localassistant.client_id";
+    public const string SessionIdClaimType = "localassistant.session_id";
 }
 
 public sealed class PrivateBearerAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
@@ -62,7 +64,12 @@ public sealed class PrivateBearerAuthenticationHandler : AuthenticationHandler<A
             return AuthenticateResult.Fail("The bearer token is invalid.");
         }
 
-        var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, session.OwnerPrincipalId) };
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, session.OwnerPrincipalId),
+            new(PrivateBearerAuthenticationDefaults.ClientIdClaimType, session.ClientId),
+            new(PrivateBearerAuthenticationDefaults.SessionIdClaimType, session.SessionId),
+        };
         claims.AddRange(installationIdentity.GrantedScopes.Select(
             scope => new Claim(LocalApiKeyAuthenticationDefaults.ScopeClaimType, scope)));
         var identity = new ClaimsIdentity(claims, Scheme.Name);

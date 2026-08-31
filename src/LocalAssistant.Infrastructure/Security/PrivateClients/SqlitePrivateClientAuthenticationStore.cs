@@ -11,6 +11,13 @@ public sealed class SqlitePrivateClientAuthenticationStore : IPrivateClientAuthe
     public SqlitePrivateClientAuthenticationStore(string databasePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
+        var directory = Path.GetDirectoryName(Path.GetFullPath(databasePath));
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            throw new ArgumentException("The private client database directory is invalid.", nameof(databasePath));
+        }
+
+        Directory.CreateDirectory(directory);
         _connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,

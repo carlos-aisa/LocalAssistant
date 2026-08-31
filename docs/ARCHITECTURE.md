@@ -1,5 +1,10 @@
 # Arquitectura
 
+> Estado actual de fase 4: un bearer válido establece `HttpContext.User` con claims
+> separados de propietario, cliente y sesión; los scopes se resuelven en el servidor.
+> La clave API heredada no participa en la autenticación HTTP general. Configuración,
+> autorización y auditoría no son particiones de memoria.
+
 ## Perfiles estables e identidad futura
 
 `user-profiles.json` asocia un nombre preferido al principal autenticado y

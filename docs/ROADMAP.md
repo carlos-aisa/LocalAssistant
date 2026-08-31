@@ -1,5 +1,9 @@
 # Roadmap
 
+> Estado: la fase 4 permanece en verificación hasta que las pruebas, OpenAPI y la
+> revisión de seguridad del bearer estén completas. Caché y procedencia de evidencias
+> externas pertenecen a la fase 6 de meteorología, no al cierre de esta fase.
+
 ## Incremento de perfiles estables y continuidad (completado)
 
 - [x] Perfil personal autorizado y perfil doméstico separados de conversaciones y notas.

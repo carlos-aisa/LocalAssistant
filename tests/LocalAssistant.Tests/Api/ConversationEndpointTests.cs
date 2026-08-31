@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -9,7 +10,9 @@ using LocalAssistant.Core.Security.PrivateClients;
 using LocalAssistant.Core.Tools;
 using LocalAssistant.Infrastructure.LanguageModels.Ollama;
 using LocalAssistant.Tests.TestDoubles;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -83,6 +86,121 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
         using var response = await client.SendAsync(request, CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PrivateBearerPreservesOwnerClientSessionAndServerGrantedScopes()
+    {
+        using var factory = new LocalAssistantApiFactory();
+        var session = await CreatePrivateBearerAsync(factory);
+        var context = new DefaultHttpContext
+        {
+            RequestServices = factory.Services,
+        };
+        context.Request.Headers.Authorization = $"Bearer {session.Token}";
+
+        var authentication = await context.AuthenticateAsync(
+            PrivateBearerAuthenticationDefaults.SchemeName);
+
+        Assert.True(authentication.Succeeded);
+        Assert.Equal(session.OwnerPrincipalId, authentication.Principal!.FindFirstValue(ClaimTypes.NameIdentifier));
+        Assert.Equal(session.ClientId, authentication.Principal.FindFirstValue(
+            PrivateBearerAuthenticationDefaults.ClientIdClaimType));
+        Assert.Equal(session.SessionId, authentication.Principal.FindFirstValue(
+            PrivateBearerAuthenticationDefaults.SessionIdClaimType));
+        Assert.True(authentication.Principal.HasClaim(
+            LocalApiKeyAuthenticationDefaults.ScopeClaimType,
+            "memory.personal.write"));
+    }
+
+    [Fact]
+    public async Task PrivateBearerPersistsAndCompletesOnlyItsOwnersConversation()
+    {
+        using var directory = new TemporaryInstallationStateDirectory();
+        using var factory = new LocalAssistantApiFactory().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("LocalAssistant:ConversationPersistence:Enabled", "true");
+            builder.UseSetting(
+                "LocalAssistant:ConversationPersistence:DatabasePath",
+                Path.Combine(directory.Path, "conversations.db"));
+        });
+        using var authenticatedClient = factory.CreateClient();
+        var session = await CreatePrivateBearerAsync(factory);
+        authenticatedClient.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.Token);
+
+        using var messageResponse = await authenticatedClient.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Private message", scenario = "direct" },
+            CancellationToken.None);
+        using var messageBody = await JsonDocument.ParseAsync(
+            await messageResponse.Content.ReadAsStreamAsync(CancellationToken.None),
+            cancellationToken: CancellationToken.None);
+        var conversationId = messageBody.RootElement.GetProperty("conversationId").GetGuid();
+        using var completionResponse = await authenticatedClient.PostAsync(
+            $"/api/conversations/{conversationId}/completion",
+            content: null,
+            CancellationToken.None);
+
+        using var anonymousClient = factory.CreateClient();
+        using var anonymousContinuation = await anonymousClient.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Unauthorized continuation", conversationId, scenario = "direct" },
+            CancellationToken.None);
+        using var anonymousCompletion = await anonymousClient.PostAsync(
+            $"/api/conversations/{conversationId}/completion",
+            content: null,
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, messageResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, completionResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, anonymousContinuation.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousCompletion.StatusCode);
+    }
+
+    [Fact]
+    public async Task InvalidBearerAndMixedCredentialsAreRejectedBeforePublicConversationHandling()
+    {
+        using var factory = new LocalAssistantApiFactory();
+        using var client = factory.CreateClient();
+        using var invalidRequest = new HttpRequestMessage(HttpMethod.Post, "/api/conversations/messages")
+        {
+            Content = JsonContent.Create(new { message = "Hello", scenario = "direct" }),
+        };
+        invalidRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "invalid");
+        using var invalidResponse = await client.SendAsync(invalidRequest, CancellationToken.None);
+
+        using var mixedRequest = new HttpRequestMessage(HttpMethod.Post, "/api/conversations/messages")
+        {
+            Content = JsonContent.Create(new { message = "Hello", scenario = "direct" }),
+        };
+        mixedRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "invalid");
+        mixedRequest.Headers.Add(LocalApiKeyAuthenticationDefaults.HeaderName, LocalApiKey);
+        using var mixedResponse = await client.SendAsync(mixedRequest, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, invalidResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, mixedResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task ApiKeyDoesNotAuthorizeGeneralEndpointsOutsideTheTestHarness()
+    {
+        using var client = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("LocalAssistant:Identity:Enabled", "true");
+            builder.UseSetting("LocalAssistant:Identity:PrincipalId", "test-owner");
+            builder.UseSetting("LocalAssistant:Identity:ApiKeySha256", LocalApiKeyHash);
+            builder.UseSetting("LocalAssistant:PrivateClients:AllowEducationalApiKeyMigration", "true");
+        }).CreateClient();
+        client.DefaultRequestHeaders.Add(LocalApiKeyAuthenticationDefaults.HeaderName, LocalApiKey);
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Hello", scenario = "direct" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -899,6 +1017,41 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
             cancellationToken: CancellationToken.None);
         return body.RootElement.GetProperty("conversationId").GetGuid();
     }
+
+    private static async Task<PrivateBearerSession> CreatePrivateBearerAsync(
+        WebApplicationFactory<Program> factory)
+    {
+        var installation = factory.Services.GetRequiredService<IInstallationIdentityStore>();
+        var owner = await installation.BootstrapAsync(CancellationToken.None);
+        var authentication = factory.Services.GetRequiredService<PrivateClientAuthenticationService>();
+        var challenge = await authentication.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.CreateClient,
+            null,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+        var credential = await authentication.CompleteClientPairingAsync(
+            challenge.Secret,
+            owner.OwnerPrincipalId!,
+            "Test client",
+            CancellationToken.None);
+        var session = await authentication.CreateSessionAsync(
+            credential!.Client.ClientId,
+            credential.Secret,
+            TimeSpan.FromHours(1),
+            CancellationToken.None);
+
+        return new PrivateBearerSession(
+            owner.OwnerPrincipalId!,
+            credential.Client.ClientId,
+            session!.Session.SessionId,
+            session.Token);
+    }
+
+    private sealed record PrivateBearerSession(
+        string OwnerPrincipalId,
+        string ClientId,
+        string SessionId,
+        string Token);
 
     private static HttpRequestMessage CreateDeleteRequest(
         Guid conversationId,

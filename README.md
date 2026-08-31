@@ -1,5 +1,12 @@
 # LocalAssistant
 
+> Estado de autenticación (fase 4 en verificación): las interfaces privadas usan un
+> bearer opaco temporal emitido para un cliente registrado. La clave API heredada no
+> autentica conversaciones, memoria, documentos ni herramientas. Ejecuta
+> `--bootstrap-owner`, después `--bootstrap-private-client`, y finalmente
+> `./scripts/Chat.ps1`; el script solo envía credenciales a un destino HTTP(S) loopback
+> y las guarda con DPAPI únicamente tras abrir una sesión válida.
+
 [![CI](https://github.com/carlos-aisa/LocalAssistant/actions/workflows/ci.yml/badge.svg)](https://github.com/carlos-aisa/LocalAssistant/actions/workflows/ci.yml)
 [![Coverage](.github/badges/coverage.svg)](https://github.com/carlos-aisa/LocalAssistant/actions/workflows/ci.yml)
 [![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
@@ -451,27 +458,13 @@ En una segunda terminal, ejecuta el cliente:
 .\scripts\Chat.ps1 -Provider ollama
 ```
 
-La API key es opcional para conversaciones anónimas. Si
-`LOCALASSISTANT_API_KEY` no está definida, el cliente la solicita al iniciar sin
-mostrarla. Dejar la entrada vacía continúa de forma explícita con una sesión anónima y
-efímera, que no puede persistir conversaciones privadas.
-
-También puedes proporcionar la clave sin guardarla en archivos mediante la variable de
-entorno de la sesión actual:
-
-```powershell
-$env:LOCALASSISTANT_API_KEY = $apiKey
-.\scripts\Chat.ps1 -Provider ollama
-```
-
-Usa `-PromptForApiKey` para solicitarla sin eco incluso si la variable de entorno está
-definida. No uses un argumento de la línea de comandos para la clave.
-
-El cliente abre un token bearer temporal al iniciar y no lo escribe en disco. La
-credencial del cliente se protege con DPAPI para el usuario actual cuando está
-disponible; si falla, se solicita manualmente y no se persiste. La API key solo se usa
-con `-UseEducationalApiKeyMigration` para una migración explícita de Development en
-loopback.
+El cliente abre un token bearer temporal al iniciar y no lo escribe en disco. En la
+primera ejecución solicita el identificador y la credencial del cliente privado; solo
+después de abrir una sesión correcta protege la credencial con DPAPI. Si el estado
+DPAPI almacenado ya no es válido, informa de la recuperación con
+`-PromptForCredential` o un desafío administrativo y nunca reemplaza el secreto.
+`BaseUrl` acepta únicamente HTTP(S) en loopback; los clientes remotos requerirán
+transporte autenticado y cifrado en una fase futura.
 
 Los comandos interactivos son `/help`, `/new`, `/provider fake`, `/provider ollama`,
 `/scenario <nombre>`, `/info` y `/exit`. El proveedor fake admite actualmente

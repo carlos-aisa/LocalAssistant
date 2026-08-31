@@ -92,7 +92,7 @@ paths:
       operationId: searchDocuments
       summary: Search the authorized local documents root by metadata only.
       security:
-        - LocalApiKey: []
+        - PrivateBearer: []
       parameters:
         - name: name
           in: query
@@ -127,14 +127,14 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ValidationProblem"
-        "401": { description: A local API key is required. }
+        "401": { description: A valid private bearer token is required. }
         "403": { description: The authenticated principal lacks the documents.search scope. }
   /api/documents/{id}/content:
     get:
       operationId: readDocumentContent
       summary: Read bounded text content from an authorized local document.
       security:
-        - LocalApiKey: []
+        - PrivateBearer: []
       parameters:
         - name: id
           in: path
@@ -148,7 +148,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DocumentContentResponse"
-        "401": { description: A local API key is required. }
+        "401": { description: A valid private bearer token is required. }
         "403": { description: The authenticated principal lacks the documents.read scope. }
         "404": { description: "The reference is invalid, expired, or no longer identifies an authorized file." }
         "422":
@@ -162,7 +162,7 @@ paths:
       operationId: searchDocumentContent
       summary: Search authorized local text documents and return an excerpt only with documents.read.
       security:
-        - LocalApiKey: []
+        - PrivateBearer: []
       parameters:
         - name: text
           in: query
@@ -191,14 +191,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/DocumentSearchResponse"
         "400": { description: The content search query is invalid. }
-        "401": { description: A local API key is required. }
+        "401": { description: A valid private bearer token is required. }
         "403": { description: The authenticated principal lacks the documents.content.search scope. }
   /api/memories/personal:
     post:
       operationId: createPersonalMemory
       summary: Create an explicit personal memory note.
       security:
-        - LocalApiKey: []
+        - PrivateBearer: []
       requestBody:
         required: true
         content:
@@ -217,14 +217,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/PersonalMemoryResponse"
         "400": { description: The personal memory text is invalid. }
-        "401": { description: A local API key is required. }
+        "401": { description: A valid private bearer token is required. }
         "403": { description: The authenticated principal lacks the memory.personal.write scope. }
         "503": { description: Personal memory persistence is disabled. }
     get:
       operationId: listPersonalMemories
       summary: List the authenticated principal's active personal memory notes.
       security:
-        - LocalApiKey: []
+        - PrivateBearer: []
       parameters:
         - name: limit
           in: query
@@ -237,7 +237,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/PersonalMemoryListResponse"
         "400": { description: The list query is invalid. }
-        "401": { description: A local API key is required. }
+        "401": { description: A valid private bearer token is required. }
         "403": { description: The authenticated principal lacks the memory.personal.read scope. }
         "503": { description: Personal memory persistence is disabled. }
   /api/memories/personal/{memoryId}:
@@ -245,7 +245,7 @@ paths:
       operationId: deletePersonalMemory
       summary: Delete an explicit personal memory note owned by the authenticated principal.
       security:
-        - LocalApiKey: []
+        - PrivateBearer: []
       parameters:
         - name: memoryId
           in: path
@@ -254,7 +254,7 @@ paths:
       responses:
         "204": { description: The personal memory note was deleted. }
         "400": { description: The personal memory identifier is invalid. }
-        "401": { description: A local API key is required. }
+        "401": { description: A valid private bearer token is required. }
         "403": { description: The authenticated principal lacks the memory.personal.write scope. }
         "404": { description: The personal memory note was not found or is not owned by the caller. }
         "503": { description: Personal memory persistence is disabled. }
@@ -263,7 +263,7 @@ paths:
       operationId: deleteConversation
       summary: Delete one persisted conversation owned by the authenticated principal.
       security:
-        - LocalApiKey: []
+        - PrivateBearer: []
       parameters:
         - name: conversationId
           in: path
@@ -278,7 +278,7 @@ paths:
         "204": { description: The conversation and its persisted messages were deleted. }
         "400":
           description: The delete confirmation header is missing, repeated, or invalid.
-        "401": { description: A local API key is required. }
+        "401": { description: A valid private bearer token is required. }
         "404": { description: The conversation was not found or is not owned by the caller. }
         "503": { description: Conversation persistence is disabled. }
   /api/conversations/{conversationId}/completion:
@@ -286,7 +286,7 @@ paths:
       operationId: completeConversation
       summary: Mark an owned conversation eligible for immediate background indexing.
       security:
-        - LocalApiKey: []
+        - PrivateBearer: []
       parameters:
         - name: conversationId
           in: path
@@ -294,7 +294,7 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         "204": { description: The conversation was marked. Repeating the operation is safe. }
-        "401": { description: A local API key is required. }
+        "401": { description: A valid private bearer token is required. }
         "404": { description: The conversation was not found or is not owned by the caller. }
         "503": { description: Conversation persistence is disabled. }
   /api/conversations/messages:
@@ -303,7 +303,7 @@ paths:
       summary: Process one conversation message through the explicit orchestration loop.
       security:
         - {}
-        - LocalApiKey: []
+        - PrivateBearer: []
       requestBody:
         required: true
         content:
@@ -330,7 +330,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ValidationProblem"
         "401":
-          description: A supplied local API key was invalid, or a tool required authentication.
+          description: A supplied private bearer token was invalid, or a tool required authentication.
         "403":
           description: The authenticated principal was not authorized for a requested tool.
         "404":
@@ -369,7 +369,7 @@ paths:
       summary: Approve or reject one server-held tool call.
       security:
         - {}
-        - LocalApiKey: []
+        - PrivateBearer: []
       parameters:
         - name: conversationId
           in: path
@@ -387,7 +387,7 @@ paths:
               $ref: "#/components/schemas/ResolveToolConfirmationRequest"
       responses:
         "200": { description: The decision was processed. }
-        "401": { description: A supplied local API key was invalid. }
+        "401": { description: A supplied private bearer token was invalid. }
         "404": { description: The confirmation or its conversation was not found or is not accessible to the caller. }
         "409": { description: The provider does not match the pending confirmation. }
         "410": { description: The confirmation expired. }
@@ -405,13 +405,13 @@ paths:
                 $ref: "#/components/schemas/ConversationResponse"
 components:
   securitySchemes:
-    LocalApiKey:
-      type: apiKey
-      in: header
-      name: X-LocalAssistant-Api-Key
+    PrivateBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
       description: >-
-        Optional local API key. When configured, it creates the server-defined
-        principal and scopes used by the tool risk policy.
+        Temporary opaque token issued after a registered private client exchanges
+        its durable credential through loopback.
   schemas:
     CreatePrivateSessionRequest:
       type: object
@@ -423,7 +423,7 @@ components:
       type: object
       required: [accessToken, expiresAtUtc]
       properties:
-        accessToken: { type: string, writeOnly: true }
+        accessToken: { type: string }
         expiresAtUtc: { type: string, format: date-time }
     CompletePrivateClientPairingRequest:
       type: object
@@ -442,7 +442,7 @@ components:
       properties:
         clientId: { type: string }
         displayName: { type: string }
-        credential: { type: string, writeOnly: true }
+        credential: { type: string }
     HealthResponse:
       type: object
       required: [status]

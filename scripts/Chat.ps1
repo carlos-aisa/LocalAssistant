@@ -12,10 +12,6 @@ param(
 
     [switch] $PromptForCredential,
 
-    [switch] $UseEducationalApiKeyMigration,
-
-    [switch] $PromptForApiKey,
-
     [switch] $VerboseOutput
 )
 
@@ -25,29 +21,11 @@ Add-Type -AssemblyName System.Net.Http
 
 $supportedFakeScenarios = @("direct", "time", "temperature")
 $conversationId = $null
-$apiKey = $null
 $accessToken = $null
 $privateClientId = $null
 $privateClientCredential = $null
+$credentialLoadedFromStorage = $false
 $credentialStatePath = Join-Path $env:LOCALAPPDATA "LocalAssistant\Chat\private-client.json"
-
-function Get-ApiKey {
-    $shouldPromptForApiKey =
-        $PromptForApiKey -or [string]::IsNullOrWhiteSpace($env:LOCALASSISTANT_API_KEY)
-    if ($shouldPromptForApiKey) {
-        $secureApiKey = Read-Host "Local API key" -AsSecureString
-        $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureApiKey)
-
-        try {
-            return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
-        }
-        finally {
-            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
-        }
-    }
-
-    return $env:LOCALASSISTANT_API_KEY
-}
 
 function Get-PrivateClientCredential {
     if (-not $PromptForCredential -and (Test-Path -LiteralPath $credentialStatePath)) {
@@ -60,6 +38,7 @@ function Get-PrivateClientCredential {
                 [Security.Cryptography.DataProtectionScope]::CurrentUser)
             try {
                 $script:privateClientId = [string] $state.clientId
+                $script:credentialLoadedFromStorage = $true
                 return [Text.Encoding]::UTF8.GetString($unprotectedBytes)
             }
             finally {
@@ -80,6 +59,14 @@ function Get-PrivateClientCredential {
     }
     finally {
         [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
+    }
+}
+
+function Test-LoopbackBaseUrl {
+    param([Parameter(Mandatory = $true)][System.Uri] $Uri)
+
+    if ($Uri.Scheme -notin @("http", "https") -or -not $Uri.IsLoopback) {
+        throw "BaseUrl must use HTTP or HTTPS and target a loopback host. Private credentials are never sent to LAN or remote hosts."
     }
 }
 
@@ -132,7 +119,6 @@ function Complete-PrivateClientPairing {
 
     $script:privateClientId = [string] $response.Body.clientId
     $script:privateClientCredential = [string] $response.Body.credential
-    [void] (Save-PrivateClientCredential $privateClientId $privateClientCredential)
     return $true
 }
 
@@ -178,10 +164,6 @@ function Invoke-ApiRequest {
                 "Bearer",
                 $accessToken)
         }
-        elseif ($UseEducationalApiKeyMigration -and -not [string]::IsNullOrWhiteSpace($apiKey)) {
-            $request.Headers.Add("X-LocalAssistant-Api-Key", $apiKey)
-        }
-
         if ($null -ne $Body) {
             $json = $Body | ConvertTo-Json -Depth 8 -Compress
             $request.Content = [System.Net.Http.StringContent]::new(
@@ -392,7 +374,7 @@ Commands:
 
 function Show-Info {
     $conversationState = if ($null -eq $conversationId) { "none" } else { $conversationId }
-    $authenticationState = if (-not [string]::IsNullOrWhiteSpace($accessToken)) { "private bearer session" } elseif ($UseEducationalApiKeyMigration) { "educational API key migration" } else { "anonymous" }
+    $authenticationState = if (-not [string]::IsNullOrWhiteSpace($accessToken)) { "private bearer session" } else { "anonymous" }
 
     Write-Host "Server: $baseUri"
     Write-Host "Provider: $Provider"
@@ -480,6 +462,8 @@ try {
         throw "BaseUrl must be an absolute URL."
     }
 
+    Test-LoopbackBaseUrl $baseUrlUri
+
     $baseUri = $baseUrlUri.AbsoluteUri.TrimEnd("/")
     $httpClient = [System.Net.Http.HttpClient]::new()
 
@@ -489,10 +473,7 @@ try {
         exit 1
     }
 
-    if ($UseEducationalApiKeyMigration) {
-        $apiKey = Get-ApiKey
-    }
-    elseif (-not [string]::IsNullOrWhiteSpace($PairingChallenge)) {
+    if (-not [string]::IsNullOrWhiteSpace($PairingChallenge)) {
         if (-not (Complete-PrivateClientPairing)) {
             exit 1
         }
@@ -506,9 +487,15 @@ try {
         }
     }
 
-    if (-not $UseEducationalApiKeyMigration -and -not (Open-PrivateSession)) {
+    if (-not (Open-PrivateSession)) {
+        if ($credentialLoadedFromStorage) {
+            Write-Host "The stored private-client credential was rejected. Run again with -PromptForCredential or -PairingChallenge to recover; it was not replaced." -ForegroundColor Yellow
+        }
+
         exit 1
     }
+
+    [void] (Save-PrivateClientCredential $privateClientId $privateClientCredential)
 
     Write-Host "LocalAssistant terminal client"
     Write-Host "Server: $baseUri"

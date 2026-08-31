@@ -545,10 +545,27 @@ public sealed record ConversationEmbeddingIndexCandidate(
 
 public sealed class AuthenticatedConversationStore(IConversationStore persistentStore, IConversationStore ephemeralStore) : IConversationStore
 {
-    public ValueTask<ConversationMetadata> GetOrCreateMetadataAsync(Guid conversationId, string? ownerPrincipalId, CancellationToken cancellationToken) =>
-        ownerPrincipalId is null
-            ? ephemeralStore.GetOrCreateMetadataAsync(conversationId, null, cancellationToken)
-            : persistentStore.GetOrCreateMetadataAsync(conversationId, ownerPrincipalId, cancellationToken);
+    public async ValueTask<ConversationMetadata> GetOrCreateMetadataAsync(
+        Guid conversationId,
+        string? ownerPrincipalId,
+        CancellationToken cancellationToken)
+    {
+        if (ownerPrincipalId is not null)
+        {
+            return await persistentStore.GetOrCreateMetadataAsync(
+                conversationId,
+                ownerPrincipalId,
+                cancellationToken);
+        }
+
+        var persistentMetadata = await persistentStore.GetMetadataAsync(
+            conversationId,
+            cancellationToken);
+        return persistentMetadata ?? await ephemeralStore.GetOrCreateMetadataAsync(
+            conversationId,
+            null,
+            cancellationToken);
+    }
 
     public async ValueTask<ConversationMetadata?> GetMetadataAsync(Guid conversationId, CancellationToken cancellationToken) =>
         await persistentStore.GetMetadataAsync(conversationId, cancellationToken) ?? await ephemeralStore.GetMetadataAsync(conversationId, cancellationToken);

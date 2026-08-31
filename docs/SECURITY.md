@@ -1,5 +1,10 @@
 # Seguridad
 
+> Actualización de fase 4: SQLite compara hashes SHA-256 de secretos aleatorios de alta
+> entropía por igualdad; no se afirma comparación de tiempo constante. Cliente, sesión
+> y propietario se conservan como identidades distintas, y la clave API heredada no
+> autoriza endpoints generales.
+
 ## Clientes privados y sesiones bearer
 
 Las interfaces privadas se autentican mediante clientes registrados. El servidor
