@@ -7,19 +7,19 @@ para el estado de clientes y sesiones, DPAPI en el cliente Windows y actualizaci
 contratos, documentación y pruebas. Quedan fuera JWT, OAuth, cuentas familiares,
 invitados y acceso remoto.
 
-## Pasos
+## Incrementos
 
-1. Extender el almacenamiento de identidad de instalación con el bootstrap local de
+1. **Base de seguridad y almacenamiento:** extender el almacenamiento de identidad de instalación con el bootstrap local de
    un solo uso y el estado de clientes; usar generación criptográfica, hashes y
    operaciones SQLite transaccionales.
-2. Añadir servicios de pairing, clientes, credenciales y sesiones opacas con
+2. **Bootstrap y pairing local:** añadir servicios de pairing, clientes, credenciales y sesiones opacas con
    expiración basada en `TimeProvider`, rotación e invalidación en cascada.
-3. Sustituir el handler normal de API key por autenticación bearer que resuelva
+3. **Sesiones bearer:** sustituir el handler normal de API key por autenticación bearer que resuelva
    principal, cliente y sesión; conservar la API key solo tras todas las restricciones
    de migración aprobadas.
-4. Añadir la frontera administrativa y los endpoints HTTP loopback; actualizar
+4. **Migración del cliente:** añadir la frontera administrativa y los endpoints HTTP loopback; actualizar
    `docs/api/openapi.yaml` con solicitudes, respuestas, errores y seguridad reales.
-5. Migrar `Chat.ps1` a pairing/sesión y almacenamiento DPAPI, con entrada manual si
+5. **Cierre de fase:** migrar `Chat.ps1` a pairing/sesión y almacenamiento DPAPI, con entrada manual si
    DPAPI no está disponible; nunca persistir tokens de acceso.
 6. Actualizar arquitectura, seguridad, operaciones y roadmap: ámbitos de memoria
    pendientes, evidencia externa movida a meteorología y cierre de fase 4.

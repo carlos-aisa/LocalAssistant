@@ -131,6 +131,26 @@ local pueden persistirse y consultarse con identidad, propiedad y retención.
 
 **Dependencias:** política mínima de identidad y permisos de la fase 3.
 
+### Incrementos para cerrar la fase 4
+
+Los siguientes incrementos cierran los límites pendientes sin anticipar identidad
+multiusuario, proveedores externos ni almacenes sin consumidor. Deben completarse en
+orden y cada uno incluye sus pruebas y documentación.
+
+1. **Base de seguridad y almacenamiento:** clientes, credenciales duraderas y
+   sesiones temporales; hashes, generación criptográfica, `TimeProvider`, rotación y
+   revocación transaccionales.
+2. **Bootstrap y pairing local:** instalación nueva de un solo uso, desafío de
+   emparejamiento temporal y frontera administrativa separada.
+3. **Sesiones bearer para la API privada:** tokens opacos, restricción a loopback,
+   expiración, invalidación en cascada y contrato HTTP.
+4. **Migración de `Chat.ps1`:** credencial persistida mediante protección del sistema
+   operativo cuando exista, token solo en memoria y API key educativa limitada a una
+   migración explícita en `Development` y loopback.
+5. **Cierre documental:** ámbitos de memoria compartida, de módulo y administrativa;
+   caché y procedencia de evidencia externa trasladadas a meteorología; revisión de
+   seguridad, operaciones y criterios de finalización.
+
 **Capacidades incluidas:**
 
 - [x] Elegir almacenamiento tras medir el patrón de acceso: SQLite local para el
