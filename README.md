@@ -467,6 +467,12 @@ $env:LOCALASSISTANT_API_KEY = $apiKey
 Usa `-PromptForApiKey` para solicitarla sin eco incluso si la variable de entorno está
 definida. No uses un argumento de la línea de comandos para la clave.
 
+El cliente abre un token bearer temporal al iniciar y no lo escribe en disco. La
+credencial del cliente se protege con DPAPI para el usuario actual cuando está
+disponible; si falla, se solicita manualmente y no se persiste. La API key solo se usa
+con `-UseEducationalApiKeyMigration` para una migración explícita de Development en
+loopback.
+
 Los comandos interactivos son `/help`, `/new`, `/provider fake`, `/provider ollama`,
 `/scenario <nombre>`, `/info` y `/exit`. El proveedor fake admite actualmente
 `direct`, `time` y `temperature`; el cliente muestra este modo de forma visible para
