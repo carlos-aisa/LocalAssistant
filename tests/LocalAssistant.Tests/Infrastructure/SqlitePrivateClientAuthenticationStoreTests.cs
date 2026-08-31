@@ -56,6 +56,25 @@ public sealed class SqlitePrivateClientAuthenticationStoreTests
     }
 
     [Fact]
+    public async Task ExpiredPairingChallengeCannotCreateAClient()
+    {
+        using var directory = new TemporaryDirectory();
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 8, 31, 10, 0, 0, TimeSpan.Zero));
+        var service = CreateService(directory.Path, clock);
+        var challenge = await service.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.CreateClient,
+            null,
+            TimeSpan.FromMinutes(1),
+            CancellationToken.None);
+        clock.Advance(TimeSpan.FromMinutes(1));
+
+        var credential = await service.CompleteClientPairingAsync(
+            challenge.Secret, "owner-a", "Terminal", CancellationToken.None);
+
+        Assert.Null(credential);
+    }
+
+    [Fact]
     public async Task RevocationAndExpirationPreventSessionResolution()
     {
         using var directory = new TemporaryDirectory();
