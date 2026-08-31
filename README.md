@@ -466,12 +466,6 @@ DPAPI almacenado ya no es válido, informa de la recuperación con
 `BaseUrl` acepta únicamente HTTP(S) en loopback; los clientes remotos requerirán
 transporte autenticado y cifrado en una fase futura.
 
-El cliente abre un token bearer temporal al iniciar y no lo escribe en disco. La
-credencial del cliente se protege con DPAPI para el usuario actual cuando está
-disponible; si falla, se solicita manualmente y no se persiste. La API key solo se usa
-con `-UseEducationalApiKeyMigration` para una migración explícita de Development en
-loopback.
-
 Los comandos interactivos son `/help`, `/new`, `/provider fake`, `/provider ollama`,
 `/scenario <nombre>`, `/info` y `/exit`. El proveedor fake admite actualmente
 `direct`, `time` y `temperature`; el cliente muestra este modo de forma visible para
