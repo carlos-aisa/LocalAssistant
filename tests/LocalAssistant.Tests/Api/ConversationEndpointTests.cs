@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using LocalAssistant.Api.Security;
+using LocalAssistant.Core.Security.PrivateClients;
 using LocalAssistant.Core.Tools;
 using LocalAssistant.Infrastructure.LanguageModels.Ollama;
 using LocalAssistant.Tests.TestDoubles;
@@ -47,6 +48,40 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
         Assert.Equal(1, root.GetProperty("iterations").GetInt32());
         Assert.Empty(root.GetProperty("tools").EnumerateArray());
         Assert.Equal(JsonValueKind.Null, root.GetProperty("error").ValueKind);
+    }
+
+    [Fact]
+    public async Task PrivateBearerSessionAuthenticatesAnApiRequest()
+    {
+        using var factory = new LocalAssistantApiFactory();
+        using var client = factory.CreateClient();
+        var installation = factory.Services.GetRequiredService<IInstallationIdentityStore>();
+        var owner = await installation.BootstrapAsync(CancellationToken.None);
+        var authentication = factory.Services.GetRequiredService<PrivateClientAuthenticationService>();
+        var challenge = await authentication.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.CreateClient,
+            null,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+        var credential = await authentication.CompleteClientPairingAsync(
+            challenge.Secret,
+            owner.OwnerPrincipalId!,
+            "Test client",
+            CancellationToken.None);
+        var session = await authentication.CreateSessionAsync(
+            credential!.Client.ClientId,
+            credential.Secret,
+            TimeSpan.FromHours(1),
+            CancellationToken.None);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/conversations/messages")
+        {
+            Content = JsonContent.Create(new { message = "Hello", scenario = "direct" }),
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session!.Token);
+        using var response = await client.SendAsync(request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
@@ -810,6 +845,7 @@ public sealed class LocalAssistantApiFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        builder.UseSetting("LocalAssistant:PrivateClients:AllowEducationalApiKeyMigration", "true");
         builder.UseSetting(
             "LocalAssistant:Installation:StateDirectory",
             _installationStateDirectory);
@@ -817,6 +853,7 @@ public sealed class LocalAssistantApiFactory : WebApplicationFactory<Program>
         {
             services.AddSingleton<TimeProvider>(
                 new ManualTimeProvider(new DateTimeOffset(2026, 8, 17, 14, 30, 0, TimeSpan.Zero)));
+            services.AddSingleton<ILoopbackRequestPolicy, TestLoopbackRequestPolicy>();
         });
     }
 
@@ -828,6 +865,11 @@ public sealed class LocalAssistantApiFactory : WebApplicationFactory<Program>
             Directory.Delete(_installationStateDirectory, recursive: true);
         }
     }
+}
+
+file sealed class TestLoopbackRequestPolicy : ILoopbackRequestPolicy
+{
+    public bool IsLoopback(Microsoft.AspNetCore.Http.HttpContext context) => true;
 }
 
 file sealed class ConfirmationTemperatureTool : ITool

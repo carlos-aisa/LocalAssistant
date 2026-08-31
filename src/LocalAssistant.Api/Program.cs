@@ -131,9 +131,13 @@ builder.Services.AddSingleton<IUserProfileStore>(services =>
 builder.Services.AddSingleton<IHouseholdProfileStore>(services =>
     services.GetRequiredService<FileStableProfileStores>());
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<ILoopbackRequestPolicy, ConnectionLoopbackRequestPolicy>();
 builder.Services.AddAuthentication(LocalApiKeyAuthenticationDefaults.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, LocalApiKeyAuthenticationHandler>(
         LocalApiKeyAuthenticationDefaults.SchemeName,
+        _ => { })
+    .AddScheme<AuthenticationSchemeOptions, PrivateBearerAuthenticationHandler>(
+        PrivateBearerAuthenticationDefaults.SchemeName,
         _ => { });
 builder.Services.AddSingleton<IToolPolicyContextAccessor, HttpContextToolPolicyContextAccessor>();
 builder.Services.AddSingleton<ITool, CurrentTimeTool>();
@@ -382,15 +386,21 @@ if (localIdentityOptions.Enabled && installationIdentity is not null)
 app.UseAuthentication();
 app.Use(async (context, next) =>
 {
-    if (context.Request.Path.StartsWithSegments("/api") &&
-        context.Request.Headers.ContainsKey(LocalApiKeyAuthenticationDefaults.HeaderName))
+    if (context.Request.Path.StartsWithSegments("/api"))
     {
-        var authentication = await context.AuthenticateAsync(
-            LocalApiKeyAuthenticationDefaults.SchemeName);
-        if (!authentication.Succeeded)
+        var scheme = context.Request.Headers.ContainsKey(LocalApiKeyAuthenticationDefaults.HeaderName)
+            ? LocalApiKeyAuthenticationDefaults.SchemeName
+            : context.Request.Headers.Authorization.Count > 0
+                ? PrivateBearerAuthenticationDefaults.SchemeName
+                : null;
+        if (scheme is not null)
         {
-            await context.ChallengeAsync(LocalApiKeyAuthenticationDefaults.SchemeName);
-            return;
+            var authentication = await context.AuthenticateAsync(scheme);
+            if (!authentication.Succeeded)
+            {
+                await context.ChallengeAsync(scheme);
+                return;
+            }
         }
     }
 

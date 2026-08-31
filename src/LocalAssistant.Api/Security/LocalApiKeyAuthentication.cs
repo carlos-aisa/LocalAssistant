@@ -31,17 +31,26 @@ public sealed class LocalApiKeyAuthenticationHandler : AuthenticationHandler<Aut
 {
     private readonly LocalIdentityOptions _identityOptions;
     private readonly IInstallationIdentityStore _installationIdentityStore;
+    private readonly IHostEnvironment _environment;
+    private readonly PrivateClientOptions _privateClientOptions;
+    private readonly ILoopbackRequestPolicy _loopbackRequestPolicy;
 
     public LocalApiKeyAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
         System.Text.Encodings.Web.UrlEncoder encoder,
         IOptions<LocalIdentityOptions> identityOptions,
-        IInstallationIdentityStore installationIdentityStore)
+        IInstallationIdentityStore installationIdentityStore,
+        IHostEnvironment environment,
+        IOptions<PrivateClientOptions> privateClientOptions,
+        ILoopbackRequestPolicy loopbackRequestPolicy)
         : base(options, logger, encoder)
     {
         _identityOptions = identityOptions.Value;
         _installationIdentityStore = installationIdentityStore;
+        _environment = environment;
+        _privateClientOptions = privateClientOptions.Value;
+        _loopbackRequestPolicy = loopbackRequestPolicy;
     }
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -49,6 +58,13 @@ public sealed class LocalApiKeyAuthenticationHandler : AuthenticationHandler<Aut
         if (!Request.Headers.TryGetValue(LocalApiKeyAuthenticationDefaults.HeaderName, out var values))
         {
             return AuthenticateResult.NoResult();
+        }
+
+        if (!(_environment.IsDevelopment() || _environment.IsEnvironment("Testing")) ||
+            !_privateClientOptions.AllowEducationalApiKeyMigration ||
+            !_loopbackRequestPolicy.IsLoopback(Context))
+        {
+            return AuthenticateResult.Fail("The API key migration path is unavailable.");
         }
 
         var effectiveIdentity = _identityOptions.Enabled
