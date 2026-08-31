@@ -610,6 +610,21 @@ sensible. Antes de habilitar captura real deberán cumplirse estos límites:
   del usuario y salida TTS sin ocultar el estado de captura.
 - Un dispositivo desconectado, en error o silenciado tendrá un estado visible y no
   se considerará disponible para enrutar respuestas.
+- Las transcripciones tendrán propietario y retención propios; no se registrarán
+  audio ni transcripciones completas por defecto.
+- STT y TTS externos atravesarán la política de egreso. Una solicitud de síntesis no
+  incluirá memoria o conversación que no sea necesaria para materializar el texto.
+- Si la síntesis es central, sus credenciales no residirán en clientes ordinarios ni
+  satélites. Streams y referencias temporales serán autenticados, de duración corta,
+  no adivinables y protegidos frente a replay.
+- Se limitarán tamaño, duración, bitrate, concurrencia y coste. La cancelación deberá
+  detener tanto la reproducción como los recursos temporales asociados.
+- La política de salida evitará reproducción cruzada entre usuarios o habitaciones y
+  derivará información sensible a un dispositivo personal. Nest Hub y altavoces
+  compartidos son salidas potencialmente públicas.
+- Los clientes no decidirán por sí mismos que una respuesta privada puede sonar en
+  una habitación. Audio y animaciones podrán desactivarse; al llegar STT, la captura
+  tendrá indicador visible y el corte físico del micrófono seguirá prevaleciendo.
 
 Los Google Nest Hub se tratarán como salidas Cast. No se solicitará ni diseñará
 acceso a su micrófono, audio capturado, wake word interno o reemplazo de Google

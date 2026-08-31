@@ -24,17 +24,12 @@ habitaciones.
   experimental de operación local privada, confirmada e idempotente en memoria. Solo
   crea un registro temporal sin aviso; la siguiente herramienta con efecto deberá
   definir su garantía según su almacenamiento o destino real.
-- **Horizonte cercano:** tutor de inglés escrito con role-play, correcciones e
-  informe; persistencia e identidad de la fase 4; capacidad mínima de módulos,
-  `Controlled Local Resources`, migración preparada y `BatchCooking` MVP. Home
-  Assistant y voz podrán avanzar sobre dependencias comunes sin bloquear esos flujos
-  escritos.
-- **Horizonte intermedio:** perfil temporal de aprendizaje, conversación inglesa de
-  baja latencia, automatizaciones y dispositivos para `BatchCooking`, extensibilidad
-  estabilizada, agente simulado y ejecución aislada.
-- **Horizonte avanzado:** tutor desde satélites, pronunciación específica,
-  conocimiento externo, ciclo conversacional de proyectos completo y primeras
-  skills o tools mediante `Controlled Self-Extension`.
+- **Muy cercano:** cliente terminal, TUI, salida hablada y meteorología.
+- **Cercano:** módulos mínimos, migración y `BatchCooking` MVP.
+- **Intermedio:** núcleo del tutor, canal de voz e integración oral.
+- **Posterior:** Home Assistant y despliegue de voz por habitaciones.
+- **Avanzado:** Maps, Calendar, pronunciación, automatizaciones, proyectos
+  conversacionales y `Controlled Self-Extension` tras estabilizar módulos.
 - **Ideas exploratorias:** importaciones multimodales, integraciones comerciales,
   optimización avanzada, módulos completos generados, propuestas proactivas y
   cambios controlados del núcleo mediante el desarrollo normal. No constituyen
@@ -213,7 +208,71 @@ watchers, base vectorial y acceso de módulos a carpetas no registradas.
 **Criterio de finalización:** persistencia, concurrencia, aislamiento por principal,
 retención y primer flujo documental están cubiertos por pruebas y documentación.
 
-## Fase 5 — Home Assistant
+## Fases 5–16 — Secuencia vigente posterior a la fase 4
+
+El orden expresa prioridad y dependencias, no fechas.
+Cada fase entrega un resultado cerrado, demostrable y utilizable.
+
+### Fase 5 — Cliente terminal .NET, TUI y salida hablada incremental
+
+Cliente .NET independiente de la API con credencial local segura.
+Conversaciones nuevas y reanudables, completion, confirmaciones y errores claros.
+`Chat.ps1` permanece como diagnóstico y fallback de desarrollo.
+La TUI mostrará estados reales, animación accesible, silenciar, cancelar y repetir.
+La salida hablada será intercambiable y cancelable, con degradación a texto.
+Conversación/control y TTS/reproducción son planos distintos.
+No se fija proveedor, ubicación de síntesis ni transporte multimedia.
+
+### Fase 6 — Tools Gateway y meteorología
+
+Primer vertical slice externo: tiempo actual y previsión acotada, con ubicación mínima.
+Incluye procedencia, caché, límites y degradación honesta.
+No habilita Internet libre, web general, Maps ni Calendar.
+
+### Fase 7 — Plataforma mínima de módulos y migración de BatchCooking
+
+Registro, capacidades, activación, persistencia aislada y tests de contrato.
+Recursos locales controlados y migración previsualizable, confirmada y trazable.
+Markdown, JSON, CSV y solo la plantilla Excel real.
+
+### Fase 8 — BatchCooking MVP
+
+Preparación semanal completa por conversación, con trazabilidad y explicación.
+Incluye inventario, menú, preparación, conservación, compra y feedback.
+No incluye voz ni integraciones externas.
+
+### Fase 9 — Núcleo del Conversational English Coach independiente del canal
+
+El texto valida inicialmente el núcleo, pero no es un producto "tutor escrito".
+No conoce audio, micrófono, STT, TTS, wake word, habitaciones ni dispositivos.
+Incluye actividad especializada, correcciones, evaluación, informe y perfil temporal.
+
+### Fase 10 — Canal de voz en un único dispositivo
+
+El mismo núcleo funciona por terminal o voz, con STT, captura, TTS y reproducción.
+La voz no autentica al hablante.
+No incluye satélites, multiroom, pronunciación ni micrófono de Nest Hub.
+
+### Fase 11 — English Coach oral y conversación natural
+
+Integra VAD, barge-in, prevención de eco, cancelación y evaluación posterior.
+Pronunciación precisa y retención de audio por defecto permanecen fuera.
+
+### Fase 12 — Home Assistant
+
+Consulta entidades allowlisted y ejecuta una primera acción segura confirmada.
+Su desplazamiento es prioridad de producto, no dependencia técnica.
+
+### Fases 13–16 — Voz doméstica distribuida
+
+13: primer satélite. 14: Nest Hub solo como salida. 15: routing multiroom.
+16: transferencia explícita con privacidad y auditoría.
+
+## Plan sustituido — referencia de planificación anterior
+
+El detalle de las secciones siguientes queda sustituido por la secuencia vigente.
+
+### Fase 5 anterior — Home Assistant
 
 **Resultado utilizable:** Jarvis consulta un conjunto explícito de entidades de Home
 Assistant y mantiene preparadas las políticas para acciones confirmadas.
@@ -238,7 +297,7 @@ confirmación de dispositivos con efectos relevantes.
 **Criterio de finalización:** consulta permitida, denegación, fallo del conector y
 auditoría funcionan en un vertical slice reproducible.
 
-## Fase 6 — Pipeline de voz en un único dispositivo
+### Fase 6 anterior — Pipeline de voz en un único dispositivo
 
 **Resultado utilizable:** una conversación completa por voz funciona en un único
 dispositivo con captura visible y cancelable.
@@ -267,7 +326,7 @@ micrófono.
 **Criterio de finalización:** captura, transcripción, respuesta, TTS, cancelación y
 estados de error se validan en un solo equipo.
 
-## Fase 7 — Primer satélite de habitación
+### Fase 7 anterior — Primer satélite de habitación
 
 **Resultado utilizable:** un satélite autenticado mantiene una conversación con el
 núcleo desde una habitación registrada.
@@ -293,7 +352,7 @@ selección avanzada de salidas.
 **Criterio de finalización:** un prototipo elegido completa el flujo autenticado con
 estado observable y recuperación básica de errores.
 
-## Fase 8 — Nest Hub como salida de habitación
+### Fase 8 anterior — Nest Hub como salida de habitación
 
 **Resultado utilizable:** una conversación originada en la cocina puede responder
 por audio o pantalla en su Nest Hub registrado.
@@ -317,7 +376,7 @@ privado no adecuado para pantallas compartidas.
 **Criterio de finalización:** Cast y visualización funcionan con selección correcta
 de habitación, fallback y controles de privacidad probados.
 
-## Fase 9 — Varios satélites y routing de habitación
+### Fase 9 anterior — Varios satélites y routing de habitación
 
 **Resultado utilizable:** varias habitaciones pueden conversar sin mezclar
 identidades, sesiones ni dispositivos de entrada y salida.
@@ -339,7 +398,7 @@ entre habitaciones.
 **Criterio de finalización:** selección, fallback, aislamiento y diagnóstico se
 validan con varios dispositivos registrados.
 
-## Fase 10 — Conversación de voz natural
+### Fase 10 anterior — Conversación de voz natural
 
 **Resultado utilizable:** la interacción por voz admite turnos naturales e
 interrupción sin que el asistente procese su propia salida.
@@ -361,7 +420,7 @@ suficiente y transferencia implícita de sesiones privadas.
 **Criterio de finalización:** eco, barge-in, final de turno y recuperación se validan
 en escenarios reproducibles.
 
-## Fase 11 — Transferencia entre habitaciones
+### Fase 11 anterior — Transferencia entre habitaciones
 
 **Resultado utilizable:** el usuario transfiere explícitamente una conversación a
 otra habitación sin perder continuidad ni propiedad.
@@ -460,18 +519,22 @@ identificación probable por voz, `step-up`, privacidad de salidas y auditoría
 avanzada. Acciones domésticas sensibles, repositorios y autoextensión dependerán del
 nivel correspondiente, no solo de poseer el rol de administrador.
 
-## Líneas posteriores o paralelas
+## Anexo histórico — líneas y dependencias del plan sustituido
+
+Estas líneas conservan decisiones de alcance útiles, pero sus fases y dependencias
+numéricas no son vigentes. La secuencia vigente es la definida arriba.
 
 ### Conversational English Coach
 
-El tutor escrito podrá empezar tras el núcleo conversacional y no dependerá de Home
-Assistant, satélites ni voz. Será una capacidad funcional fuera del núcleo y
-reutilizará identidad, persistencia y trabajos cuando sus incrementos los necesiten.
+El núcleo del tutor se validará mediante texto tras la fase 8 y antes de la entrada de
+voz; el texto no es un producto independiente. Reutilizará identidad, persistencia y
+trabajos cuando sus incrementos los necesiten, sin depender de Home Assistant ni de
+satélites.
 
-#### Hito 1 — Conversación escrita y role-play
+#### Hito 1 — Validación textual del núcleo y role-play
 
-**Resultado utilizable:** el usuario completa en texto una conversación libre o una
-entrevista técnica en inglés y recibe un informe revisable.
+**Resultado utilizable:** el núcleo completa mediante texto una conversación libre o
+una entrevista técnica y recibe un informe revisable; la interfaz es scaffolding.
 
 **Dependencias:** fases 1 y 2; proveedor simulado para tests y modelo local opcional.
 
@@ -745,9 +808,8 @@ seguirán registradas mediante allowlist.
 - Centralizar selección de proveedor, credenciales, destinos permitidos, timeouts,
   rate limits, presupuestos de coste, caché, errores, auditoría y validación final
   de egreso.
-- Implementar primero una búsqueda web de solo lectura con un proveedor sustituible
-  y resultados que conserven URL, título, fragmento, fecha conocida y momento de
-  recuperación.
+- Implementar primero meteorología con un proveedor sustituible, tiempo actual y
+  previsión acotada, ubicación mínima, procedencia y momento de recuperación.
 - Evaluar calidad, latencia, coste y privacidad con un conjunto reproducible antes
   de añadir más proveedores.
 
