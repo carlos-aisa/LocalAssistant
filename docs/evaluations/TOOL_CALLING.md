@@ -17,8 +17,8 @@ hardware local.
 
 Los cuatro casos de perfil usan datos sintéticos y esperan una confirmación pendiente;
 no ejecutan la herramienta ni persisten datos. Requieren que
-`LOCALASSISTANT_API_KEY` contenga una API key de propietario con los scopes concretos
-de perfil. Cada caso se repite tres veces por defecto. Las preguntas de fecha u hora actual no
+`LOCALASSISTANT_ACCESS_TOKEN` contenga un bearer de cliente privado con los scopes
+concretos de perfil. Cada caso se repite tres veces por defecto. Las preguntas de fecha u hora actual no
 dependen de que el modelo solicite una herramienta: el servidor añade antes de la
 llamada al proveedor la traza exitosa `authoritative-current-time` con el nombre
 `get_current_time`. El evaluador exige esa traza, aunque el modelo responda de forma

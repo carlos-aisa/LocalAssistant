@@ -4,6 +4,8 @@ using System.Text;
 using System.Text.Json;
 using LocalAssistant.Api.Security;
 using LocalAssistant.Core.Documents;
+using LocalAssistant.Core.Security.PrivateClients;
+using LocalAssistant.Tests.TestDoubles;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -180,6 +182,52 @@ public sealed class DocumentEndpointTests
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RegisteredPrivateBearerCanSearchDocuments()
+    {
+        using var directory = new TemporaryDirectory();
+        File.WriteAllText(Path.Combine(directory.Path, "private.txt"), "private content");
+        var owner = new InstallationIdentity(
+            "test-installation",
+            "document-owner",
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("legacy-hash"))),
+            new HashSet<string>(["documents.search"], StringComparer.Ordinal));
+        using var factory = new LocalAssistantApiFactory().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("LocalAssistant:PrivateClients:DatabasePath", Path.Combine(directory.Path, "clients.db"));
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IInstallationIdentityStore>();
+                services.AddSingleton<IInstallationIdentityStore>(new StaticInstallationIdentityStore(owner));
+                services.RemoveAll<ILocalDocumentRoot>();
+                services.AddSingleton<ILocalDocumentRoot>(new StaticLocalDocumentRoot(directory.Path));
+            });
+        });
+        var authentication = factory.Services.GetRequiredService<PrivateClientAuthenticationService>();
+        var challenge = await authentication.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.CreateClient,
+            null,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+        var credential = await authentication.CompleteClientPairingAsync(
+            challenge.Secret,
+            owner.OwnerPrincipalId,
+            "Document test client",
+            CancellationToken.None);
+        var session = await authentication.CreateSessionAsync(
+            credential!.Client.ClientId,
+            credential.Secret,
+            TimeSpan.FromHours(1),
+            CancellationToken.None);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session!.Token);
+
+        using var response = await client.GetAsync("/api/documents", CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]

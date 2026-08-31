@@ -98,12 +98,11 @@ coste, confirmación explícita y scopes necesarios. Una lectura puede exponer
 presencia, calendario, correo, ubicación, cámaras, memoria o documentos y no se
 considera segura solo por no modificar estado. El orquestador filtra el catálogo que
 recibe el proveedor y vuelve a evaluar antes de ejecutar. El contexto procede del
-límite HTTP: sin API key es anónimo; con una API key válida, el adaptador crea un
-principal y scopes definidos exclusivamente por el servidor. La identidad puede
-proceder del bootstrap local de la instalación o de la configuración educativa
-existente, pero nunca de ambas fuentes a la vez. Una herramienta privada, sensible,
-con scope ausente o externa queda denegada. La API key es opcional para las
-herramientas públicas y no constituye un modelo completo de autorización.
+límite HTTP: sin bearer es anónimo; con un bearer válido, el adaptador crea un
+principal, cliente y sesión, y asigna scopes definidos exclusivamente por el servidor.
+Una herramienta privada, sensible, con scope ausente o externa queda denegada. Las
+herramientas públicas no requieren autenticación y la API key histórica no es una
+frontera HTTP.
 
 La confirmación pendiente conserva también el principal que originó la llamada. La
 resolución debe provenir del mismo principal antes de consumirla; una discrepancia se
@@ -138,12 +137,11 @@ ocultar esas diferencias.
 ## Dirección futura: identidad y autorización domésticas
 
 El bootstrap implementado identifica una instalación y crea un único propietario
-local, con una API key cuyo hash permanece en el estado de instalación. La API key
-configurada sigue disponible como frontera educativa. Ninguna de las dos opciones
-modela todavía un hogar, usuarios, invitados, propiedad persistente ni niveles de
-confianza. La evolución sustituirá estos adaptadores en el límite de entrada sin
-trasladar SDKs de identidad al núcleo ni permitir que el cliente o el LLM creen
-permisos.
+local. Los clientes privados registrados obtienen credenciales revocables y sesiones
+bearer temporales. La API key histórica solo deja un hash para compatibilidad de
+estado; no está disponible como frontera HTTP. Esto todavía no modela hogar, usuarios,
+invitados ni niveles de confianza. La evolución no trasladará SDKs de identidad al
+núcleo ni permitirá que el cliente o el LLM creen permisos.
 
 La persistencia local de conversaciones autenticadas se implementa con SQLite, elegida para el
 patrón actual de recuperación por conversación, propiedad y anexado ordenado de

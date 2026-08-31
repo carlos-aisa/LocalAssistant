@@ -126,8 +126,8 @@ porque el principal tenga permiso para consultarla.
 La primera instalación tendrá un bootstrap de propietario de un solo uso, limitado a
 configuración inicial y resistente a reclamaciones desde la red. Recuperar al
 administrador será un proceso explícito y auditable, no una credencial predeterminada
-ni una puerta trasera. La API key local actual es un peldaño educativo y no representa
-este modelo doméstico completo.
+ni una puerta trasera. Los clientes privados y sus sesiones bearer son la frontera
+actual y no representan todavía este modelo doméstico completo.
 
 ## Conversational English Coach
 

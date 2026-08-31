@@ -71,7 +71,7 @@ public sealed class PrivateBearerAuthenticationHandler : AuthenticationHandler<A
             new(PrivateBearerAuthenticationDefaults.SessionIdClaimType, session.SessionId),
         };
         claims.AddRange(installationIdentity.GrantedScopes.Select(
-            scope => new Claim(LocalApiKeyAuthenticationDefaults.ScopeClaimType, scope)));
+            scope => new Claim(AuthorizationClaimTypes.Scope, scope)));
         var identity = new ClaimsIdentity(claims, Scheme.Name);
         return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name));
     }
