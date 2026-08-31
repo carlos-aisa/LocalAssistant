@@ -28,6 +28,7 @@ public sealed class SqlitePrivateClientAuthenticationStoreTests
         Assert.Equal("owner-a", first.Client.OwnerPrincipalId);
         Assert.Equal("Terminal", first.Client.DisplayName);
         Assert.NotEqual(first.Secret, PrivateClientAuthenticationService.HashSecret(first.Secret));
+        Assert.DoesNotContain(first.Secret, File.ReadAllText(Path.Combine(directory.Path, "private-clients.db")));
     }
 
     [Fact]

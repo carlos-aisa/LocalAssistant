@@ -1,5 +1,18 @@
 # Operación del almacenamiento privado local
 
+## Estado de clientes privados
+
+El estado de clientes privados se guarda por defecto como `private-clients.db` en el
+directorio de estado de LocalAssistant. Contiene hashes de credenciales, hashes de
+tokens, desafíos administrativos y metadatos de sesión, nunca sus secretos en texto
+claro. Debe recibir la misma protección de permisos, cifrado de volumen y copia de
+seguridad que el resto del almacenamiento privado.
+
+El cliente de terminal protege su credencial con DPAPI para el usuario actual de
+Windows cuando está disponible. Si DPAPI falla, solicita la credencial manualmente y
+no la persiste. Los tokens bearer son temporales y no deben copiarse a archivos,
+variables de entorno persistentes, logs ni backups.
+
 ## Almacenamiento privado local
 
 Cuando `LocalAssistant:ConversationPersistence:Enabled` está activado, la base de

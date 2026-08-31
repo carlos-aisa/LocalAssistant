@@ -1,5 +1,19 @@
 # Seguridad
 
+## Clientes privados y sesiones bearer
+
+Las interfaces privadas se autentican mediante clientes registrados. El servidor
+guarda hashes SHA-256 de las credenciales y de los tokens opacos; las credenciales se
+muestran solo en la creación o rotación, y el token bearer solo existe en memoria del
+cliente. La revocación de un cliente y la rotación de su credencial invalidan las
+sesiones relacionadas de forma transaccional.
+
+Los endpoints de sesión y administración se limitan a loopback. Esta limitación no
+protege frente a procesos locales maliciosos, por lo que los desafíos administrativos
+son de un solo uso y expiran. La API key previa no autentica interfaces privadas de
+forma normal: solo se permite como migración educativa explícita en Development y
+loopback.
+
 La primera iteración no es un producto listo para exposición pública. Establece
 límites que deben conservarse al añadir capacidades.
 
