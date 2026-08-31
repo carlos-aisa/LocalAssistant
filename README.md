@@ -194,6 +194,21 @@ La variable `LocalAssistant__Installation__StateDirectory` permite elegir una ru
 absoluta distinta para ese estado. No combines este bootstrap con la configuración
 `LocalAssistant__Identity__Enabled=true`.
 
+### Clientes privados y sesiones locales
+
+Las interfaces privadas usan clientes registrados y tokens bearer opacos temporales.
+Inicializa el primer cliente desde la consola local, despuÃ©s de crear el propietario:
+
+```powershell
+dotnet run --project src/LocalAssistant.Api -- --bootstrap-private-client
+```
+
+La credencial se muestra una sola vez. Las operaciones administrativas posteriores
+empiezan con `--create-administrative-challenge`; los desafÃ­os expiran y se consumen
+una vez. Los endpoints de sesiÃ³n y administraciÃ³n aceptan exclusivamente loopback.
+El token bearer solo debe permanecer en memoria. La API key educativa se limita a una
+migraciÃ³n explÃ­cita en `Development` y no es el acceso normal de clientes privados.
+
 ### Nombre global del asistente
 
 El perfil de instalación usa inicialmente el nombre `LocalAssistant` y lo guarda en

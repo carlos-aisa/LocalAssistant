@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using LocalAssistant.Api.Contracts;
 using LocalAssistant.Api.Security;
 using LocalAssistant.Core.Security.PrivateClients;
 using LocalAssistant.Core.Tools;
@@ -82,6 +83,37 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
         using var response = await client.SendAsync(request, CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PrivateClientEndpointsPairAndOpenALoopbackSession()
+    {
+        using var factory = new LocalAssistantApiFactory();
+        using var client = factory.CreateClient();
+        var installation = factory.Services.GetRequiredService<IInstallationIdentityStore>();
+        var owner = await installation.BootstrapAsync(CancellationToken.None);
+        var authentication = factory.Services.GetRequiredService<PrivateClientAuthenticationService>();
+        var challenge = await authentication.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.CreateClient,
+            null,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+
+        using var pairingResponse = await client.PostAsJsonAsync(
+            "/api/private/admin/pairings",
+            new { challenge = challenge.Secret, displayName = "Test client" },
+            CancellationToken.None);
+        var pairing = await pairingResponse.Content.ReadFromJsonAsync<PrivateClientCredentialResponse>(
+            cancellationToken: CancellationToken.None);
+        using var sessionResponse = await client.PostAsJsonAsync(
+            "/api/private/sessions",
+            new { clientId = pairing!.ClientId, credential = pairing.Credential },
+            CancellationToken.None);
+
+        Assert.Equal(InstallationBootstrapStatus.Created, owner.Status);
+        Assert.Equal(HttpStatusCode.OK, pairingResponse.StatusCode);
+        Assert.NotNull(pairing);
+        Assert.Equal(HttpStatusCode.OK, sessionResponse.StatusCode);
     }
 
     [Fact]

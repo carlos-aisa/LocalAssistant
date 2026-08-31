@@ -13,6 +13,69 @@ servers:
   - url: http://localhost:5100
     description: Local development
 paths:
+  /api/private/sessions:
+    post:
+      operationId: createPrivateSession
+      summary: Exchange a registered private-client credential for a temporary loopback bearer token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatePrivateSessionRequest" }
+      responses:
+        "200":
+          description: A temporary bearer token. The client must keep it in memory only.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PrivateSessionResponse" }
+        "400": { description: The client ID or credential is missing. }
+        "401": { description: The private-client credential is invalid or revoked. }
+        "404": { description: The request was not received through loopback. }
+  /api/private/admin/pairings:
+    post:
+      operationId: completePrivateClientPairing
+      summary: Consume a local administrative pairing challenge and return a new client credential once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CompletePrivateClientPairingRequest" }
+      responses:
+        "200":
+          description: The registered client and its one-time credential.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PrivateClientCredentialResponse" }
+        "400": { description: The request is malformed or no installation owner exists. }
+        "404": { description: "The challenge is invalid, expired, consumed, or the request is not loopback." }
+  /api/private/admin/credential-rotations:
+    post:
+      operationId: rotatePrivateClientCredential
+      summary: Consume an administrative challenge to rotate one private-client credential.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConsumeAdministrativeChallengeRequest" }
+      responses:
+        "200":
+          description: The replacement credential; existing sessions are invalidated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PrivateClientCredentialResponse" }
+        "404": { description: "The challenge is invalid, expired, consumed, or the request is not loopback." }
+  /api/private/admin/client-revocations:
+    post:
+      operationId: revokePrivateClient
+      summary: Consume an administrative challenge to revoke one private client and its sessions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConsumeAdministrativeChallengeRequest" }
+      responses:
+        "204": { description: The client and all of its sessions were revoked. }
+        "404": { description: "The challenge is invalid, expired, consumed, or the request is not loopback." }
   /health:
     get:
       operationId: getHealth
@@ -350,6 +413,36 @@ components:
         Optional local API key. When configured, it creates the server-defined
         principal and scopes used by the tool risk policy.
   schemas:
+    CreatePrivateSessionRequest:
+      type: object
+      required: [clientId, credential]
+      properties:
+        clientId: { type: string }
+        credential: { type: string, writeOnly: true }
+    PrivateSessionResponse:
+      type: object
+      required: [accessToken, expiresAtUtc]
+      properties:
+        accessToken: { type: string, writeOnly: true }
+        expiresAtUtc: { type: string, format: date-time }
+    CompletePrivateClientPairingRequest:
+      type: object
+      required: [challenge, displayName]
+      properties:
+        challenge: { type: string, writeOnly: true }
+        displayName: { type: string, maxLength: 128 }
+    ConsumeAdministrativeChallengeRequest:
+      type: object
+      required: [challenge]
+      properties:
+        challenge: { type: string, writeOnly: true }
+    PrivateClientCredentialResponse:
+      type: object
+      required: [clientId, displayName, credential]
+      properties:
+        clientId: { type: string }
+        displayName: { type: string }
+        credential: { type: string, writeOnly: true }
     HealthResponse:
       type: object
       required: [status]

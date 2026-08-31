@@ -410,6 +410,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapConversationEndpoints();
 app.MapDocumentEndpoints();
 app.MapPersonalMemoryEndpoints();
+app.MapPrivateClientEndpoints();
 
 app.Run();
 
