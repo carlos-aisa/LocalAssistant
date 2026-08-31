@@ -10,23 +10,36 @@ using LocalAssistant.Core.Memory;
 using LocalAssistant.Core.Orchestration;
 using LocalAssistant.Core.Profiles;
 using LocalAssistant.Core.Reminders;
+using LocalAssistant.Core.Security.PrivateClients;
 using LocalAssistant.Core.Security.ToolRisk;
 using LocalAssistant.Core.Tools;
 using LocalAssistant.Infrastructure.Conversations;
 using LocalAssistant.Infrastructure.Documents;
 using LocalAssistant.Infrastructure.LanguageModels.Ollama;
 using LocalAssistant.Infrastructure.Memory;
+using LocalAssistant.Infrastructure.Security.PrivateClients;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
-var bootstrapRequested = args.Any(argument =>
+var bootstrapOwnerRequested = args.Any(argument =>
     StringComparer.Ordinal.Equals(argument, "--bootstrap-owner"));
-if (bootstrapRequested && args.Length != 1)
+var bootstrapPrivateClientRequested = args.Any(argument =>
+    StringComparer.Ordinal.Equals(argument, "--bootstrap-private-client"));
+var createAdministrativeChallengeRequested = args.Any(argument =>
+    StringComparer.Ordinal.Equals(argument, "--create-administrative-challenge"));
+if (bootstrapOwnerRequested && args.Length != 1)
 {
     throw new InvalidOperationException("The --bootstrap-owner command does not accept additional arguments.");
 }
 
-var builder = WebApplication.CreateBuilder(bootstrapRequested ? [] : args);
+if (new[] { bootstrapOwnerRequested, bootstrapPrivateClientRequested, createAdministrativeChallengeRequested }
+    .Count(requested => requested) > 1)
+{
+    throw new InvalidOperationException("Only one local administration command can be specified.");
+}
+
+var builder = WebApplication.CreateBuilder(
+    bootstrapOwnerRequested || bootstrapPrivateClientRequested || createAdministrativeChallengeRequested ? [] : args);
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddDataProtection();
@@ -95,6 +108,22 @@ builder.Services.AddSingleton<IToolAuditSink, InMemoryToolAuditSink>();
 builder.Services.AddSingleton<IReminderStore, InMemoryReminderStore>();
 builder.Services.AddSingleton<IToolRiskPolicy, DefaultToolRiskPolicy>();
 builder.Services.AddSingleton<IInstallationIdentityStore, FileInstallationIdentityStore>();
+builder.Services.AddSingleton<IPrivateClientAuthenticationStore>(services =>
+{
+    var options = services.GetRequiredService<IOptions<PrivateClientOptions>>().Value;
+    var databasePath = options.DatabasePath;
+    if (string.IsNullOrWhiteSpace(databasePath))
+    {
+        var installation = services.GetRequiredService<IOptions<InstallationIdentityOptions>>().Value;
+        var stateDirectory = installation.StateDirectory ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "LocalAssistant");
+        databasePath = Path.Combine(stateDirectory, "private-clients.db");
+    }
+
+    return new SqlitePrivateClientAuthenticationStore(databasePath);
+});
+builder.Services.AddSingleton<PrivateClientAuthenticationService>();
 builder.Services.AddSingleton<IAssistantProfileStore, FileAssistantProfileStore>();
 builder.Services.AddSingleton<FileStableProfileStores>();
 builder.Services.AddSingleton<IUserProfileStore>(services =>
@@ -102,9 +131,13 @@ builder.Services.AddSingleton<IUserProfileStore>(services =>
 builder.Services.AddSingleton<IHouseholdProfileStore>(services =>
     services.GetRequiredService<FileStableProfileStores>());
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<ILoopbackRequestPolicy, ConnectionLoopbackRequestPolicy>();
 builder.Services.AddAuthentication(LocalApiKeyAuthenticationDefaults.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, LocalApiKeyAuthenticationHandler>(
         LocalApiKeyAuthenticationDefaults.SchemeName,
+        _ => { })
+    .AddScheme<AuthenticationSchemeOptions, PrivateBearerAuthenticationHandler>(
+        PrivateBearerAuthenticationDefaults.SchemeName,
         _ => { });
 builder.Services.AddSingleton<IToolPolicyContextAccessor, HttpContextToolPolicyContextAccessor>();
 builder.Services.AddSingleton<ITool, CurrentTimeTool>();
@@ -189,8 +222,17 @@ builder.Services.AddOptions<DocumentSemanticSearchOptions>()
                    options.EmbeddingTimeout > TimeSpan.Zero,
         "Document semantic search limits must be valid.")
     .ValidateOnStart();
+builder.Services.AddOptions<PrivateClientOptions>()
+    .Bind(builder.Configuration.GetSection(PrivateClientOptions.SectionName))
+    .Validate(
+        options => string.IsNullOrWhiteSpace(options.DatabasePath) || Path.IsPathFullyQualified(options.DatabasePath),
+        "Private client database path must be absolute.")
+    .Validate(
+        options => options.AdministrativeChallengeLifetime > TimeSpan.Zero && options.SessionLifetime > TimeSpan.Zero,
+        "Private client lifetimes must be greater than zero.")
+    .ValidateOnStart();
 
-if (bootstrapRequested)
+if (bootstrapOwnerRequested)
 {
     var bootstrapApplication = builder.Build();
     var configuredIdentity = bootstrapApplication.Services
@@ -219,6 +261,116 @@ if (bootstrapRequested)
     return;
 }
 
+if (bootstrapPrivateClientRequested)
+{
+    if (args.Length > 2 || (args.Length == 2 && !args[1].StartsWith("--display-name=", StringComparison.Ordinal)))
+    {
+        throw new InvalidOperationException(
+            "The --bootstrap-private-client command accepts only an optional --display-name=<name> argument.");
+    }
+
+    var displayName = args.Length == 2
+        ? args[1]["--display-name=".Length..].Trim()
+        : "Local terminal client";
+    if (string.IsNullOrWhiteSpace(displayName) || displayName.Length > 128)
+    {
+        throw new InvalidOperationException("The private client display name must contain between 1 and 128 characters.");
+    }
+
+    var bootstrapApplication = builder.Build();
+    var privateClientInstallationIdentity = await bootstrapApplication.Services
+        .GetRequiredService<IInstallationIdentityStore>()
+        .GetAsync(CancellationToken.None);
+    var clientStore = bootstrapApplication.Services.GetRequiredService<IPrivateClientAuthenticationStore>();
+    if (privateClientInstallationIdentity is null || await clientStore.HasClientsAsync(CancellationToken.None))
+    {
+        await bootstrapApplication.DisposeAsync();
+        throw new InvalidOperationException(
+            "Private client bootstrap requires an existing installation owner and no registered private clients.");
+    }
+
+    var authentication = bootstrapApplication.Services.GetRequiredService<PrivateClientAuthenticationService>();
+    var challenge = await authentication.CreateAdministrativeChallengeAsync(
+        AdministrativeChallengeOperation.CreateClient,
+        null,
+        TimeSpan.FromMinutes(1),
+        CancellationToken.None);
+    var credential = await authentication.CompleteClientPairingAsync(
+        challenge.Secret,
+        privateClientInstallationIdentity.OwnerPrincipalId,
+        displayName,
+        CancellationToken.None);
+    await bootstrapApplication.DisposeAsync();
+    if (credential is null)
+    {
+        throw new InvalidOperationException("Private client bootstrap could not be completed.");
+    }
+
+    Console.WriteLine("Private client bootstrap completed. Store this credential now; it will not be shown again.");
+    Console.WriteLine($"Client ID: {credential.Client.ClientId}");
+    Console.WriteLine($"Credential: {credential.Secret}");
+    return;
+}
+
+if (createAdministrativeChallengeRequested)
+{
+    var commandArguments = args.Skip(1).ToArray();
+    var operationArgument = commandArguments.SingleOrDefault(argument => argument.StartsWith("--operation=", StringComparison.Ordinal));
+    var clientIdArgument = commandArguments.SingleOrDefault(argument => argument.StartsWith("--client-id=", StringComparison.Ordinal));
+    if (operationArgument is null || commandArguments.Length is < 1 or > 2 ||
+        commandArguments.Any(argument => !ReferenceEquals(argument, operationArgument) && !ReferenceEquals(argument, clientIdArgument)))
+    {
+        throw new InvalidOperationException(
+            "Use --create-administrative-challenge --operation=pair|rotate|revoke [--client-id=<id>].");
+    }
+
+    var operation = operationArgument["--operation=".Length..].ToLowerInvariant() switch
+    {
+        "pair" => AdministrativeChallengeOperation.CreateClient,
+        "rotate" => AdministrativeChallengeOperation.RotateCredential,
+        "revoke" => AdministrativeChallengeOperation.RevokeClient,
+        _ => throw new InvalidOperationException("The administrative operation must be pair, rotate, or revoke."),
+    };
+    var clientId = clientIdArgument?["--client-id=".Length..];
+    if ((operation == AdministrativeChallengeOperation.CreateClient) != string.IsNullOrWhiteSpace(clientId))
+    {
+        throw new InvalidOperationException("Only rotate and revoke require a client ID.");
+    }
+
+    var administrativeApplication = builder.Build();
+    var administrativeInstallationIdentity = await administrativeApplication.Services
+        .GetRequiredService<IInstallationIdentityStore>()
+        .GetAsync(CancellationToken.None);
+    var clientStore = administrativeApplication.Services.GetRequiredService<IPrivateClientAuthenticationStore>();
+    if (administrativeInstallationIdentity is null || !await clientStore.HasClientsAsync(CancellationToken.None))
+    {
+        await administrativeApplication.DisposeAsync();
+        throw new InvalidOperationException(
+            "Administrative challenges require an installation owner and at least one registered private client.");
+    }
+
+    if (operation != AdministrativeChallengeOperation.CreateClient &&
+        await clientStore.FindActiveClientAsync(clientId!, CancellationToken.None) is null)
+    {
+        await administrativeApplication.DisposeAsync();
+        throw new InvalidOperationException("The requested private client is not active.");
+    }
+
+    var options = administrativeApplication.Services.GetRequiredService<IOptions<PrivateClientOptions>>().Value;
+    var authentication = administrativeApplication.Services.GetRequiredService<PrivateClientAuthenticationService>();
+    var challenge = await authentication.CreateAdministrativeChallengeAsync(
+        operation,
+        clientId,
+        options.AdministrativeChallengeLifetime,
+        CancellationToken.None);
+    await administrativeApplication.DisposeAsync();
+    Console.WriteLine("Administrative challenge created. It will not be shown again.");
+    Console.WriteLine($"Operation: {operation}");
+    Console.WriteLine($"Expires at UTC: {challenge.Challenge.ExpiresAtUtc:O}");
+    Console.WriteLine($"Challenge: {challenge.Secret}");
+    return;
+}
+
 var app = builder.Build();
 
 var localIdentityOptions = app.Services.GetRequiredService<IOptions<LocalIdentityOptions>>().Value;
@@ -234,15 +386,21 @@ if (localIdentityOptions.Enabled && installationIdentity is not null)
 app.UseAuthentication();
 app.Use(async (context, next) =>
 {
-    if (context.Request.Path.StartsWithSegments("/api") &&
-        context.Request.Headers.ContainsKey(LocalApiKeyAuthenticationDefaults.HeaderName))
+    if (context.Request.Path.StartsWithSegments("/api"))
     {
-        var authentication = await context.AuthenticateAsync(
-            LocalApiKeyAuthenticationDefaults.SchemeName);
-        if (!authentication.Succeeded)
+        var scheme = context.Request.Headers.ContainsKey(LocalApiKeyAuthenticationDefaults.HeaderName)
+            ? LocalApiKeyAuthenticationDefaults.SchemeName
+            : context.Request.Headers.Authorization.Count > 0
+                ? PrivateBearerAuthenticationDefaults.SchemeName
+                : null;
+        if (scheme is not null)
         {
-            await context.ChallengeAsync(LocalApiKeyAuthenticationDefaults.SchemeName);
-            return;
+            var authentication = await context.AuthenticateAsync(scheme);
+            if (!authentication.Succeeded)
+            {
+                await context.ChallengeAsync(scheme);
+                return;
+            }
         }
     }
 
@@ -252,6 +410,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapConversationEndpoints();
 app.MapDocumentEndpoints();
 app.MapPersonalMemoryEndpoints();
+app.MapPrivateClientEndpoints();
 
 app.Run();
 

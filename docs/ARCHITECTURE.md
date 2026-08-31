@@ -947,6 +947,19 @@ En Ollama, cancelar durante `SendAsync` interrumpe la espera HTTP y se ha compro
 con un handler bloqueado que observa el token. El servidor puede necesitar tiempo
 para detener trabajo interno; la cancelación sigue siendo cooperativa.
 
+## Clientes privados locales
+
+Las interfaces privadas resuelven un principal a través de una sesión bearer opaca
+asociada a un cliente registrado. SQLite conserva únicamente hashes de credenciales,
+tokens y desafíos; rotar o revocar invalida las sesiones afectadas dentro de la misma
+transacción. Los endpoints privados se limitan a loopback. El administrador crea
+desafíos de un solo uso mediante un comando local, por lo que una sesión ordinaria no
+obtiene privilegios administrativos.
+
+El núcleo declara particiones de memoria personal, compartida del hogar, de módulo,
+administrativa y efímera. La única persistida y expuesta actualmente es la personal;
+las demás necesitan un flujo autorizado antes de incorporar almacenamiento o API.
+
 ## Evaluación de Microsoft.Extensions.AI
 
 `Microsoft.Extensions.AI` aporta `IChatClient`, contenido multimodal, funciones,

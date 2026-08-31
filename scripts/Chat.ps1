@@ -8,6 +8,12 @@ param(
 
     [string] $Scenario = "direct",
 
+    [string] $PairingChallenge,
+
+    [switch] $PromptForCredential,
+
+    [switch] $UseEducationalApiKeyMigration,
+
     [switch] $PromptForApiKey,
 
     [switch] $VerboseOutput
@@ -20,6 +26,10 @@ Add-Type -AssemblyName System.Net.Http
 $supportedFakeScenarios = @("direct", "time", "temperature")
 $conversationId = $null
 $apiKey = $null
+$accessToken = $null
+$privateClientId = $null
+$privateClientCredential = $null
+$credentialStatePath = Join-Path $env:LOCALAPPDATA "LocalAssistant\Chat\private-client.json"
 
 function Get-ApiKey {
     $shouldPromptForApiKey =
@@ -37,6 +47,107 @@ function Get-ApiKey {
     }
 
     return $env:LOCALASSISTANT_API_KEY
+}
+
+function Get-PrivateClientCredential {
+    if (-not $PromptForCredential -and (Test-Path -LiteralPath $credentialStatePath)) {
+        try {
+            $state = Get-Content -LiteralPath $credentialStatePath -Raw | ConvertFrom-Json
+            $protectedBytes = [Convert]::FromBase64String([string] $state.protectedCredential)
+            $unprotectedBytes = [Security.Cryptography.ProtectedData]::Unprotect(
+                $protectedBytes,
+                $null,
+                [Security.Cryptography.DataProtectionScope]::CurrentUser)
+            try {
+                $script:privateClientId = [string] $state.clientId
+                return [Text.Encoding]::UTF8.GetString($unprotectedBytes)
+            }
+            finally {
+                [Array]::Clear($unprotectedBytes, 0, $unprotectedBytes.Length)
+            }
+        }
+        catch {
+            Write-Host "Stored private-client credential could not be used. Pair again or enter it manually." -ForegroundColor Yellow
+        }
+    }
+
+    $clientId = Read-Host "Private client ID"
+    $secureCredential = Read-Host "Private client credential" -AsSecureString
+    $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureCredential)
+    try {
+        $script:privateClientId = $clientId.Trim()
+        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+    }
+    finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
+    }
+}
+
+function Save-PrivateClientCredential {
+    param([Parameter(Mandatory = $true)][string] $ClientId, [Parameter(Mandatory = $true)][string] $Credential)
+
+    try {
+        $credentialBytes = [Text.Encoding]::UTF8.GetBytes($Credential)
+        try {
+            $protectedBytes = [Security.Cryptography.ProtectedData]::Protect(
+                $credentialBytes,
+                $null,
+                [Security.Cryptography.DataProtectionScope]::CurrentUser)
+            try {
+                $directory = Split-Path -Parent $credentialStatePath
+                New-Item -ItemType Directory -Path $directory -Force | Out-Null
+                @{ clientId = $ClientId; protectedCredential = [Convert]::ToBase64String($protectedBytes) } |
+                    ConvertTo-Json -Compress | Set-Content -LiteralPath $credentialStatePath -Encoding UTF8
+                return $true
+            }
+            finally {
+                [Array]::Clear($protectedBytes, 0, $protectedBytes.Length)
+            }
+        }
+        finally {
+            [Array]::Clear($credentialBytes, 0, $credentialBytes.Length)
+        }
+    }
+    catch {
+        Write-Host "DPAPI is unavailable; the credential will not be saved. Enter it again next time." -ForegroundColor Yellow
+        return $false
+    }
+}
+
+function Complete-PrivateClientPairing {
+    $challenge = $PairingChallenge
+    if ([string]::IsNullOrWhiteSpace($challenge)) {
+        $challenge = Read-Host "Administrative pairing challenge"
+    }
+
+    $displayName = Read-Host "Private client display name"
+    $response = Invoke-ApiRequest -Method POST -Path "/api/private/admin/pairings" -Body @{
+        challenge = $challenge
+        displayName = $displayName
+    }
+    if ($null -ne $response.ConnectionError -or $response.StatusCode -ne 200) {
+        Show-ApiError $response
+        return $false
+    }
+
+    $script:privateClientId = [string] $response.Body.clientId
+    $script:privateClientCredential = [string] $response.Body.credential
+    [void] (Save-PrivateClientCredential $privateClientId $privateClientCredential)
+    return $true
+}
+
+function Open-PrivateSession {
+    $response = Invoke-ApiRequest -Method POST -Path "/api/private/sessions" -Body @{
+        clientId = $privateClientId
+        credential = $privateClientCredential
+    }
+    if ($null -ne $response.ConnectionError -or $response.StatusCode -ne 200) {
+        Show-ApiError $response
+        return $false
+    }
+
+    $script:accessToken = [string] $response.Body.accessToken
+    return $true
 }
 
 function ConvertTo-ApiPath {
@@ -62,7 +173,12 @@ function Invoke-ApiRequest {
         (ConvertTo-ApiPath $Path))
 
     try {
-        if (-not [string]::IsNullOrWhiteSpace($apiKey)) {
+        if (-not [string]::IsNullOrWhiteSpace($accessToken)) {
+            $request.Headers.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new(
+                "Bearer",
+                $accessToken)
+        }
+        elseif ($UseEducationalApiKeyMigration -and -not [string]::IsNullOrWhiteSpace($apiKey)) {
             $request.Headers.Add("X-LocalAssistant-Api-Key", $apiKey)
         }
 
@@ -276,7 +392,7 @@ Commands:
 
 function Show-Info {
     $conversationState = if ($null -eq $conversationId) { "none" } else { $conversationId }
-    $authenticationState = if ([string]::IsNullOrWhiteSpace($apiKey)) { "anonymous" } else { "API key configured" }
+    $authenticationState = if (-not [string]::IsNullOrWhiteSpace($accessToken)) { "private bearer session" } elseif ($UseEducationalApiKeyMigration) { "educational API key migration" } else { "anonymous" }
 
     Write-Host "Server: $baseUri"
     Write-Host "Provider: $Provider"
@@ -365,18 +481,32 @@ try {
     }
 
     $baseUri = $baseUrlUri.AbsoluteUri.TrimEnd("/")
-    $apiKey = Get-ApiKey
-    if ([string]::IsNullOrWhiteSpace($apiKey)) {
-        Write-Host (
-            "No API key was provided. Continuing with an anonymous session; " +
-            "conversations will be ephemeral.") -ForegroundColor Yellow
-    }
-
     $httpClient = [System.Net.Http.HttpClient]::new()
 
     $health = Invoke-ApiRequest -Method GET -Path "/health"
     if ($null -ne $health.ConnectionError -or $health.StatusCode -ne 200) {
         Show-ApiError $health
+        exit 1
+    }
+
+    if ($UseEducationalApiKeyMigration) {
+        $apiKey = Get-ApiKey
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($PairingChallenge)) {
+        if (-not (Complete-PrivateClientPairing)) {
+            exit 1
+        }
+    }
+    else {
+        $privateClientCredential = Get-PrivateClientCredential
+        if ([string]::IsNullOrWhiteSpace($privateClientId) -or [string]::IsNullOrWhiteSpace($privateClientCredential)) {
+            if (-not (Complete-PrivateClientPairing)) {
+                exit 1
+            }
+        }
+    }
+
+    if (-not $UseEducationalApiKeyMigration -and -not (Open-PrivateSession)) {
         exit 1
     }
 

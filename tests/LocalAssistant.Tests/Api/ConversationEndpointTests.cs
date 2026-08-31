@@ -3,7 +3,9 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using LocalAssistant.Api.Contracts;
 using LocalAssistant.Api.Security;
+using LocalAssistant.Core.Security.PrivateClients;
 using LocalAssistant.Core.Tools;
 using LocalAssistant.Infrastructure.LanguageModels.Ollama;
 using LocalAssistant.Tests.TestDoubles;
@@ -47,6 +49,123 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
         Assert.Equal(1, root.GetProperty("iterations").GetInt32());
         Assert.Empty(root.GetProperty("tools").EnumerateArray());
         Assert.Equal(JsonValueKind.Null, root.GetProperty("error").ValueKind);
+    }
+
+    [Fact]
+    public async Task PrivateBearerSessionAuthenticatesAnApiRequest()
+    {
+        using var factory = new LocalAssistantApiFactory();
+        using var client = factory.CreateClient();
+        var installation = factory.Services.GetRequiredService<IInstallationIdentityStore>();
+        var owner = await installation.BootstrapAsync(CancellationToken.None);
+        var authentication = factory.Services.GetRequiredService<PrivateClientAuthenticationService>();
+        var challenge = await authentication.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.CreateClient,
+            null,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+        var credential = await authentication.CompleteClientPairingAsync(
+            challenge.Secret,
+            owner.OwnerPrincipalId!,
+            "Test client",
+            CancellationToken.None);
+        var session = await authentication.CreateSessionAsync(
+            credential!.Client.ClientId,
+            credential.Secret,
+            TimeSpan.FromHours(1),
+            CancellationToken.None);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/conversations/messages")
+        {
+            Content = JsonContent.Create(new { message = "Hello", scenario = "direct" }),
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session!.Token);
+        using var response = await client.SendAsync(request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PrivateClientEndpointsPairAndOpenALoopbackSession()
+    {
+        using var factory = new LocalAssistantApiFactory();
+        using var client = factory.CreateClient();
+        var installation = factory.Services.GetRequiredService<IInstallationIdentityStore>();
+        var owner = await installation.BootstrapAsync(CancellationToken.None);
+        var authentication = factory.Services.GetRequiredService<PrivateClientAuthenticationService>();
+        var challenge = await authentication.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.CreateClient,
+            null,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+
+        using var pairingResponse = await client.PostAsJsonAsync(
+            "/api/private/admin/pairings",
+            new { challenge = challenge.Secret, displayName = "Test client" },
+            CancellationToken.None);
+        var pairing = await pairingResponse.Content.ReadFromJsonAsync<PrivateClientCredentialResponse>(
+            cancellationToken: CancellationToken.None);
+        using var sessionResponse = await client.PostAsJsonAsync(
+            "/api/private/sessions",
+            new { clientId = pairing!.ClientId, credential = pairing.Credential },
+            CancellationToken.None);
+
+        Assert.Equal(InstallationBootstrapStatus.Created, owner.Status);
+        Assert.Equal(HttpStatusCode.OK, pairingResponse.StatusCode);
+        Assert.NotNull(pairing);
+        Assert.Equal(HttpStatusCode.OK, sessionResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task PrivateClientAdministrativeEndpointsRotateAndRevokeThePairedClient()
+    {
+        using var factory = new LocalAssistantApiFactory();
+        using var client = factory.CreateClient();
+        var installation = factory.Services.GetRequiredService<IInstallationIdentityStore>();
+        var owner = await installation.BootstrapAsync(CancellationToken.None);
+        var authentication = factory.Services.GetRequiredService<PrivateClientAuthenticationService>();
+        var pairingChallenge = await authentication.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.CreateClient,
+            null,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+        using var pairingResponse = await client.PostAsJsonAsync(
+            "/api/private/admin/pairings",
+            new { challenge = pairingChallenge.Secret, displayName = "Test client" },
+            CancellationToken.None);
+        var paired = await pairingResponse.Content.ReadFromJsonAsync<PrivateClientCredentialResponse>(
+            cancellationToken: CancellationToken.None);
+        var rotationChallenge = await authentication.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.RotateCredential,
+            paired!.ClientId,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+        using var rotationResponse = await client.PostAsJsonAsync(
+            "/api/private/admin/credential-rotations",
+            new { challenge = rotationChallenge.Secret },
+            CancellationToken.None);
+        var rotated = await rotationResponse.Content.ReadFromJsonAsync<PrivateClientCredentialResponse>(
+            cancellationToken: CancellationToken.None);
+        var revocationChallenge = await authentication.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.RevokeClient,
+            paired.ClientId,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+        using var revocationResponse = await client.PostAsJsonAsync(
+            "/api/private/admin/client-revocations",
+            new { challenge = revocationChallenge.Secret },
+            CancellationToken.None);
+
+        Assert.Equal(InstallationBootstrapStatus.Created, owner.Status);
+        Assert.Equal(HttpStatusCode.OK, rotationResponse.StatusCode);
+        Assert.NotNull(rotated);
+        Assert.NotEqual(paired.Credential, rotated.Credential);
+        Assert.Equal(HttpStatusCode.NoContent, revocationResponse.StatusCode);
+        Assert.Null(await authentication.CreateSessionAsync(
+            paired.ClientId,
+            rotated.Credential,
+            TimeSpan.FromHours(1),
+            CancellationToken.None));
     }
 
     [Fact]
@@ -810,6 +929,7 @@ public sealed class LocalAssistantApiFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        builder.UseSetting("LocalAssistant:PrivateClients:AllowEducationalApiKeyMigration", "true");
         builder.UseSetting(
             "LocalAssistant:Installation:StateDirectory",
             _installationStateDirectory);
@@ -817,6 +937,7 @@ public sealed class LocalAssistantApiFactory : WebApplicationFactory<Program>
         {
             services.AddSingleton<TimeProvider>(
                 new ManualTimeProvider(new DateTimeOffset(2026, 8, 17, 14, 30, 0, TimeSpan.Zero)));
+            services.AddSingleton<ILoopbackRequestPolicy, TestLoopbackRequestPolicy>();
         });
     }
 
@@ -828,6 +949,11 @@ public sealed class LocalAssistantApiFactory : WebApplicationFactory<Program>
             Directory.Delete(_installationStateDirectory, recursive: true);
         }
     }
+}
+
+file sealed class TestLoopbackRequestPolicy : ILoopbackRequestPolicy
+{
+    public bool IsLoopback(Microsoft.AspNetCore.Http.HttpContext context) => true;
 }
 
 file sealed class ConfirmationTemperatureTool : ITool
