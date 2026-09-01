@@ -148,7 +148,7 @@ public static class PersonalMemoryEndpoints
         }
 
         if (!httpContext.User.HasClaim(
-                LocalApiKeyAuthenticationDefaults.ScopeClaimType,
+                AuthorizationClaimTypes.Scope,
                 requiredScope))
         {
             return Results.Forbid();

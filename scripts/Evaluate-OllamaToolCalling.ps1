@@ -98,8 +98,8 @@ $cases = @(
 $baseUri = $ApiUrl.TrimEnd("/")
 Invoke-RestMethod -Method Get -Uri "$baseUri/health" | Out-Null
 $headers = @{}
-if (-not [string]::IsNullOrWhiteSpace($env:LOCALASSISTANT_API_KEY)) {
-    $headers["X-LocalAssistant-Api-Key"] = $env:LOCALASSISTANT_API_KEY
+if (-not [string]::IsNullOrWhiteSpace($env:LOCALASSISTANT_ACCESS_TOKEN)) {
+    $headers["Authorization"] = "Bearer $($env:LOCALASSISTANT_ACCESS_TOKEN)"
 }
 
 $results = [System.Collections.Generic.List[object]]::new()

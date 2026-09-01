@@ -32,6 +32,33 @@ public sealed class SqlitePrivateClientAuthenticationStoreTests
     }
 
     [Fact]
+    public async Task ConcurrentPairingChallengeConsumptionCreatesOnlyOneClient()
+    {
+        using var directory = new TemporaryDirectory();
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 8, 31, 10, 0, 0, TimeSpan.Zero));
+        var service = CreateService(directory.Path, clock);
+        var challenge = await service.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.CreateClient,
+            null,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+
+        var attempts = await Task.WhenAll(
+            service.CompleteClientPairingAsync(
+                challenge.Secret,
+                "owner-a",
+                "First",
+                CancellationToken.None).AsTask(),
+            service.CompleteClientPairingAsync(
+                challenge.Secret,
+                "owner-a",
+                "Second",
+                CancellationToken.None).AsTask());
+
+        Assert.Single(attempts, result => result is not null);
+    }
+
+    [Fact]
     public async Task CredentialRotationInvalidatesExistingSessions()
     {
         using var directory = new TemporaryDirectory();

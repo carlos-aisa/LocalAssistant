@@ -15,9 +15,8 @@ sesiones relacionadas de forma transaccional.
 
 Los endpoints de sesión y administración se limitan a loopback. Esta limitación no
 protege frente a procesos locales maliciosos, por lo que los desafíos administrativos
-son de un solo uso y expiran. La API key previa no autentica interfaces privadas de
-forma normal: solo se permite como migración educativa explícita en Development y
-loopback.
+son de un solo uso y expiran. La API key previa no autentica ningún endpoint HTTP;
+solo se conserva su hash histórico para mantener el estado de instalación compatible.
 
 La primera iteración no es un producto listo para exposición pública. Establece
 límites que deben conservarse al añadir capacidades.
@@ -32,11 +31,11 @@ calendario, correo, ubicación, cámaras, memoria, documentos o salud puede reve
 información privada sin modificar estado.
 
 La política se impone fuera del modelo al filtrar el catálogo y de nuevo antes de
-ejecutar. El contexto predeterminado es anónimo y sin scopes. Una API key local
-autentica un único principal y le asigna scopes definidos en el servidor; ni el
-cliente ni el modelo aportan scopes. Puede proceder del bootstrap de instalación local
-o de la configuración educativa, nunca de ambas fuentes. Se configura o persiste solo
-el hash SHA-256 de la clave, nunca la clave en el repositorio o en `appsettings.json`.
+ejecutar. El contexto predeterminado es anónimo y sin scopes. Un bearer de cliente
+privado autentica el principal, cliente y sesión; los scopes proceden exclusivamente
+del estado de instalación controlado por el servidor. Ni el cliente ni el modelo los
+aportan. Se persisten hashes de secretos, nunca secretos en el repositorio o en
+`appsettings.json`.
 Datos privados o sensibles, scopes ausentes y exposición externa se deniegan por
 defecto. Los cambios de estado, la ejecución, el coste significativo o una regla
 explícita requieren la confirmación exacta ya implementada.
@@ -150,10 +149,10 @@ HTTPS, cuotas, límites de concurrencia y rate limiting.
 Una conversación no es una identidad y conocer su identificador no concede acceso a
 una conversación que ya pertenezca a otro principal. Del mismo modo, autenticar un
 dispositivo o asociarlo a una habitación no identifica automáticamente a la persona
-presente. La vinculación actual solo cubre el principal único de la API key y existe
-en memoria; antes de persistir conversaciones privadas, memoria, documentos o trazas
-deberá evolucionar a un concepto mínimo de `User` o `Principal`, propiedad y alcance
-de acceso durables.
+presente. La vinculación actual cubre al propietario de la instalación mediante
+clientes privados y sesiones bearer; antes de introducir miembros domésticos deberá
+evolucionar a un concepto mínimo de `User` o `Principal`, propiedad y alcance de
+acceso durables.
 
 La primera persistencia privada define retención, borrado selectivo, control de acceso
 y las consecuencias operativas de la protección en reposo, backups y restauración. El
@@ -204,10 +203,11 @@ concede acceso documental, recordatorios ni permisos futuros.
 ## Identidad, autorización y acceso de invitados futuros
 
 El bootstrap actual crea un único propietario desde una consola local y se invalida
-tras completarse; no existe endpoint de autoalta. La clave se muestra una vez y solo
-su hash se guarda en el directorio local de la aplicación. La API key configurada
-permanece como frontera educativa. Ninguna es la identidad doméstica definitiva: la
-instalación futura distinguirá un hogar, principales humanos e identidades técnicas.
+tras completarse; no existe endpoint de autoalta. Las credenciales de cliente se
+muestran una vez y solo su hash se guarda en el directorio local de la aplicación.
+Los bearer temporales son la frontera HTTP privada actual. Ninguna de estas
+credenciales es la identidad doméstica definitiva: la instalación futura distinguirá
+un hogar, principales humanos e identidades técnicas.
 Los nombres de personas, relaciones familiares y credenciales serán configuración
 privada, nunca datos del repositorio.
 
@@ -609,6 +609,19 @@ y rollback sin copiar código o credenciales indiscriminadamente.
 
 Los satélites de habitación convierten el audio ambiente en un dato especialmente
 sensible. Antes de habilitar captura real deberán cumplirse estos límites:
+
+- Las transcripciones pertenecerán al principal que inició la sesión y su retención,
+  exportación y borrado se decidirán por separado del audio original.
+- Todo egreso a STT o TTS atravesará la política común de egreso con proveedor,
+  destino, propósito, campos mínimos y retención declarados explícitamente.
+- Los streams y archivos temporales se protegerán como datos sensibles, tendrán una
+  vida acotada y no podrán ser leídos por otra sesión, cliente o habitación.
+- Bitrate, duración, tamaño, coste y concurrencia tendrán límites configurables antes
+  de habilitar proveedores o hardware reales.
+- El enrutamiento impedirá la reproducción cruzada: una respuesta de una sesión no
+  podrá entregarse a otro principal, dispositivo o habitación sin autorización.
+- Las salidas de voz y pantallas compartidas minimizarán datos privados y exigirán una
+  política explícita para contenido audible o visible a otras personas presentes.
 
 - El dispositivo mostrará físicamente cuándo escucha o captura mediante luz,
   pantalla u otro indicador inequívoco que no dependa solo de una interfaz remota.

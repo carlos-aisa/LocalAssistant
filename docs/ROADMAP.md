@@ -1,8 +1,8 @@
 # Roadmap
 
-> Estado: la fase 4 permanece en verificación hasta que las pruebas, OpenAPI y la
-> revisión de seguridad del bearer estén completas. Caché y procedencia de evidencias
-> externas pertenecen a la fase 6 de meteorología, no al cierre de esta fase.
+> Estado: la fase 4 está completada: las pruebas, OpenAPI y la revisión de seguridad
+> del bearer están cerradas. Caché y procedencia de evidencias externas pertenecen a
+> la fase 6 de meteorología, no al cierre de esta fase.
 
 ## Incremento de perfiles estables y continuidad (completado)
 
@@ -144,9 +144,8 @@ orden y cada uno incluye sus pruebas y documentación.
 3. **Sesiones bearer para la API privada:** tokens opacos, restricción a loopback,
    expiración, invalidación en cascada y contrato HTTP.
 4. **Migración de `Chat.ps1`:** credencial persistida mediante protección del sistema
-   operativo cuando exista, token solo en memoria y API key educativa limitada a una
-   migración explícita en `Development` y loopback.
-5. **Cierre documental:** ámbitos de memoria compartida, de módulo y administrativa;
+   operativo cuando exista y token solo en memoria; no hay autenticación HTTP por API key.
+5. **Cierre documental:** ámbitos de memoria compartida y de módulo;
    caché y procedencia de evidencia externa trasladadas a meteorología; revisión de
    seguridad, operaciones y criterios de finalización.
 
@@ -165,15 +164,15 @@ orden y cada uno incluye sus pruebas y documentación.
 - [x] Sustituir la API key educativa por autenticación adecuada para las interfaces
   escritas cuando exista el primer dato privado persistente; no elegir proveedor de
   identidad antes de concretar el despliegue.
-- [x] Separar desde el modelo de datos memoria personal, compartida del hogar, de módulo,
-  administrativa y efímera; aplicar autorización antes de recuperar contexto para el
+- [x] Separar desde el modelo de datos memoria personal, compartida del hogar, de módulo
+  y efímera; aplicar autorización antes de recuperar contexto para el
   modelo.
 - [x] Aprobar un modelo de privacidad de almacenamiento con propiedad, retención,
   borrado selectivo, control de acceso y auditoría (ADR 0025) antes de considerar
   completa la persistencia de información privada.
 - [x] Implementar notas de memoria personal explícitas, separadas de conversaciones,
   con propiedad, scopes independientes, retención y borrado selectivo. No se
-  recuperan para el modelo; memoria compartida, de módulo y administrativa siguen
+  recuperan para el modelo; memoria compartida y de módulo siguen
   requiriendo sus propios contratos y autorización.
 - [x] Recuperar conversaciones autenticadas del propietario mediante un índice híbrido
   local de texto, tema, resumen, palabras clave y similitud semántica. La indexación
@@ -472,9 +471,10 @@ Cada hito se implementará solo cuando un vertical slice necesite su comportamie
 
 ### Hito 0 — Frontera mínima de herramientas (completado)
 
-La API key local aporta un principal configurado y scopes de servidor. La política
-filtra herramientas fuera del LLM, reevalúa antes de ejecutar y liga confirmaciones
-al principal. No representa usuarios domésticos ni propiedad de conversaciones.
+Las sesiones bearer de cliente privado aportan un principal y scopes de servidor. La
+política filtra herramientas fuera del LLM, reevalúa antes de ejecutar y liga
+confirmaciones al principal. No representa usuarios domésticos ni propiedad de
+conversaciones.
 
 ### Hito 1 — Instalación, propietario e interfaces escritas
 

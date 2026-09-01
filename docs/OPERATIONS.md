@@ -35,9 +35,9 @@ que los documentos fuente.
 
 El bootstrap de identidad guarda también
 `%LOCALAPPDATA%\LocalAssistant\installation-identity.json` por defecto. El directorio
-de estado configurado debe ser absoluto. Aunque el archivo no guarda la API key en
-texto claro, contiene la identidad del propietario, los scopes concedidos y el hash de
-la API key; debe tratarse como dato privado.
+de estado configurado debe ser absoluto. Aunque el archivo no guarda credenciales de
+cliente en texto claro, contiene la identidad del propietario, los scopes concedidos y
+hashes de credenciales; debe tratarse como dato privado.
 
 El perfil global del asistente se guarda por separado como
 `assistant-profile.json` en ese mismo directorio. Contiene actualmente su nombre de
@@ -134,10 +134,10 @@ borrado de backups son responsabilidad de su sistema de custodia. Por ello, el b
 selectivo y la retención aplicados por LocalAssistant a la base activa no constituyen
 una promesa de borrado global de datos ya copiados.
 
-La restauración de un estado de identidad anterior puede requerir que el cliente use la
-API key válida para ese estado restaurado. La API key no se almacena en
-`installation-identity.json`; el operador debe custodiarla mediante su mecanismo de
-secretos habitual.
+La restauración de un estado de identidad anterior puede requerir volver a vincular un
+cliente privado. Las credenciales de cliente no se almacenan en
+`installation-identity.json`; el operador debe custodiar la credencial mostrada durante
+el pairing mediante su mecanismo de secretos habitual.
 
 ## Límites y trabajo futuro
 

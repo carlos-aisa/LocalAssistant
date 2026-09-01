@@ -558,10 +558,7 @@ public sealed class AuthenticatedConversationStore(IConversationStore persistent
                 cancellationToken);
         }
 
-        var persistentMetadata = await persistentStore.GetMetadataAsync(
-            conversationId,
-            cancellationToken);
-        return persistentMetadata ?? await ephemeralStore.GetOrCreateMetadataAsync(
+        return await ephemeralStore.GetOrCreateMetadataAsync(
             conversationId,
             null,
             cancellationToken);

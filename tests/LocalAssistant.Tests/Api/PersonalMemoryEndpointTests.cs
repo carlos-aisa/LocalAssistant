@@ -4,8 +4,11 @@ using System.Security.Cryptography;
 using System.Text;
 using LocalAssistant.Api.Contracts;
 using LocalAssistant.Api.Security;
+using LocalAssistant.Core.Security.PrivateClients;
 using LocalAssistant.Tests.TestDoubles;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace LocalAssistant.Tests.Api;
@@ -100,6 +103,56 @@ public sealed class PersonalMemoryEndpointTests
         Assert.NotNull(list);
         Assert.Equal(createdId, Assert.Single(list.Memories).Id);
         Assert.Equal("Prefers lactose-free alternatives.", list.Memories[0].Text);
+    }
+
+    [Fact]
+    public async Task RegisteredPrivateBearerCanCreatePersonalMemory()
+    {
+        using var directory = new TemporaryDirectory();
+        var owner = new InstallationIdentity(
+            "test-installation",
+            "owner-a",
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("legacy-hash"))),
+            new HashSet<string>(
+                ["memory.personal.read", "memory.personal.write"],
+                StringComparer.Ordinal));
+        using var factory = new LocalAssistantApiFactory().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("LocalAssistant:ConversationPersistence:Enabled", "true");
+            builder.UseSetting("LocalAssistant:ConversationPersistence:DatabasePath", directory.DatabasePath);
+            builder.UseSetting("LocalAssistant:PrivateClients:DatabasePath", Path.Combine(directory.Path, "clients.db"));
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IInstallationIdentityStore>();
+                services.AddSingleton<IInstallationIdentityStore>(new StaticInstallationIdentityStore(owner));
+            });
+        });
+        var authentication = factory.Services.GetRequiredService<PrivateClientAuthenticationService>();
+        var challenge = await authentication.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.CreateClient,
+            null,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+        var credential = await authentication.CompleteClientPairingAsync(
+            challenge.Secret,
+            owner.OwnerPrincipalId,
+            "Memory test client",
+            CancellationToken.None);
+        var session = await authentication.CreateSessionAsync(
+            credential!.Client.ClientId,
+            credential.Secret,
+            TimeSpan.FromHours(1),
+            CancellationToken.None);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session!.Token);
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/memories/personal",
+            new CreatePersonalMemoryRequest("Bearer-owned memory."),
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
     [Fact]

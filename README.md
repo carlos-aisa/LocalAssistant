@@ -49,12 +49,11 @@ Implementado:
   argumentos ni resultados.
 - Errores de herramienta separados entre el detalle para el proveedor y el mensaje
   seguro expuesto por la API.
-- Bootstrap local de instalación con un único propietario y API key generada una sola
-  vez; se conserva únicamente su hash.
+- Bootstrap local de instalación con un único propietario y estado de clientes privados.
 - Perfil global del asistente, con nombre configurable y separado del historial de
   conversaciones.
-- Identidad local opcional mediante API key y scopes concedidos por el servidor para
-  pruebas o configuración educativa.
+- Clientes privados registrados, credenciales duraderas y tokens bearer opacos
+  temporales para las interfaces privadas.
 - Política de egreso denegada por defecto y pasarela de adaptadores externos sin
   proveedores reales habilitados.
 - Conversaciones autenticadas persistibles en SQLite de forma opcional; las anónimas
@@ -186,10 +185,10 @@ en la consola del equipo que la administra. No abre el servidor HTTP:
 dotnet run --project src/LocalAssistant.Api -- --bootstrap-owner
 ```
 
-Guarda la API key que muestra una única vez. El estado mínimo de instalación se guarda
-por defecto en `%LOCALAPPDATA%\LocalAssistant\installation-identity.json`; contiene
-solo el hash SHA-256 de la clave. Una segunda ejecución se rechaza. Después inicia la
-API normalmente y envía la clave con `X-LocalAssistant-Api-Key`.
+El bootstrap crea el propietario local. El estado mínimo de instalación se guarda por
+defecto en `%LOCALAPPDATA%\LocalAssistant\installation-identity.json`; conserva solo
+metadatos de identidad y hashes. Una segunda ejecución se rechaza. A continuación,
+registra un cliente privado para acceder a interfaces protegidas.
 
 El propietario creado por bootstrap recibe además `memory.personal.read` y
 `memory.personal.write`, por lo que puede usar sus notas personales cuando la
@@ -198,23 +197,22 @@ localmente al leer su estado; no se genera una clave nueva ni se conceden scopes
 documentos, recordatorios o capacidades futuras.
 
 La variable `LocalAssistant__Installation__StateDirectory` permite elegir una ruta
-absoluta distinta para ese estado. No combines este bootstrap con la configuración
-`LocalAssistant__Identity__Enabled=true`.
+absoluta distinta para ese estado.
 
 ### Clientes privados y sesiones locales
 
 Las interfaces privadas usan clientes registrados y tokens bearer opacos temporales.
-Inicializa el primer cliente desde la consola local, despuÃ©s de crear el propietario:
+Inicializa el primer cliente desde la consola local, después de crear el propietario:
 
 ```powershell
 dotnet run --project src/LocalAssistant.Api -- --bootstrap-private-client
 ```
 
 La credencial se muestra una sola vez. Las operaciones administrativas posteriores
-empiezan con `--create-administrative-challenge`; los desafÃ­os expiran y se consumen
-una vez. Los endpoints de sesiÃ³n y administraciÃ³n aceptan exclusivamente loopback.
-El token bearer solo debe permanecer en memoria. La API key educativa se limita a una
-migraciÃ³n explÃ­cita en `Development` y no es el acceso normal de clientes privados.
+empiezan con `--create-administrative-challenge`; los desafíos expiran y se consumen
+una vez. Los endpoints de sesión y administración aceptan exclusivamente loopback.
+El token bearer solo debe permanecer en memoria. La API key educativa ya no autentica
+interfaces HTTP privadas.
 
 ### Nombre global del asistente
 
@@ -226,52 +224,20 @@ El nombre se entrega al proveedor como contexto de sistema en cada llamada, pero
 guarda en conversaciones, notas personales ni SQLite. Protege el directorio de estado
 como almacenamiento privado y consulta el [ADR 0027](docs/adr/0027-store-installation-assistant-profile-separately.md).
 
-La API también funciona de forma anónima para herramientas públicas. Para pruebas o
-para configurar de forma educativa un principal local con scopes concedidos por el
-servidor, usa el mecanismo siguiente.
-
-Configura un hash SHA-256 de una API key fuera de los archivos versionados. Este
-ejemplo genera una clave efímera para la sesión actual de PowerShell:
-
-```powershell
-$apiKey = [Guid]::NewGuid().ToString("N")
-$apiKeyHash = [Convert]::ToHexString(
-  [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($apiKey)))
-$env:LocalAssistant__Identity__Enabled = "true"
-$env:LocalAssistant__Identity__PrincipalId = "local-owner"
-$env:LocalAssistant__Identity__ApiKeySha256 = $apiKeyHash
-$env:LocalAssistant__Identity__Scopes__0 = "example.read"
-dotnet run --project src/LocalAssistant.Api -- --urls http://localhost:5100
-```
-
-Envía la clave mediante el header `X-LocalAssistant-Api-Key`; nunca la incluyas en
-el cuerpo de la petición ni la guardes en `appsettings.json`:
-
-```powershell
-$headers = @{ "X-LocalAssistant-Api-Key" = $apiKey }
-Invoke-RestMethod -Method Post `
-  -Uri http://localhost:5100/api/conversations/messages `
-  -Headers $headers `
-  -ContentType application/json `
-  -Body (@{ message = "Hola"; scenario = "direct" } | ConvertTo-Json)
-```
-
-Una clave presentada pero inválida devuelve `401`. La ausencia de clave mantiene el
-contexto anónimo; una herramienta que exija autenticación o un scope no se expondrá
-al proveedor y se denegará antes de ejecutarse. Esta implementación admite un único
-principal configurado y no sustituye gestión de usuarios, HTTPS ni propiedad de
-conversaciones.
+La API también funciona de forma anónima para herramientas públicas. Las interfaces
+privadas requieren `Authorization: Bearer <access token>` en loopback. Los scopes los
+concede el servidor a partir del propietario de la instalación; el cliente no puede
+elegirlos. La API key histórica no autentica ningún endpoint HTTP general.
 
 ### Búsqueda documental por metadatos
 
 `GET /api/documents` busca exclusivamente bajo la raíz documental configurada. Exige
-una API key válida con el scope `documents.search`; no acepta rutas absolutas y nunca
+un bearer válido con el scope `documents.search`; no acepta rutas absolutas y nunca
 devuelve contenido de archivos. Los filtros opcionales son `name`, `extension`,
 `relativePath`, `modifiedAfterUtc`, `modifiedBeforeUtc` y `limit` (máximo 100).
 
 ```powershell
-$env:LocalAssistant__Identity__Scopes__0 = "documents.search"
-$headers = @{ "X-LocalAssistant-Api-Key" = $apiKey }
+$headers = @{ Authorization = "Bearer $accessToken" }
 Invoke-RestMethod -Method Get `
   -Uri "http://localhost:5100/api/documents?extension=.txt&limit=20" `
   -Headers $headers
@@ -322,15 +288,14 @@ Invoke-RestMethod -Method Post `
 ### Registro temporal de recordatorio confirmado
 
 El escenario fake `reminder` demuestra el vertical slice experimental de la primera
-operación local que cambia estado. Requiere una API key válida con el scope
+operación local que cambia estado. Requiere un bearer válido con el scope
 `reminders.write` y devuelve una confirmación antes de crear un registro temporal en
 memoria. No programa ni entrega un aviso cuando llega la fecha. Al aprobar la llamada,
 el servidor genera y conserva una clave de operación interna; repetir internamente esa
 operación durante la vida del proceso devuelve el mismo registro sin crear otro.
 
 ```powershell
-$env:LocalAssistant__Identity__Scopes__0 = "reminders.write"
-$headers = @{ "X-LocalAssistant-Api-Key" = $apiKey }
+$headers = @{ Authorization = "Bearer $accessToken" }
 $pending = Invoke-RestMethod -Method Post `
   -Uri http://localhost:5100/api/conversations/messages `
   -Headers $headers `

@@ -78,8 +78,10 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
 
         using var lease = await _locks.AcquireAsync(id, ct);
         var policyContext = _toolPolicyContextAccessor.GetCurrent();
-        var metadata = await _store.GetOrCreateMetadataAsync(id, policyContext.PrincipalId, ct);
-        if (!CanAccess(metadata, policyContext.PrincipalId))
+        var metadata = request.ConversationId is null
+            ? await _store.GetOrCreateMetadataAsync(id, policyContext.PrincipalId, ct)
+            : await _store.GetMetadataAsync(id, ct);
+        if (metadata is null || !CanAccess(metadata, policyContext.PrincipalId))
             return Result(id, null, [], 0, TimeSpan.Zero, TimeSpan.Zero, new("conversation_not_found", "The conversation was not found."));
 
         if (await _confirmations.GetAsync(id, ct) is not null)

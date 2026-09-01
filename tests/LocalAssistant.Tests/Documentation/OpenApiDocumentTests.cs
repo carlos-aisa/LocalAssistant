@@ -1,3 +1,4 @@
+using Microsoft.OpenApi.Models;
 using Microsoft.OpenApi.Readers;
 
 namespace LocalAssistant.Tests.Documentation;
@@ -22,5 +23,20 @@ public sealed class OpenApiDocumentTests
             document.Components.SecuritySchemes["PrivateBearer"]);
         Assert.Equal("bearer", privateBearer.Scheme);
         Assert.False(document.Components.SecuritySchemes.ContainsKey("LocalApiKey"));
+
+        var protectedOperations = new[]
+        {
+            document.Paths["/api/documents"].Operations[OperationType.Get],
+            document.Paths["/api/documents/{id}/content"].Operations[OperationType.Get],
+            document.Paths["/api/documents/content-search"].Operations[OperationType.Get],
+            document.Paths["/api/memories/personal"].Operations[OperationType.Get],
+            document.Paths["/api/memories/personal"].Operations[OperationType.Post],
+            document.Paths["/api/memories/personal/{memoryId}"].Operations[OperationType.Delete],
+            document.Paths["/api/conversations/{conversationId}"].Operations[OperationType.Delete],
+            document.Paths["/api/conversations/{conversationId}/completion"].Operations[OperationType.Post],
+        };
+        Assert.All(protectedOperations, operation => Assert.Contains(
+            operation.Security,
+            requirement => requirement.Keys.Any(scheme => scheme.Reference.Id == "PrivateBearer")));
     }
 }

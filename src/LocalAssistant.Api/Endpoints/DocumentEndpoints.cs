@@ -38,7 +38,7 @@ public static class DocumentEndpoints
         }
 
         if (!httpContext.User.HasClaim(
-                LocalApiKeyAuthenticationDefaults.ScopeClaimType,
+                AuthorizationClaimTypes.Scope,
                 ContentSearchScope))
         {
             return Results.Forbid();
@@ -65,7 +65,7 @@ public static class DocumentEndpoints
 
         var results = await documentContentSearch.SearchAsync(query, cancellationToken);
         if (!httpContext.User.HasClaim(
-                LocalApiKeyAuthenticationDefaults.ScopeClaimType,
+                AuthorizationClaimTypes.Scope,
                 ReadScope))
         {
             results = results
@@ -88,7 +88,7 @@ public static class DocumentEndpoints
         }
 
         if (!httpContext.User.HasClaim(
-                LocalApiKeyAuthenticationDefaults.ScopeClaimType,
+                AuthorizationClaimTypes.Scope,
                 SearchScope))
         {
             return Results.Forbid();
@@ -129,7 +129,7 @@ public static class DocumentEndpoints
         }
 
         if (!httpContext.User.HasClaim(
-                LocalApiKeyAuthenticationDefaults.ScopeClaimType,
+                AuthorizationClaimTypes.Scope,
                 ReadScope))
         {
             return Results.Forbid();

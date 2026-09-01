@@ -136,14 +136,6 @@ builder.Services.AddAuthentication(PrivateBearerAuthenticationDefaults.SchemeNam
     .AddScheme<AuthenticationSchemeOptions, PrivateBearerAuthenticationHandler>(
         PrivateBearerAuthenticationDefaults.SchemeName,
         _ => { });
-if (builder.Environment.IsEnvironment("Testing"))
-{
-    // Legacy API-key authentication remains available only to preserve isolated test fixtures.
-    builder.Services.AddAuthentication()
-        .AddScheme<AuthenticationSchemeOptions, LocalApiKeyAuthenticationHandler>(
-            LocalApiKeyAuthenticationDefaults.SchemeName,
-            _ => { });
-}
 builder.Services.AddSingleton<IToolPolicyContextAccessor, HttpContextToolPolicyContextAccessor>();
 builder.Services.AddSingleton<ITool, CurrentTimeTool>();
 builder.Services.AddSingleton<ITool, TemperatureConversionTool>();
@@ -176,18 +168,6 @@ builder.Services.AddOptions<OllamaOptions>()
     .Validate(
         options => options.ContextWindow > 0,
         "Ollama ContextWindow must be greater than zero.")
-    .ValidateOnStart();
-builder.Services.AddOptions<LocalIdentityOptions>()
-    .Bind(builder.Configuration.GetSection(LocalIdentityOptions.SectionName))
-    .Validate(
-        options => !options.Enabled ||
-            (!string.IsNullOrWhiteSpace(options.PrincipalId) &&
-             !string.IsNullOrWhiteSpace(options.ApiKeySha256) &&
-             options.ApiKeySha256.Length == 64 &&
-             options.ApiKeySha256.All(Uri.IsHexDigit) &&
-             options.Scopes is not null &&
-             options.Scopes.All(scope => !string.IsNullOrWhiteSpace(scope))),
-        "Enabled local identity requires a principal, a SHA-256 API key hash, and non-empty scopes.")
     .ValidateOnStart();
 builder.Services.AddOptions<InstallationIdentityOptions>()
     .Bind(builder.Configuration.GetSection(InstallationIdentityOptions.SectionName))
@@ -240,15 +220,6 @@ builder.Services.AddOptions<PrivateClientOptions>()
 if (bootstrapOwnerRequested)
 {
     var bootstrapApplication = builder.Build();
-    var configuredIdentity = bootstrapApplication.Services
-        .GetRequiredService<IOptions<LocalIdentityOptions>>().Value;
-    if (configuredIdentity.Enabled)
-    {
-        await bootstrapApplication.DisposeAsync();
-        throw new InvalidOperationException(
-            "Bootstrap requires LocalAssistant:Identity:Enabled to remain disabled.");
-    }
-
     var bootstrapIdentityStore = bootstrapApplication.Services
         .GetRequiredService<IInstallationIdentityStore>();
     var bootstrapResult = await bootstrapIdentityStore.BootstrapAsync(CancellationToken.None);
@@ -378,46 +349,18 @@ if (createAdministrativeChallengeRequested)
 
 var app = builder.Build();
 
-var localIdentityOptions = app.Services.GetRequiredService<IOptions<LocalIdentityOptions>>().Value;
-var installationIdentityStore = app.Services.GetRequiredService<IInstallationIdentityStore>();
-var installationIdentity = await installationIdentityStore.GetAsync(CancellationToken.None);
-if (localIdentityOptions.Enabled && installationIdentity is not null)
-{
-    await app.DisposeAsync();
-    throw new InvalidOperationException(
-        "Configured local identity and installation bootstrap identity cannot be enabled together.");
-}
-
 app.UseAuthentication();
 app.Use(async (context, next) =>
 {
     if (context.Request.Path.StartsWithSegments("/api"))
     {
-        var hasApiKey = context.Request.Headers.ContainsKey(LocalApiKeyAuthenticationDefaults.HeaderName);
+        if (context.Request.Headers.ContainsKey("X-LocalAssistant-Api-Key"))
+        {
+            await context.ChallengeAsync(PrivateBearerAuthenticationDefaults.SchemeName);
+            return;
+        }
+
         var hasBearer = context.Request.Headers.Authorization.Count > 0;
-        if (hasApiKey && hasBearer)
-        {
-            await context.ChallengeAsync(PrivateBearerAuthenticationDefaults.SchemeName);
-            return;
-        }
-
-        if (hasApiKey)
-        {
-            if (app.Environment.IsEnvironment("Testing"))
-            {
-                var authentication = await context.AuthenticateAsync(
-                    LocalApiKeyAuthenticationDefaults.SchemeName);
-                if (authentication.Succeeded)
-                {
-                    context.User = authentication.Principal!;
-                    await next();
-                    return;
-                }
-            }
-
-            await context.ChallengeAsync(PrivateBearerAuthenticationDefaults.SchemeName);
-            return;
-        }
 
         if (hasBearer)
         {

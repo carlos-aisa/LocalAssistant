@@ -284,6 +284,7 @@ public sealed class ConversationOrchestratorTests
             },
         ]);
         var conversationId = Guid.NewGuid();
+        await store.GetOrCreateMetadataAsync(conversationId, null, CancellationToken.None);
 
         var firstTurn = sut.ProcessAsync(
             new ConversationTurnRequest("First message", conversationId),
@@ -312,6 +313,7 @@ public sealed class ConversationOrchestratorTests
         var firstProvider = new GateProvider("First answer");
         var secondProvider = new ScriptedLanguageProvider([]);
         var conversationId = Guid.NewGuid();
+        await store.GetOrCreateMetadataAsync(conversationId, null, CancellationToken.None);
 
         var firstTurn = sut.ProcessAsync(
             new ConversationTurnRequest("First message", conversationId),
