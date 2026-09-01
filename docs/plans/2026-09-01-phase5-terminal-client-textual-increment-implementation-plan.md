@@ -107,11 +107,12 @@ credenciales ni token. Para `401`, `403`, `404`, `409`, `422`, `502` y `504` sin
 contrato, indicar la categoría operativa sin afirmar que se ha reintentado o
 cancelado el turno.
 
-No añadir reintentos automáticos. Un fallo de transporte posterior al envío, o una
-respuesta sin contrato conversacional válido, se muestra como resultado incierto,
-pues el servidor puede haber persistido el mensaje de usuario. Un `502` o `504` con
-contrato conversacional válido no es incierto: confirma que el orquestador procesó el
-turno.
+No añadir reintentos automáticos. Un fallo de transporte posterior al envío, un `5xx`
+sin contrato conversacional válido o un `2xx` con contrato inválido se muestra como
+resultado incierto, pues el servidor puede haber persistido el mensaje de usuario. Un
+`4xx` sin contrato es un rechazo concluyente y no es incierto. Un `502` o `504` con
+contrato conversacional válido tampoco es incierto: confirma que el orquestador
+procesó el turno.
 
 **Pruebas:** con un `HttpMessageHandler` determinista, comprobar el orden de rutas,
 cuerpos JSON, ausencia de bearer en health/sesión, presencia exclusiva en mensaje,
