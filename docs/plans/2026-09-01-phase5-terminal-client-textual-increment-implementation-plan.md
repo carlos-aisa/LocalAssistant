@@ -98,13 +98,20 @@ Crear un adaptador que use exclusivamente `HttpClient` y las rutas existentes:
 
 Validar respuestas JSON obligatorias antes de actualizar el estado local. Añadir el
 header `Authorization: Bearer` solo a operaciones autenticadas, nunca a health ni a
-la apertura de sesión. Traducir errores de conexión, JSON inválido y estados HTTP en
-diagnósticos seguros sin imprimir cuerpos arbitrarios, cabeceras, credenciales ni
-token. Para `401`, `403`, `404`, `409`, `422`, `502` y `504`, indicar la categoría
-operativa sin afirmar que se ha reintentado o cancelado el turno.
+la apertura de sesión. Una respuesta conversacional válida conserva su
+`ConversationId`, error, herramientas e iteraciones aunque el estado HTTP no sea
+2xx; el cliente la muestra y puede continuar la conversación. Traducir solo las
+respuestas sin contrato conversacional válido, los errores de conexión y el JSON
+inválido en diagnósticos seguros sin imprimir cuerpos arbitrarios, cabeceras,
+credenciales ni token. Para `401`, `403`, `404`, `409`, `422`, `502` y `504` sin ese
+contrato, indicar la categoría operativa sin afirmar que se ha reintentado o
+cancelado el turno.
 
-No añadir reintentos automáticos. Un fallo de transporte posterior al envío se muestra
-como resultado incierto, pues el servidor puede haber persistido el mensaje de usuario.
+No añadir reintentos automáticos. Un fallo de transporte posterior al envío, o una
+respuesta sin contrato conversacional válido, se muestra como resultado incierto,
+pues el servidor puede haber persistido el mensaje de usuario. Un `502` o `504` con
+contrato conversacional válido no es incierto: confirma que el orquestador procesó el
+turno.
 
 **Pruebas:** con un `HttpMessageHandler` determinista, comprobar el orden de rutas,
 cuerpos JSON, ausencia de bearer en health/sesión, presencia exclusiva en mensaje,
@@ -119,8 +126,9 @@ errores HTTP y respuesta no JSON. El handler no abrirá puertos ni usará red.
 
 Después de abrir la sesión, anunciar de forma no sensible la URL loopback y el modo de
 proveedor. Leer líneas no vacías hasta EOF o una salida explícita mínima. Para cada
-respuesta exitosa, guardar el `ConversationId` devuelto, imprimir el texto final y
-resumir iteraciones y trazas de herramientas sin exponer argumentos ni resultados.
+respuesta conversacional válida, incluso con estado HTTP de error, guardar el
+`ConversationId` devuelto, imprimir el texto final o error del orquestador y resumir
+iteraciones y trazas de herramientas sin exponer argumentos ni resultados.
 Cuando el servidor devuelva una confirmación pendiente, mostrar que el incremento 1
 no puede resolverla y mantener la conversación bloqueada hasta que el usuario salga;
 la resolución de confirmaciones se implementará en el incremento 2.

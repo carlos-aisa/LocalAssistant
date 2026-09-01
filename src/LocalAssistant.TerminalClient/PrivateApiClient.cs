@@ -62,12 +62,65 @@ public sealed class PrivateApiClient
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
-        return await SendAsync(
-            request,
-            ValidateConversation,
-            "The conversation request could not be completed.",
-            isTurnRequest: true,
-            cancellationToken);
+        return await SendConversationAsync(request, cancellationToken);
+    }
+
+    private async Task<ClientResult<ConversationResponse>> SendConversationAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            var conversation = ValidateConversation(document.RootElement);
+            if (conversation is not null)
+            {
+                return ClientResults.Success(conversation);
+            }
+
+            if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.Accepted)
+            {
+                return ClientResults.Failure<ConversationResponse>(
+                    GetErrorCode(response.StatusCode),
+                    GetErrorMessage(response.StatusCode),
+                    isUncertain: true);
+            }
+
+            return ClientResults.Failure<ConversationResponse>(
+                "invalid_response",
+                "The API returned an invalid response.",
+                isUncertain: true);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return ClientResults.Failure<ConversationResponse>(
+                "request_cancelled",
+                "The request was cancelled.",
+                isUncertain: true);
+        }
+        catch (OperationCanceledException)
+        {
+            return ClientResults.Failure<ConversationResponse>(
+                "request_timeout",
+                "The request timed out.",
+                isUncertain: true);
+        }
+        catch (HttpRequestException)
+        {
+            return ClientResults.Failure<ConversationResponse>(
+                "connection_error",
+                "The conversation request could not be completed.",
+                isUncertain: true);
+        }
+        catch (JsonException)
+        {
+            return ClientResults.Failure<ConversationResponse>(
+                "invalid_response",
+                "The API returned an invalid response.",
+                isUncertain: true);
+        }
     }
 
     private async Task<ClientResult<T>> SendAsync<T>(
