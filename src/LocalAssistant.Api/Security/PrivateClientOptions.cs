@@ -9,6 +9,4 @@ public sealed class PrivateClientOptions
     public TimeSpan AdministrativeChallengeLifetime { get; set; } = TimeSpan.FromMinutes(5);
 
     public TimeSpan SessionLifetime { get; set; } = TimeSpan.FromHours(8);
-
-    public bool AllowEducationalApiKeyMigration { get; set; }
 }

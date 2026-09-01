@@ -138,8 +138,10 @@ ocultar esas diferencias.
 
 El bootstrap implementado identifica una instalación y crea un único propietario
 local. Los clientes privados registrados obtienen credenciales revocables y sesiones
-bearer temporales. La API key histórica solo deja un hash para compatibilidad de
-estado; no está disponible como frontera HTTP. Esto todavía no modela hogar, usuarios,
+bearer temporales. El estado vigente es el esquema 4: no contiene hash de API key ni
+otra credencial HTTP heredada. Al cargar un esquema 1, 2 o 3, el adaptador conserva
+instalación, propietario y fecha, añade las capacidades vigentes y publica
+atómicamente el esquema 4 sin el hash. Esto todavía no modela hogar, usuarios,
 invitados ni niveles de confianza. La evolución no trasladará SDKs de identidad al
 núcleo ni permitirá que el cliente o el LLM creen permisos.
 
@@ -182,12 +184,15 @@ principal autenticado y no exponen dicho propietario. La persistencia desactivad
 responde `503`; las notas no se registran como herramientas ni se incorporan al
 orquestador, contexto del modelo o proveedores.
 
-El archivo de identidad creado por bootstrap usa el esquema 2 e incluye de forma
-explícita los scopes `memory.personal.read` y `memory.personal.write`. Al cargar un
-archivo válido de esquema 1, `FileInstallationIdentityStore` conserva identidad, hash
-y fecha, añade solo esos scopes y publica el esquema 2 de forma atómica. Esto no da a
-`installation.owner` significado de comodín ni amplía documentos, recordatorios o
-capacidades futuras.
+El archivo de identidad creado por bootstrap usa el esquema 4 e incluye de forma
+explícita los scopes de memoria y perfil, `documents.search`, `documents.read`,
+`documents.content.search` y `reminders.write`. Al cargar un archivo válido de
+esquema 1, 2 o 3, `FileInstallationIdentityStore` conserva identidad y fecha, elimina
+el hash legado y publica el esquema 4 de forma atómica. Esto no da a
+`installation.owner` significado de comodín. En la etapa de propietario único, cada
+cliente bearer activo hereda todas las capacidades del propietario; la autorización
+diferenciada por cliente queda aplazada a la gestión doméstica de usuarios y
+capacidades.
 
 Las decisiones se recogen en [ADR 0017](adr/0017-combine-roles-capabilities-context-and-risk-for-authorization.md),
 [ADR 0018](adr/0018-treat-voice-as-context-not-strong-authentication.md),

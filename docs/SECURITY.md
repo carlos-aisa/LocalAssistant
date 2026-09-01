@@ -15,8 +15,9 @@ sesiones relacionadas de forma transaccional.
 
 Los endpoints de sesión y administración se limitan a loopback. Esta limitación no
 protege frente a procesos locales maliciosos, por lo que los desafíos administrativos
-son de un solo uso y expiran. La API key previa no autentica ningún endpoint HTTP;
-solo se conserva su hash histórico para mantener el estado de instalación compatible.
+son de un solo uso y expiran. La API key previa no autentica ningún endpoint HTTP. El
+estado vigente de instalación es el esquema 4 y no conserva su hash; los esquemas 1,
+2 y 3 solo se aceptan para una migración atómica que elimina ese valor.
 
 La primera iteración no es un producto listo para exposición pública. Establece
 límites que deben conservarse al añadir capacidades.
@@ -194,11 +195,14 @@ es una frontera de confianza: configurarlo en un host remoto puede divulgar el
 contenido conversacional derivado y fuente que necesita procesar. La disponibilidad de
 un proveedor externo no es fallback para esta capacidad.
 
-El bootstrap de instalación concede explícitamente `memory.personal.read` y
-`memory.personal.write` al propietario local para que pueda acceder a sus propias
-notas. El estado anterior se migra una vez al esquema 2, preservando identidad y hash
-de la clave. `installation.owner` no sustituye los scopes concretos y la migración no
-concede acceso documental, recordatorios ni permisos futuros.
+El bootstrap de instalación concede explícitamente al propietario los scopes de
+memoria y perfil, `documents.search`, `documents.read`,
+`documents.content.search` y `reminders.write`. Los estados 1, 2 y 3 se migran una
+vez al esquema 4: preservan identidad, propietario y fecha, añaden esos scopes y
+eliminan el hash legado. `installation.owner` no sustituye los scopes concretos. Cada
+cliente bearer activo hereda actualmente las capacidades del propietario; la
+restricción diferenciada por cliente queda aplazada a la gestión doméstica de usuarios
+y capacidades.
 
 ## Identidad, autorización y acceso de invitados futuros
 

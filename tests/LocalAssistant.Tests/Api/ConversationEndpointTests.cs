@@ -262,7 +262,6 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
             builder.UseSetting("LocalAssistant:Identity:Enabled", "true");
             builder.UseSetting("LocalAssistant:Identity:PrincipalId", "test-owner");
             builder.UseSetting("LocalAssistant:Identity:ApiKeySha256", LocalApiKeyHash);
-            builder.UseSetting("LocalAssistant:PrivateClients:AllowEducationalApiKeyMigration", "true");
         }).CreateClient();
         client.DefaultRequestHeaders.Add("X-LocalAssistant-Api-Key", LocalApiKey);
 
@@ -788,7 +787,7 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
     }
 
     [Fact]
-    public async Task BootstrappedInstallationAuthenticatesItsOwner()
+    public async Task BootstrappedInstallationAuthenticatesItsOwnerWithAPrivateBearer()
     {
         using var stateDirectory = new TemporaryInstallationStateDirectory();
         var store = new FileInstallationIdentityStore(
@@ -797,12 +796,12 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
         var bootstrap = await store.BootstrapAsync(CancellationToken.None);
         Assert.Equal(InstallationBootstrapStatus.Created, bootstrap.Status);
 
-        using var client = _factory.WithWebHostBuilder(builder =>
-            builder.UseSetting("LocalAssistant:Installation:StateDirectory", stateDirectory.Path))
-            .CreateClient();
-        client.DefaultRequestHeaders.Add(
-            LocalApiKeyAuthenticationDefaults.HeaderName,
-            bootstrap.ApiKey);
+        using var factory = _factory.WithWebHostBuilder(builder =>
+            builder.UseSetting("LocalAssistant:Installation:StateDirectory", stateDirectory.Path));
+        using var client = factory.CreateClient();
+        var session = await CreatePrivateBearerAsync(factory);
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.Token);
 
         using var response = await client.PostAsJsonAsync(
             "/api/conversations/messages",
@@ -924,6 +923,37 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
         var tool = Assert.Single(decisionBody.RootElement.GetProperty("tools").EnumerateArray());
         Assert.Equal("create_reminder", tool.GetProperty("toolName").GetString());
         Assert.True(tool.GetProperty("succeeded").GetBoolean());
+    }
+
+    [Fact]
+    public async Task BootstrapOwnerPrivateBearerCanCreateAConfirmedReminder()
+    {
+        using var factory = new LocalAssistantApiFactory();
+        using var client = factory.CreateClient();
+        var session = await CreatePrivateBearerAsync(factory);
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.Token);
+
+        using var pendingResponse = await client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new { message = "Remind me to review the design", scenario = "reminder" },
+            CancellationToken.None);
+        using var pendingBody = await JsonDocument.ParseAsync(
+            await pendingResponse.Content.ReadAsStreamAsync(CancellationToken.None),
+            cancellationToken: CancellationToken.None);
+        var conversationId = pendingBody.RootElement.GetProperty("conversationId").GetGuid();
+        var confirmationId = pendingBody.RootElement
+            .GetProperty("confirmation")
+            .GetProperty("confirmationId")
+            .GetGuid();
+
+        using var decisionResponse = await client.PostAsJsonAsync(
+            $"/api/conversations/{conversationId}/tool-confirmations/{confirmationId}/decisions",
+            new { approved = true, scenario = "reminder" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Accepted, pendingResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, decisionResponse.StatusCode);
     }
 
     [Fact]
@@ -1108,11 +1138,8 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
         if (installationIdentity is null)
         {
             var bootstrap = await installation.BootstrapAsync(CancellationToken.None);
-            installationIdentity = new InstallationIdentity(
-                "test-installation",
-                Assert.IsType<string>(bootstrap.OwnerPrincipalId),
-                string.Empty,
-                new HashSet<string>(StringComparer.Ordinal));
+            installationIdentity = await installation.GetAsync(CancellationToken.None)
+                ?? throw new InvalidOperationException("Installation bootstrap did not create an identity.");
         }
 
         var authentication = factory.Services.GetRequiredService<PrivateClientAuthenticationService>();
@@ -1187,7 +1214,6 @@ public sealed class LocalAssistantApiFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
-        builder.UseSetting("LocalAssistant:PrivateClients:AllowEducationalApiKeyMigration", "true");
         builder.UseSetting(
             "LocalAssistant:Installation:StateDirectory",
             _installationStateDirectory);

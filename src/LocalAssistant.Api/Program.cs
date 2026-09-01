@@ -231,9 +231,8 @@ if (bootstrapOwnerRequested)
         return;
     }
 
-    Console.WriteLine("Installation bootstrap completed. Store this API key now; it will not be shown again.");
+    Console.WriteLine("Installation bootstrap completed.");
     Console.WriteLine($"Owner principal: {bootstrapResult.OwnerPrincipalId}");
-    Console.WriteLine($"API key: {bootstrapResult.ApiKey}");
     return;
 }
 

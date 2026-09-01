@@ -10,7 +10,7 @@ namespace LocalAssistant.Tests.Api;
 public sealed class InstallationIdentityStoreTests
 {
     [Fact]
-    public async Task BootstrapCreatesOneOwnerWithoutPersistingTheApiKey()
+    public async Task BootstrapCreatesOneOwnerWithAllCurrentPrivateScopesAndNoApiKey()
     {
         using var stateDirectory = new TemporaryInstallationStateDirectory();
         var store = CreateStore(stateDirectory.Path);
@@ -19,28 +19,19 @@ public sealed class InstallationIdentityStoreTests
 
         Assert.Equal(InstallationBootstrapStatus.Created, bootstrap.Status);
         Assert.NotNull(bootstrap.OwnerPrincipalId);
-        Assert.NotNull(bootstrap.ApiKey);
         var persistedState = await File.ReadAllTextAsync(store.GetStateFilePath(), CancellationToken.None);
-        Assert.DoesNotContain(bootstrap.ApiKey, persistedState, StringComparison.Ordinal);
+        using var persistedDocument = JsonDocument.Parse(persistedState);
+        Assert.Equal(4, persistedDocument.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.False(persistedDocument.RootElement.TryGetProperty("ApiKeySha256", out _));
 
         var identity = await store.GetAsync(CancellationToken.None);
         Assert.NotNull(identity);
         Assert.Equal(bootstrap.OwnerPrincipalId, identity.OwnerPrincipalId);
-        Assert.Contains("installation.owner", identity.GrantedScopes);
-        Assert.Contains("memory.personal.read", identity.GrantedScopes);
-        Assert.Contains("memory.personal.write", identity.GrantedScopes);
-        Assert.Contains("profile.personal.read", identity.GrantedScopes);
-        Assert.Contains("profile.personal.write", identity.GrantedScopes);
-        Assert.Contains("household.profile.read", identity.GrantedScopes);
-        Assert.Contains("household.profile.write", identity.GrantedScopes);
-        Assert.DoesNotContain("reminders.write", identity.GrantedScopes);
-        Assert.Equal(7, identity.GrantedScopes.Count);
-        using var persistedDocument = JsonDocument.Parse(persistedState);
-        Assert.Equal(3, persistedDocument.RootElement.GetProperty("SchemaVersion").GetInt32());
+        AssertOwnerScopes(identity.GrantedScopes);
 
         var repeatedBootstrap = await store.BootstrapAsync(CancellationToken.None);
         Assert.Equal(InstallationBootstrapStatus.AlreadyInitialized, repeatedBootstrap.Status);
-        Assert.Null(repeatedBootstrap.ApiKey);
+        Assert.Null(repeatedBootstrap.OwnerPrincipalId);
     }
 
     [Fact]
@@ -66,11 +57,9 @@ public sealed class InstallationIdentityStoreTests
         Directory.CreateDirectory(stateDirectory.Path);
         var stateWithUnknownSchema = new
         {
-            SchemaVersion = 4,
+            SchemaVersion = 5,
             InstallationId = "8196f6e9b019487e927ca07f6d3855e9",
             OwnerPrincipalId = "owner-unknown-schema",
-            ApiKeySha256 = Convert.ToHexString(
-                SHA256.HashData(Encoding.UTF8.GetBytes("unknown-schema-api-key"))),
             GrantedScopes = new[] { "installation.owner" },
             InitializedAtUtc = new DateTimeOffset(2026, 8, 20, 10, 0, 0, TimeSpan.Zero),
         };
@@ -84,20 +73,45 @@ public sealed class InstallationIdentityStoreTests
     }
 
     [Fact]
-    public async Task MigratesSchemaOneIdentityWithoutChangingItsExistingData()
+    public async Task RejectsSchemaFourIdentityThatStillContainsALegacyApiKeyHash()
+    {
+        using var stateDirectory = new TemporaryInstallationStateDirectory();
+        var store = CreateStore(stateDirectory.Path);
+        Directory.CreateDirectory(stateDirectory.Path);
+        var stateWithLegacyHash = new
+        {
+            SchemaVersion = 4,
+            InstallationId = "8196f6e9b019487e927ca07f6d3855e9",
+            OwnerPrincipalId = "owner-current-schema",
+            ApiKeySha256 = CreateApiKeyHash(),
+            GrantedScopes = new[] { "installation.owner" },
+            InitializedAtUtc = new DateTimeOffset(2026, 8, 20, 10, 0, 0, TimeSpan.Zero),
+        };
+        await File.WriteAllTextAsync(
+            store.GetStateFilePath(),
+            JsonSerializer.Serialize(stateWithLegacyHash),
+            CancellationToken.None);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await store.GetAsync(CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public async Task MigratesLegacyIdentityToSchemaFourWithoutChangingStableData(int schemaVersion)
     {
         using var stateDirectory = new TemporaryInstallationStateDirectory();
         var store = CreateStore(stateDirectory.Path);
         Directory.CreateDirectory(stateDirectory.Path);
         var initializedAtUtc = new DateTimeOffset(2026, 8, 20, 10, 0, 0, TimeSpan.Zero);
-        var apiKeyHash = Convert.ToHexString(
-            SHA256.HashData(Encoding.UTF8.GetBytes("legacy-api-key")));
         var legacyState = new
         {
-            SchemaVersion = 1,
+            SchemaVersion = schemaVersion,
             InstallationId = "8196f6e9b019487e927ca07f6d3855e9",
             OwnerPrincipalId = "owner-legacy",
-            ApiKeySha256 = apiKeyHash,
+            ApiKeySha256 = CreateApiKeyHash(),
             GrantedScopes = new[] { "installation.owner" },
             InitializedAtUtc = initializedAtUtc,
         };
@@ -107,9 +121,7 @@ public sealed class InstallationIdentityStoreTests
             CancellationToken.None);
 
         var identity = await store.GetAsync(CancellationToken.None);
-        var migratedState = await File.ReadAllTextAsync(
-            store.GetStateFilePath(),
-            CancellationToken.None);
+        var migratedState = await File.ReadAllTextAsync(store.GetStateFilePath(), CancellationToken.None);
         var secondIdentity = await store.GetAsync(CancellationToken.None);
         var stateAfterSecondRead = await File.ReadAllTextAsync(
             store.GetStateFilePath(),
@@ -118,25 +130,18 @@ public sealed class InstallationIdentityStoreTests
         Assert.NotNull(identity);
         Assert.Equal(legacyState.InstallationId, identity.InstallationId);
         Assert.Equal(legacyState.OwnerPrincipalId, identity.OwnerPrincipalId);
-        Assert.Equal(legacyState.ApiKeySha256, identity.ApiKeySha256);
-        Assert.Contains("installation.owner", identity.GrantedScopes);
-        Assert.Contains("memory.personal.read", identity.GrantedScopes);
-        Assert.Contains("memory.personal.write", identity.GrantedScopes);
-        Assert.Contains("profile.personal.read", identity.GrantedScopes);
-        Assert.Contains("profile.personal.write", identity.GrantedScopes);
-        Assert.Contains("household.profile.read", identity.GrantedScopes);
-        Assert.Contains("household.profile.write", identity.GrantedScopes);
-        Assert.Equal(7, identity.GrantedScopes.Count);
+        AssertOwnerScopes(identity.GrantedScopes);
         Assert.NotNull(secondIdentity);
         Assert.Equal(identity.InstallationId, secondIdentity.InstallationId);
         Assert.Equal(identity.OwnerPrincipalId, secondIdentity.OwnerPrincipalId);
-        Assert.Equal(identity.ApiKeySha256, secondIdentity.ApiKeySha256);
         Assert.Equal(
             identity.GrantedScopes.Order(StringComparer.Ordinal),
             secondIdentity.GrantedScopes.Order(StringComparer.Ordinal));
         Assert.Equal(migratedState, stateAfterSecondRead);
+
         using var migratedDocument = JsonDocument.Parse(migratedState);
-        Assert.Equal(3, migratedDocument.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.Equal(4, migratedDocument.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.False(migratedDocument.RootElement.TryGetProperty("ApiKeySha256", out _));
         Assert.Equal(
             initializedAtUtc,
             migratedDocument.RootElement.GetProperty("InitializedAtUtc").GetDateTimeOffset());
@@ -145,6 +150,25 @@ public sealed class InstallationIdentityStoreTests
     private static FileInstallationIdentityStore CreateStore(string stateDirectory) => new(
         Options.Create(new InstallationIdentityOptions { StateDirectory = stateDirectory }),
         new ManualTimeProvider(new DateTimeOffset(2026, 8, 21, 10, 0, 0, TimeSpan.Zero)));
+
+    private static string CreateApiKeyHash() => Convert.ToHexString(
+        SHA256.HashData(Encoding.UTF8.GetBytes("legacy-api-key")));
+
+    private static void AssertOwnerScopes(IReadOnlySet<string> scopes)
+    {
+        Assert.Equal(11, scopes.Count);
+        Assert.Contains("installation.owner", scopes);
+        Assert.Contains("memory.personal.read", scopes);
+        Assert.Contains("memory.personal.write", scopes);
+        Assert.Contains("profile.personal.read", scopes);
+        Assert.Contains("profile.personal.write", scopes);
+        Assert.Contains("household.profile.read", scopes);
+        Assert.Contains("household.profile.write", scopes);
+        Assert.Contains("documents.search", scopes);
+        Assert.Contains("documents.read", scopes);
+        Assert.Contains("documents.content.search", scopes);
+        Assert.Contains("reminders.write", scopes);
+    }
 }
 
 internal sealed class TemporaryInstallationStateDirectory : IDisposable
