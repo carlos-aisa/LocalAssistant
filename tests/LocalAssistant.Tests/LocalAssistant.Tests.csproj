@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\src\LocalAssistant.Api\LocalAssistant.Api.csproj" />
     <ProjectReference Include="..\..\src\LocalAssistant.Core\LocalAssistant.Core.csproj" />
     <ProjectReference Include="..\..\src\LocalAssistant.Infrastructure\LocalAssistant.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\LocalAssistant.TerminalClient\LocalAssistant.TerminalClient.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\docs\api\openapi.yaml"
@@ -36,6 +37,9 @@
           CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\scripts\Chat.ps1"
           Link="scripts\Chat.ps1"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\LocalAssistant.TerminalClient\LocalAssistant.TerminalClient.csproj"
+          Link="projects\LocalAssistant.TerminalClient.csproj"
           CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\scripts\Evaluate-OllamaToolCalling.ps1"
           Link="scripts\Evaluate-OllamaToolCalling.ps1"

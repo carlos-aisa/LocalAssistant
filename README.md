@@ -410,8 +410,9 @@ conversaciones a servicios externos.
 ### Cliente de terminal para pruebas manuales
 
 `scripts/Chat.ps1` es una herramienta de desarrollo para conversar manualmente con
-la API. No es la interfaz definitiva del producto, no guarda conversaciones ni
-credenciales y no sustituye una futura UI.
+la API. No es la interfaz definitiva del producto, no guarda conversaciones y no
+sustituye una futura UI. Tras abrir una sesión válida puede proteger la credencial de
+cliente con DPAPI; el token bearer temporal no se escribe en disco.
 
 En el equipo de sobremesa, la configuración recomendada actualmente para estas
 pruebas es `qwen3.5:9b`. Descarga el modelo e inicia la API desde la raíz:
@@ -445,6 +446,23 @@ Antes de `/new` o de cambiar `/provider`, el cliente solicita la finalización d
 conversación autenticada actual. `/exit` hace lo mismo y solo cierra tras una respuesta
 correcta; si falla, el cliente conserva la conversación actual y permanece abierto para
 reintentar. Un cierre inesperado sigue dependiendo del debounce de inactividad.
+
+### Cliente .NET textual de fase 5
+
+El primer incremento del cliente .NET es una consola independiente que usa únicamente
+la API HTTP pública y no referencia el servidor ni SQLite. Con la API ya iniciada y un
+cliente privado bootstrapado, ejecútalo desde otra terminal:
+
+```powershell
+dotnet run --project src/LocalAssistant.TerminalClient -- --provider=fake --scenario=direct
+```
+
+Solicita el identificador y la credencial de cliente de forma interactiva; la
+credencial y el bearer permanecen solo en memoria durante esa ejecución y no se
+aceptan como argumentos. El cliente comprueba primero health en loopback, conserva el
+`ConversationId` para los mensajes posteriores y muestra la respuesta, iteraciones y
+resumen de herramientas. Aún no incorpora pairing, DPAPI, completion, comandos,
+confirmaciones resolubles, reanudación entre ejecuciones, TUI ni salida de voz.
 
 ### Validación local observada
 

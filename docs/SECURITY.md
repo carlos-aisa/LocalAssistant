@@ -22,6 +22,34 @@ estado vigente de instalación es el esquema 4 y no conserva su hash; los esquem
 La primera iteración no es un producto listo para exposición pública. Establece
 límites que deben conservarse al añadir capacidades.
 
+### Evolución prevista: cliente terminal y salida hablada
+
+El futuro cliente terminal .NET seguirá limitado a loopback y usará únicamente una
+credencial de cliente registrada y una sesión bearer temporal. Guardará la credencial
+solo tras validar una sesión, preferentemente protegida con DPAPI de usuario actual; si
+esa protección no está disponible, pedirá la credencial manualmente y no la persistirá.
+Nunca guardará el bearer, el desafío administrativo ni secretos en historial, trazas o
+logs. Un identificador local de conversación se tratará también como dato privado y no
+autoriza por sí mismo su lectura.
+
+Una renovación de sesión podrá repetir una petición únicamente después de un `401` de
+autenticación bearer que pruebe que el endpoint no la ejecutó. Ante timeout, cancelación
+del transporte o desconexión después de enviar un turno, el cliente mostrará resultado
+incierto y no reenviará el mensaje automáticamente: la persistencia del usuario puede
+haber ocurrido antes de la respuesta del proveedor.
+
+La TUI deberá mostrar confirmaciones y estados reales sin registrar su contenido de
+forma indiscriminada. Su selector e historial solo se habilitarán tras contratos HTTP
+que filtren por propietario, paginen el resultado y mantengan la misma respuesta ante
+identificador inexistente o ajeno.
+
+La síntesis y reproducción de fase 5 son locales por defecto y no añaden audio a la
+API ni al orquestador. Los buffers o archivos temporales se limitarán a la sesión,
+se eliminarán al terminar o fallar la reproducción y no se conservarán por defecto.
+Un adaptador TTS externo requerirá la política de egreso ya definida, proveedor y
+retención explícitos. `mute`, `stop` y `repeat` controlan solo la salida local; no
+deben presentar una cancelación de turno como garantía que el protocolo todavía no da.
+
 ## Modelo inicial de herramientas
 
 Cada herramienta declara nombre, descripción, esquema JSON y un perfil de riesgo:

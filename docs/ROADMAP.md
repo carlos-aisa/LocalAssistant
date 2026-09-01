@@ -245,13 +245,58 @@ Cada fase entrega un resultado cerrado, demostrable y utilizable.
 
 ### Fase 5 — Cliente terminal .NET, TUI y salida hablada incremental
 
-Cliente .NET independiente de la API con credencial local segura.
-Conversaciones nuevas y reanudables, completion, confirmaciones y errores claros.
-`Chat.ps1` permanece como diagnóstico y fallback de desarrollo.
-La TUI mostrará estados reales, animación accesible, silenciar, cancelar y repetir.
-La salida hablada será intercambiable y cancelable, con degradación a texto.
-Conversación/control y TTS/reproducción son planos distintos.
-No se fija proveedor, ubicación de síntesis ni transporte multimedia.
+**Resultado utilizable:** un cliente terminal .NET independiente se conecta únicamente
+a la API HTTP pública en loopback, mantiene una conversación privada, hace visibles
+las confirmaciones y errores, y puede degradar con honestidad a salida textual. No
+alberga la API ni accede a SQLite, identidad, proyectos ni contratos internos.
+`Chat.ps1` permanece como herramienta de diagnóstico y fallback de desarrollo.
+
+La fase se entrega mediante incrementos demostrables y en este orden:
+
+1. [x] **Cliente textual mínimo:** health check loopback, credencial en memoria, sesión
+   bearer, mensajes, `ConversationId`, respuesta final, herramientas, iteraciones y
+   errores que distingan fake de Ollama. No selecciona dependencias de TUI o voz.
+2. **Autenticación y operación:** abstracciones de credencial y almacenamiento,
+   DPAPI con entrada manual como fallback, persistencia solo después de una sesión
+   válida, pairing, renovación de sesión, revocación y rotación administrativas,
+   confirmaciones y comandos `new`, `info`, `provider` y `exit`. Los logs no copian
+   secretos. Solo se reintenta una operación si es demostrablemente segura: un `401`
+   bearer permite abrir una sesión nueva antes de reintentar; una desconexión tras
+   enviar un turno deja resultado incierto y no se repite automáticamente.
+3. **Conversaciones reanudables:** se conserva el último identificador local y se
+   incorpora un selector de conversaciones propias cuando exista un listado HTTP
+   paginado y una lectura de historial autorizada. Los contratos deberán filtrar por
+   propietario y devolver el mismo resultado para una conversación inexistente o
+   ajena. `completion` solicita indexación, no cierra definitivamente la conversación.
+4. **Modelo de estado:** `Disconnected`, conexión, autenticación, listo, espera de
+   turno, espera de confirmación, reproducción de voz y errores recuperables o
+   bloqueantes. Las transiciones, cierre y recuperación se harán explícitos. Detener
+   la reproducción es local; cancelar un turno HTTP no se presentará como cancelación
+   fiable mientras falten identidad de operación e idempotencia de turno.
+5. **TUI accesible:** historial visual, entrada, estado de servidor, proveedor y
+   conversación, confirmación de herramientas y estado del reproductor. La animación
+   representará estados reales, respetará movimiento reducido y degradará a texto
+   plano en terminal no interactivo, redireccionado o redimensionado. Spectre.Console
+   es solo un candidato por evaluar; no habrá ondas de audio simuladas.
+6. **Salida hablada intercambiable simulada:** contratos de síntesis, reproducción y
+   coordinación de salida, preferencias y pruebas deterministas sin un motor real.
+7. **TTS real tras una evaluación acotada:** voz, velocidad y volumen, con comandos
+   `mute`, `unmute`, `stop` y `repeat`. La síntesis será local por defecto, no se
+   conservará audio, las métricas no copiarán contenido y un fallo volverá a texto.
+   No incluye entrada de audio ni STT.
+8. **Cierre operativo de Windows:** publicación, configuración fuera del binario,
+   credencial DPAPI, bearer no persistido, arranque manual de la API, diagnósticos,
+   logs y smoke tests reproducibles.
+
+**Criterio de finalización:** los incrementos entregados tienen una demostración y
+pruebas proporcionales. El cliente textual, la TUI y la voz se distinguen con claridad;
+la API sigue siendo textual; silenciar, detener voz y cancelar un turno no se confunden;
+y ningún motor de TUI o TTS se adopta antes de su evaluación.
+
+**Capacidades excluidas:** alojar o lanzar automáticamente la API, referencias a
+internos del servidor, audio Base64 o transporte multimedia desde el orquestador,
+STT, entrada de audio, cancelación fiable de turnos sin idempotencia, y selección
+anticipada de proveedor, motor o ubicación de síntesis.
 
 ### Fase 6 — Tools Gateway y meteorología
 

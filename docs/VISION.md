@@ -129,6 +129,21 @@ administrador será un proceso explícito y auditable, no una credencial predete
 ni una puerta trasera. Los clientes privados y sus sesiones bearer son la frontera
 actual y no representan todavía este modelo doméstico completo.
 
+## Cliente terminal privado y salida local
+
+La siguiente interfaz de uso diario será un cliente terminal .NET separado del
+servidor. Se comunicará con la API textual mediante HTTP en loopback y conservará la
+frontera entre cliente, API, núcleo, almacenamiento e identidad. La experiencia podrá
+incorporar una TUI y salida hablada local sin convertirlas en una dependencia del
+orquestador ni enviar audio dentro de la respuesta conversacional.
+
+La interfaz mostrará con honestidad si está desconectada, autenticando, esperando una
+respuesta, solicitando confirmación, reproduciendo voz o ante un error recuperable.
+Detener audio, silenciar y repetir una respuesta pertenecen al dispositivo local;
+cancelar una petición de conversación no se confundirá con una garantía de que el
+turno no se haya persistido. La evolución prioriza texto accesible y degradable antes
+de seleccionar una biblioteca de TUI o un motor de síntesis.
+
 ## Conversational English Coach
 
 Jarvis podrá actuar como tutor personal de inglés para conversación cotidiana y
