@@ -775,11 +775,11 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
     }
 
     [Fact]
-    public async Task InvalidApiKeyIsRejectedBeforeTheOrchestrator()
+    public async Task LegacyApiKeyHeaderIsRejectedBeforeDocumentResolution()
     {
         using var client = CreateIdentityClient(["time.read"]);
         client.DefaultRequestHeaders.Add(
-            LocalApiKeyAuthenticationDefaults.HeaderName,
+            "X-LocalAssistant-Api-Key",
             "invalid-api-key");
 
         using var response = await client.GetAsync("/api/documents", CancellationToken.None);
