@@ -447,6 +447,23 @@ conversación autenticada actual. `/exit` hace lo mismo y solo cierra tras una r
 correcta; si falla, el cliente conserva la conversación actual y permanece abierto para
 reintentar. Un cierre inesperado sigue dependiendo del debounce de inactividad.
 
+### Cliente .NET textual de fase 5
+
+El primer incremento del cliente .NET es una consola independiente que usa únicamente
+la API HTTP pública y no referencia el servidor ni SQLite. Con la API ya iniciada y un
+cliente privado bootstrapado, ejecútalo desde otra terminal:
+
+```powershell
+dotnet run --project src/LocalAssistant.TerminalClient -- --provider=fake --scenario=direct
+```
+
+Solicita el identificador y la credencial de cliente de forma interactiva; la
+credencial y el bearer permanecen solo en memoria durante esa ejecución y no se
+aceptan como argumentos. El cliente comprueba primero health en loopback, conserva el
+`ConversationId` para los mensajes posteriores y muestra la respuesta, iteraciones y
+resumen de herramientas. Aún no incorpora pairing, DPAPI, completion, comandos,
+confirmaciones resolubles, reanudación entre ejecuciones, TUI ni salida de voz.
+
 ### Validación local observada
 
 El 17 de agosto de 2026 se completó un smoke test real con Ollama `0.32.14`,

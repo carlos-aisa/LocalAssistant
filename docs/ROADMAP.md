@@ -253,7 +253,7 @@ alberga la API ni accede a SQLite, identidad, proyectos ni contratos internos.
 
 La fase se entrega mediante incrementos demostrables y en este orden:
 
-1. **Cliente textual mínimo:** health check loopback, credencial en memoria, sesión
+1. [x] **Cliente textual mínimo:** health check loopback, credencial en memoria, sesión
    bearer, mensajes, `ConversationId`, respuesta final, herramientas, iteraciones y
    errores que distingan fake de Ollama. No selecciona dependencias de TUI o voz.
 2. **Autenticación y operación:** abstracciones de credencial y almacenamiento,

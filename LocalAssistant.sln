@@ -4,6 +4,8 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LocalAssistant.Api", "src\LocalAssistant.Api\LocalAssistant.Api.csproj", "{47D1988B-FD77-4247-B66E-9B362494651C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LocalAssistant.TerminalClient", "src\LocalAssistant.TerminalClient\LocalAssistant.TerminalClient.csproj", "{8FF9BC89-1691-4456-AADF-200BF8E0BD24}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LocalAssistant.Core", "src\LocalAssistant.Core\LocalAssistant.Core.csproj", "{C971691D-91CF-43FD-9013-2710E180DE72}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LocalAssistant.Tests", "tests\LocalAssistant.Tests\LocalAssistant.Tests.csproj", "{4EA421F7-9178-49F3-9E81-57EBB8F26663}"
@@ -22,6 +24,10 @@ Global
 		{47D1988B-FD77-4247-B66E-9B362494651C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{47D1988B-FD77-4247-B66E-9B362494651C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{47D1988B-FD77-4247-B66E-9B362494651C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8FF9BC89-1691-4456-AADF-200BF8E0BD24}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8FF9BC89-1691-4456-AADF-200BF8E0BD24}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8FF9BC89-1691-4456-AADF-200BF8E0BD24}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8FF9BC89-1691-4456-AADF-200BF8E0BD24}.Release|Any CPU.Build.0 = Release|Any CPU
 		{C971691D-91CF-43FD-9013-2710E180DE72}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{C971691D-91CF-43FD-9013-2710E180DE72}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C971691D-91CF-43FD-9013-2710E180DE72}.Release|Any CPU.ActiveCfg = Release|Any CPU
