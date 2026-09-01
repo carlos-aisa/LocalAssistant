@@ -965,6 +965,33 @@ transacción. Los endpoints privados se limitan a loopback. El administrador cre
 desafíos de un solo uso mediante un comando local, por lo que una sesión ordinaria no
 obtiene privilegios administrativos.
 
+### Evolución prevista: cliente terminal .NET
+
+La fase 5 añadirá un proceso cliente independiente que consumirá exclusivamente el
+contrato HTTP público. No referenciará `LocalAssistant.Api`, `LocalAssistant.Core` ni
+`LocalAssistant.Infrastructure`, ni abrirá SQLite, el estado de instalación o servicios
+internos. La API deberá estar ya en ejecución; un futuro lanzador, si se justifica,
+será una responsabilidad separada.
+
+El cliente seguirá enviando y recibiendo únicamente mensajes y control de conversación.
+Conservará una credencial de cliente protegida por el sistema operativo cuando esté
+disponible y mantendrá el bearer solo en memoria. Al expirar una sesión, abrirá otra con
+la credencial duradera; no convierte una desconexión posterior al envío de un turno en
+una operación repetible, porque el servidor puede haber persistido ya el mensaje.
+
+La continuidad con un `ConversationId` conocido usa el contrato actual. Un selector e
+historial visibles requieren una ampliación posterior y explícita de HTTP: listado
+paginado de conversaciones propias y lectura de mensajes, ambos filtrados por
+propietario y sin revelar si un identificador ajeno existe. El cliente no inventará
+esas rutas ni consultará el almacén para suplirlas.
+
+La salida de voz se ejecutará en el propio cliente y recibirá solo la respuesta textual
+final. Silenciar, detener reproducción y repetir son controles locales del plano de
+salida; no equivalen a cancelar un turno en el plano de conversación. Ningún endpoint
+de conversación transportará audio Base64 como consecuencia de esta fase.
+La frontera y la propiedad local de salida se establecen en el
+[ADR 0034](adr/0034-keep-terminal-client-independent-and-own-local-output.md).
+
 El núcleo declara particiones de memoria personal, compartida del hogar, de módulo,
 administrativa y efímera. La única persistida y expuesta actualmente es la personal;
 las demás necesitan un flujo autorizado antes de incorporar almacenamiento o API.

@@ -410,8 +410,9 @@ conversaciones a servicios externos.
 ### Cliente de terminal para pruebas manuales
 
 `scripts/Chat.ps1` es una herramienta de desarrollo para conversar manualmente con
-la API. No es la interfaz definitiva del producto, no guarda conversaciones ni
-credenciales y no sustituye una futura UI.
+la API. No es la interfaz definitiva del producto, no guarda conversaciones y no
+sustituye una futura UI. Tras abrir una sesión válida puede proteger la credencial de
+cliente con DPAPI; el token bearer temporal no se escribe en disco.
 
 En el equipo de sobremesa, la configuración recomendada actualmente para estas
 pruebas es `qwen3.5:9b`. Descarga el modelo e inicia la API desde la raíz:
