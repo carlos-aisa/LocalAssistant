@@ -64,12 +64,14 @@ public interface IPrivateClientAuthenticationStore
 
     ValueTask<RegisteredPrivateClient?> ConsumeRotateCredentialChallengeAsync(
         string secretHash,
+        string expectedClientId,
         string credentialHash,
         DateTimeOffset now,
         CancellationToken cancellationToken);
 
-    ValueTask<bool> ConsumeRevokeClientChallengeAsync(
+    ValueTask<RegisteredPrivateClient?> ConsumeRevokeClientChallengeAsync(
         string secretHash,
+        string expectedClientId,
         DateTimeOffset now,
         CancellationToken cancellationToken);
 

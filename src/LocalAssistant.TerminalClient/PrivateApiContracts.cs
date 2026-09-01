@@ -8,6 +8,16 @@ public sealed record HealthResponse;
 
 public sealed record PrivateSessionResponse(string AccessToken, DateTimeOffset ExpiresAtUtc);
 
+public sealed record CompletePrivateClientPairingRequest(string Challenge, string DisplayName);
+
+public sealed record PrivateClientCredentialResponse(string ClientId, string DisplayName, string Credential);
+
+public sealed record ConsumeAdministrativeChallengeRequest(string Challenge, string ClientId);
+
+public sealed record PrivateClientRevocationResponse(string ClientId);
+
+public sealed record CompletionResponse;
+
 public sealed record SendMessageRequest(
     string Message,
     Guid? ConversationId,
@@ -38,7 +48,13 @@ public sealed record ToolConfirmationResponse(
     JsonElement Arguments,
     DateTimeOffset ExpiresAtUtc);
 
-public sealed record ClientError(string Code, string Message, bool IsUncertain = false);
+public sealed record ResolveToolConfirmationRequest(bool Approved, string Provider, string Scenario);
+
+public sealed record ClientError(
+    string Code,
+    string Message,
+    bool IsUncertain = false,
+    bool CanRenewSession = false);
 
 public sealed record ClientResult<T>(T? Value, ClientError? Error)
 {
@@ -49,6 +65,10 @@ public static class ClientResults
 {
     public static ClientResult<T> Success<T>(T value) => new(value, null);
 
-    public static ClientResult<T> Failure<T>(string code, string message, bool isUncertain = false) =>
-        new(default, new ClientError(code, message, isUncertain));
+    public static ClientResult<T> Failure<T>(
+        string code,
+        string message,
+        bool isUncertain = false,
+        bool canRenewSession = false) =>
+        new(default, new ClientError(code, message, isUncertain, canRenewSession));
 }

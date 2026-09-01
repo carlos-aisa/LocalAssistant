@@ -5,15 +5,18 @@ public sealed class TerminalClientApplication
     private readonly PrivateApiClient _apiClient;
     private readonly ITerminalConsole _console;
     private readonly TerminalClientOptions _options;
+    private readonly IPrivateClientCredentialStore _credentialStore;
 
     public TerminalClientApplication(
         PrivateApiClient apiClient,
         ITerminalConsole console,
-        TerminalClientOptions options)
+        TerminalClientOptions options,
+        IPrivateClientCredentialStore? credentialStore = null)
     {
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _console = console ?? throw new ArgumentNullException(nameof(console));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _credentialStore = credentialStore ?? new ManualPrivateClientCredentialStore();
     }
 
     public async Task<int> RunAsync(CancellationToken cancellationToken)
@@ -25,92 +28,331 @@ public sealed class TerminalClientApplication
             return 1;
         }
 
-        _console.Write("Private client ID: ");
-        var clientId = _console.ReadLine()?.Trim();
-        if (string.IsNullOrWhiteSpace(clientId))
+        var credential = await GetCredentialAsync(cancellationToken);
+        if (credential is null)
         {
-            _console.WriteLine("A private client ID is required.");
             return 2;
         }
 
-        _console.Write("Private client credential: ");
-        var credential = _console.ReadSecret();
-        if (string.IsNullOrWhiteSpace(credential))
-        {
-            _console.WriteLine("A private client credential is required.");
-            return 2;
-        }
-
-        var session = await _apiClient.CreateSessionAsync(clientId, credential, cancellationToken);
-        credential = string.Empty;
+        var session = await _apiClient.CreateSessionAsync(credential.ClientId, credential.Credential, cancellationToken);
         if (!session.IsSuccess)
         {
             WriteError(session.Error!);
             return 1;
         }
 
-        var accessToken = session.Value!.AccessToken;
-        try
+        await SaveCredentialAsync(credential, cancellationToken);
+        return await ProcessMessagesAsync(credential, session.Value!.AccessToken, cancellationToken);
+    }
+
+    private async Task<PrivateClientCredential?> GetCredentialAsync(CancellationToken cancellationToken)
+    {
+        var stored = await _credentialStore.LoadAsync(cancellationToken);
+        if (stored is not null)
         {
-            ShowStartup();
-            return await ProcessMessagesAsync(accessToken, cancellationToken);
+            return stored;
         }
-        finally
+
+        _console.Write("Private client ID (leave empty to pair): ");
+        var clientId = _console.ReadLine()?.Trim();
+        if (string.IsNullOrWhiteSpace(clientId))
         {
-            accessToken = string.Empty;
+            _console.Write("Administrative pairing challenge: ");
+            var challenge = _console.ReadSecret();
+            _console.Write("Private client display name: ");
+            var displayName = _console.ReadLine()?.Trim();
+            if (string.IsNullOrWhiteSpace(challenge) || string.IsNullOrWhiteSpace(displayName))
+            {
+                return null;
+            }
+
+            var paired = await _apiClient.CompletePairingAsync(challenge, displayName, cancellationToken);
+            if (!paired.IsSuccess)
+            {
+                WriteError(paired.Error!);
+                return null;
+            }
+
+            return new PrivateClientCredential(paired.Value!.ClientId, paired.Value.Credential);
+        }
+
+        _console.Write("Private client credential: ");
+        var value = _console.ReadSecret();
+        return string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(value)
+            ? null
+            : new PrivateClientCredential(clientId, value);
+    }
+
+    private async Task SaveCredentialAsync(PrivateClientCredential credential, CancellationToken cancellationToken)
+    {
+        if (!await _credentialStore.SaveAsync(credential, cancellationToken))
+        {
+            _console.WriteLine("The credential is valid for this session but could not be stored securely.");
         }
     }
 
-    private async Task<int> ProcessMessagesAsync(string accessToken, CancellationToken cancellationToken)
+    private async Task<int> ProcessMessagesAsync(
+        PrivateClientCredential credential,
+        string accessToken,
+        CancellationToken cancellationToken)
     {
         Guid? conversationId = null;
+        var provider = _options.Provider;
+        var scenario = _options.Scenario;
+        _console.WriteLine("LocalAssistant terminal client");
+        _console.WriteLine($"Server: {_options.BaseUri}");
+        _console.WriteLine(provider == "fake"
+            ? $"Provider: fake (scenario: {scenario})"
+            : "Provider: ollama (the server configures the model)");
+        _console.WriteLine("Type /help for commands.");
+
         while (true)
         {
             _console.Write("You: ");
-            var message = _console.ReadLine();
-            if (message is null)
+            var input = _console.ReadLine();
+            if (input is null)
             {
                 return 0;
             }
 
-            message = message.Trim();
-            if (string.IsNullOrWhiteSpace(message))
+            input = input.Trim();
+            if (string.IsNullOrWhiteSpace(input))
             {
                 continue;
             }
 
-            var response = await _apiClient.SendMessageAsync(
+            if (input.StartsWith('/'))
+            {
+                var command = await HandleCommandAsync(
+                    input, credential, accessToken, conversationId, provider, scenario, cancellationToken);
+                accessToken = command.AccessToken;
+                conversationId = command.ConversationId;
+                provider = command.Provider;
+                credential = command.Credential ?? credential;
+                if (!command.Continue)
+                {
+                    return command.ExitCode;
+                }
+
+                continue;
+            }
+
+            var sent = await SendAsync(
+                credential,
                 accessToken,
-                new SendMessageRequest(message, conversationId, _options.Provider, _options.Scenario),
+                new SendMessageRequest(input, conversationId, provider, scenario),
                 cancellationToken);
-            if (!response.IsSuccess)
+            accessToken = sent.AccessToken;
+            if (!sent.Response.IsSuccess)
             {
-                WriteError(response.Error!);
+                WriteError(sent.Response.Error!);
                 continue;
             }
 
-            conversationId = response.Value!.ConversationId;
-            ShowResponse(response.Value);
-            if (response.Value.Confirmation is not null)
+            conversationId = sent.Response.Value!.ConversationId;
+            ShowResponse(sent.Response.Value);
+            if (sent.Response.Value.Confirmation is not null)
             {
-                _console.WriteLine(
-                    "A tool confirmation is pending. This client increment cannot resolve it yet.");
-                return 1;
+                var resolved = await ResolveConfirmationAsync(
+                    credential, accessToken, conversationId.Value, sent.Response.Value.Confirmation,
+                    provider, scenario, cancellationToken);
+                accessToken = resolved.AccessToken;
+                if (resolved.Response.IsSuccess)
+                {
+                    conversationId = resolved.Response.Value!.ConversationId;
+                    ShowResponse(resolved.Response.Value);
+                }
+                else
+                {
+                    WriteError(resolved.Response.Error!);
+                }
             }
         }
     }
 
-    private void ShowStartup()
+    private async Task<(ClientResult<ConversationResponse> Response, string AccessToken)> SendAsync(
+        PrivateClientCredential credential,
+        string accessToken,
+        SendMessageRequest request,
+        CancellationToken cancellationToken)
     {
-        _console.WriteLine("LocalAssistant terminal client");
-        _console.WriteLine($"Server: {_options.BaseUri}");
-        if (_options.Provider == "fake")
+        var response = await _apiClient.SendMessageAsync(accessToken, request, cancellationToken);
+        if (!response.Error?.CanRenewSession ?? true)
         {
-            _console.WriteLine($"Provider: fake (scenario: {_options.Scenario})");
-            return;
+            return (response, accessToken);
         }
 
-        _console.WriteLine("Provider: ollama (the server configures the model)");
+        var renewed = await _apiClient.CreateSessionAsync(credential.ClientId, credential.Credential, cancellationToken);
+        if (!renewed.IsSuccess)
+        {
+            return (response, accessToken);
+        }
+
+        accessToken = renewed.Value!.AccessToken;
+        return (await _apiClient.SendMessageAsync(accessToken, request, cancellationToken), accessToken);
+    }
+
+    private async Task<(ClientResult<ConversationResponse> Response, string AccessToken)> ResolveConfirmationAsync(
+        PrivateClientCredential credential,
+        string accessToken,
+        Guid conversationId,
+        ToolConfirmationResponse confirmation,
+        string provider,
+        string scenario,
+        CancellationToken cancellationToken)
+    {
+        _console.WriteLine($"Confirmation required for tool '{confirmation.ToolName}' before {confirmation.ExpiresAtUtc:O}.");
+        _console.Write("Type approve or reject: ");
+        var approved = string.Equals(_console.ReadLine()?.Trim(), "approve", StringComparison.OrdinalIgnoreCase);
+        var response = await _apiClient.ResolveConfirmationAsync(
+            accessToken, conversationId, confirmation.ConfirmationId,
+            new ResolveToolConfirmationRequest(approved, provider, scenario), cancellationToken);
+        return (response, accessToken);
+    }
+
+    private async Task<CommandResult> HandleCommandAsync(
+        string input,
+        PrivateClientCredential credential,
+        string accessToken,
+        Guid? conversationId,
+        string provider,
+        string scenario,
+        CancellationToken cancellationToken)
+    {
+        var parts = input.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts[0].Equals("/help", StringComparison.OrdinalIgnoreCase))
+        {
+            _console.WriteLine("Commands: /new, /info, /provider fake|ollama, /admin rotate, /admin revoke, /exit");
+            return new(true, 0, accessToken, provider, conversationId);
+        }
+
+        if (parts[0].Equals("/info", StringComparison.OrdinalIgnoreCase))
+        {
+            _console.WriteLine($"Server: {_options.BaseUri}; Provider: {provider}; Scenario: {scenario}; Conversation active: {conversationId.HasValue}.");
+            return new(true, 0, accessToken, provider, conversationId);
+        }
+
+        if (parts.Length == 2 && parts[0].Equals("/admin", StringComparison.OrdinalIgnoreCase))
+        {
+            return await HandleAdminAsync(parts[1], credential, accessToken, provider, conversationId, cancellationToken);
+        }
+
+        if (parts[0].Equals("/provider", StringComparison.OrdinalIgnoreCase))
+        {
+            if (parts.Length != 2 || (parts[1] is not "fake" and not "ollama"))
+            {
+                _console.WriteLine("Usage: /provider fake or /provider ollama");
+                return new(true, 0, accessToken, provider, conversationId);
+            }
+
+            if (!await CompleteAsync(accessToken, conversationId, cancellationToken))
+            {
+                return new(true, 0, accessToken, provider, conversationId);
+            }
+
+            return new(true, 0, accessToken, parts[1], null);
+        }
+
+        if (parts[0].Equals("/new", StringComparison.OrdinalIgnoreCase))
+        {
+            return !await CompleteAsync(accessToken, conversationId, cancellationToken)
+                ? new(true, 0, accessToken, provider, conversationId)
+                : new(true, 0, accessToken, provider, null);
+        }
+
+        if (parts[0].Equals("/exit", StringComparison.OrdinalIgnoreCase))
+        {
+            return !await CompleteAsync(accessToken, conversationId, cancellationToken)
+                ? new(true, 0, accessToken, provider, conversationId)
+                : new(false, 0, accessToken, provider, conversationId);
+        }
+
+        _console.WriteLine("Unknown command. Type /help for available commands.");
+        return new(true, 0, accessToken, provider, conversationId);
+    }
+
+    private async Task<CommandResult> HandleAdminAsync(
+        string operation,
+        PrivateClientCredential credential,
+        string accessToken,
+        string provider,
+        Guid? conversationId,
+        CancellationToken cancellationToken)
+    {
+        if (operation.Equals("rotate", StringComparison.OrdinalIgnoreCase))
+        {
+            _console.Write("Administrative rotation challenge: ");
+            var challenge = _console.ReadSecret();
+            var rotation = await _apiClient.RotateCredentialAsync(challenge, credential.ClientId, cancellationToken);
+            if (!rotation.IsSuccess || !string.Equals(rotation.Value!.ClientId, credential.ClientId, StringComparison.Ordinal))
+            {
+                WriteError(rotation.Error ?? new ClientError("invalid_response", "Credential rotation was rejected."));
+                return new(true, 0, accessToken, provider, conversationId);
+            }
+
+            var replacement = new PrivateClientCredential(credential.ClientId, rotation.Value.Credential);
+            var session = await _apiClient.CreateSessionAsync(replacement.ClientId, replacement.Credential, cancellationToken);
+            if (!session.IsSuccess)
+            {
+                WriteError(session.Error!);
+                return new(true, 0, accessToken, provider, conversationId);
+            }
+
+            if (!await _credentialStore.SaveAsync(replacement, cancellationToken))
+            {
+                _console.WriteLine("The credential was rotated but could not be stored. Pair again after this session ends.");
+            }
+
+            return new(true, 0, session.Value!.AccessToken, provider, conversationId)
+            {
+                Credential = replacement,
+            };
+        }
+
+        if (operation.Equals("revoke", StringComparison.OrdinalIgnoreCase))
+        {
+            _console.Write("Type REVOKE to revoke this client: ");
+            if (!string.Equals(_console.ReadLine(), "REVOKE", StringComparison.Ordinal))
+            {
+                return new(true, 0, accessToken, provider, conversationId);
+            }
+
+            _console.Write("Administrative revocation challenge: ");
+            var challenge = _console.ReadSecret();
+            var revoked = await _apiClient.RevokeClientAsync(challenge, credential.ClientId, cancellationToken);
+            if (!revoked.IsSuccess || !string.Equals(revoked.Value!.ClientId, credential.ClientId, StringComparison.Ordinal))
+            {
+                WriteError(revoked.Error ?? new ClientError("invalid_response", "Client revocation was rejected."));
+                return new(true, 0, accessToken, provider, conversationId);
+            }
+
+            if (!await _credentialStore.DeleteAsync(cancellationToken))
+            {
+                _console.WriteLine("The client was revoked, but its local credential state could not be removed.");
+            }
+
+            return new(false, 0, string.Empty, provider, null);
+        }
+
+        _console.WriteLine("Usage: /admin rotate or /admin revoke");
+        return new(true, 0, accessToken, provider, conversationId);
+    }
+
+    private async Task<bool> CompleteAsync(string accessToken, Guid? conversationId, CancellationToken cancellationToken)
+    {
+        if (!conversationId.HasValue)
+        {
+            return true;
+        }
+
+        var result = await _apiClient.CompleteConversationAsync(accessToken, conversationId.Value, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            WriteError(result.Error!);
+            return false;
+        }
+
+        return true;
     }
 
     private void ShowResponse(ConversationResponse response)
@@ -124,8 +366,7 @@ public sealed class TerminalClientApplication
         _console.WriteLine($"Iterations: {response.Iterations}");
         foreach (var tool in response.Tools)
         {
-            var outcome = tool.Succeeded ? "completed" : "failed";
-            _console.WriteLine($"Tool: {tool.ToolName} ({outcome})");
+            _console.WriteLine($"Tool: {tool.ToolName} ({(tool.Succeeded ? "completed" : "failed")})");
         }
 
         if (response.Error is not null)
@@ -138,5 +379,15 @@ public sealed class TerminalClientApplication
     {
         var suffix = error.IsUncertain ? " The server may have received the turn; it was not retried." : string.Empty;
         _console.WriteLine($"Error ({error.Code}): {error.Message}{suffix}");
+    }
+
+    private sealed record CommandResult(
+        bool Continue,
+        int ExitCode,
+        string AccessToken,
+        string Provider,
+        Guid? ConversationId)
+    {
+        public PrivateClientCredential? Credential { get; init; }
     }
 }

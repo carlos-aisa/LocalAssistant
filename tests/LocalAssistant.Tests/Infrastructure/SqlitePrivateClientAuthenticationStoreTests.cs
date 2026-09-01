@@ -73,7 +73,10 @@ public sealed class SqlitePrivateClientAuthenticationStoreTests
             TimeSpan.FromMinutes(5),
             CancellationToken.None);
 
-        var rotated = await service.RotateCredentialAsync(rotationChallenge.Secret, CancellationToken.None);
+        var rotated = await service.RotateCredentialAsync(
+            rotationChallenge.Secret,
+            client.Client.ClientId,
+            CancellationToken.None);
 
         Assert.NotNull(session);
         Assert.NotNull(rotated);
@@ -81,6 +84,30 @@ public sealed class SqlitePrivateClientAuthenticationStoreTests
         Assert.Null(await service.FindActiveSessionAsync(session.Token, CancellationToken.None));
         Assert.NotNull(await service.CreateSessionAsync(
             client.Client.ClientId, rotated.Secret, TimeSpan.FromHours(1), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task TargetMismatchDoesNotConsumeOrApplyCredentialRotation()
+    {
+        using var directory = new TemporaryDirectory();
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 8, 31, 10, 0, 0, TimeSpan.Zero));
+        var service = CreateService(directory.Path, clock);
+        var client = await CreateClientAsync(service);
+        var challenge = await service.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.RotateCredential,
+            client.Client.ClientId,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+
+        var mismatch = await service.RotateCredentialAsync(challenge.Secret, "other-client", CancellationToken.None);
+        var rotated = await service.RotateCredentialAsync(
+            challenge.Secret,
+            client.Client.ClientId,
+            CancellationToken.None);
+
+        Assert.Null(mismatch);
+        Assert.NotNull(rotated);
+        Assert.Equal(2, rotated.Client.CredentialVersion);
     }
 
     [Fact]
@@ -120,7 +147,10 @@ public sealed class SqlitePrivateClientAuthenticationStoreTests
 
         Assert.NotNull(expired);
         Assert.Null(await service.FindActiveSessionAsync(expired.Token, CancellationToken.None));
-        Assert.True(await service.RevokeClientAsync(revocationChallenge.Secret, CancellationToken.None));
+        Assert.NotNull(await service.RevokeClientAsync(
+            revocationChallenge.Secret,
+            client.Client.ClientId,
+            CancellationToken.None));
         Assert.Null(await service.CreateSessionAsync(
             client.Client.ClientId, client.Secret, TimeSpan.FromHours(1), CancellationToken.None));
     }

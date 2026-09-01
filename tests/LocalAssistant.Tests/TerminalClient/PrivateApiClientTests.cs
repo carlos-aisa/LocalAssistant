@@ -317,7 +317,7 @@ public sealed class PrivateApiClientTests
         var project = File.ReadAllText(path);
 
         Assert.DoesNotContain("ProjectReference", project, StringComparison.Ordinal);
-        Assert.DoesNotContain("PackageReference", project, StringComparison.Ordinal);
+        Assert.Contains("System.Security.Cryptography.ProtectedData", project, StringComparison.Ordinal);
     }
 
     private static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, string content) => new(statusCode)

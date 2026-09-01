@@ -15,4 +15,6 @@ public sealed record PrivateClientCredentialResponse(
     string DisplayName,
     string Credential);
 
-public sealed record ConsumeAdministrativeChallengeRequest(string Challenge);
+public sealed record ConsumeAdministrativeChallengeRequest(string Challenge, string ClientId);
+
+public sealed record PrivateClientRevocationResponse(string ClientId);

@@ -11,7 +11,8 @@ try
     var application = new TerminalClientApplication(
         new PrivateApiClient(httpClient),
         new SystemTerminalConsole(),
-        options);
+        options,
+        new DpapiPrivateClientCredentialStore());
 
     return await application.RunAsync(CancellationToken.None);
 }

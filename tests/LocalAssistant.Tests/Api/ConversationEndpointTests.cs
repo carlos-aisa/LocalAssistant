@@ -189,7 +189,10 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
             active.ClientId,
             TimeSpan.FromMinutes(5),
             CancellationToken.None);
-        Assert.True(await authentication.RevokeClientAsync(revocationChallenge.Secret, CancellationToken.None));
+        Assert.NotNull(await authentication.RevokeClientAsync(
+            revocationChallenge.Secret,
+            active.ClientId,
+            CancellationToken.None));
         using var revokedResponse = await SendBearerConversationAsync(client, active.Token);
 
         var rotating = await CreatePrivateBearerAsync(factory, TimeSpan.FromHours(1));
@@ -198,7 +201,10 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
             rotating.ClientId,
             TimeSpan.FromMinutes(5),
             CancellationToken.None);
-        Assert.NotNull(await authentication.RotateCredentialAsync(rotationChallenge.Secret, CancellationToken.None));
+        Assert.NotNull(await authentication.RotateCredentialAsync(
+            rotationChallenge.Secret,
+            rotating.ClientId,
+            CancellationToken.None));
         using var rotatedResponse = await SendBearerConversationAsync(client, rotating.Token);
 
         Assert.Equal(HttpStatusCode.Unauthorized, expiredResponse.StatusCode);
@@ -343,7 +349,7 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
             CancellationToken.None);
         using var rotationResponse = await client.PostAsJsonAsync(
             "/api/private/admin/credential-rotations",
-            new { challenge = rotationChallenge.Secret },
+            new { challenge = rotationChallenge.Secret, clientId = paired.ClientId },
             CancellationToken.None);
         var rotated = await rotationResponse.Content.ReadFromJsonAsync<PrivateClientCredentialResponse>(
             cancellationToken: CancellationToken.None);
@@ -354,14 +360,17 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
             CancellationToken.None);
         using var revocationResponse = await client.PostAsJsonAsync(
             "/api/private/admin/client-revocations",
-            new { challenge = revocationChallenge.Secret },
+            new { challenge = revocationChallenge.Secret, clientId = paired.ClientId },
             CancellationToken.None);
+        var revoked = await revocationResponse.Content.ReadFromJsonAsync<PrivateClientRevocationResponse>(
+            cancellationToken: CancellationToken.None);
 
         Assert.Equal(InstallationBootstrapStatus.Created, owner.Status);
         Assert.Equal(HttpStatusCode.OK, rotationResponse.StatusCode);
         Assert.NotNull(rotated);
         Assert.NotEqual(paired.Credential, rotated.Credential);
-        Assert.Equal(HttpStatusCode.NoContent, revocationResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, revocationResponse.StatusCode);
+        Assert.Equal(paired.ClientId, revoked!.ClientId);
         Assert.Null(await authentication.CreateSessionAsync(
             paired.ClientId,
             rotated.Credential,
