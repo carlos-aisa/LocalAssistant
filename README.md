@@ -463,10 +463,11 @@ aceptan como argumentos. El cliente comprueba primero health en loopback, conser
 `ConversationId` para los mensajes posteriores y muestra la respuesta, iteraciones y
 resumen de herramientas. Si el servidor devuelve un resultado conversacional
 estructurado con un estado HTTP de error, el cliente conserva igualmente ese
-identificador y muestra el error del orquestador; solo un fallo de transporte o una
-respuesta sin contrato válido se informa como incierta y no se reintenta. Aún no
-incorpora pairing, DPAPI, completion, comandos, confirmaciones resolubles, reanudación
-entre ejecuciones, TUI ni salida de voz.
+identificador y muestra el error del orquestador. Un fallo de transporte, un `5xx` sin
+contrato conversacional válido o un `2xx` inválido se informa como incierto y no se
+reintenta; un `4xx` sin contrato es un rechazo concluyente. Aún no incorpora pairing,
+DPAPI, completion, comandos, confirmaciones resolubles, reanudación entre ejecuciones,
+TUI ni salida de voz.
 
 ### Validación local observada
 

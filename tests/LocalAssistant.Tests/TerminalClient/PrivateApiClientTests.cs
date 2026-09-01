@@ -142,6 +142,64 @@ public sealed class PrivateApiClientTests
     }
 
     [Fact]
+    public async Task EmptyUnauthorizedResponseIsNotUncertain()
+    {
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.Unauthorized, string.Empty),
+        ]);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:5100/"),
+        };
+        var client = new PrivateApiClient(httpClient);
+
+        var result = await client.SendMessageAsync(
+            "session-token",
+            new SendMessageRequest("Hello", null, "fake", "direct"),
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("authentication_failed", result.Error!.Code);
+        Assert.False(result.Error.IsUncertain);
+        Assert.Single(handler.Requests);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest, "validation_error")]
+    [InlineData(HttpStatusCode.Forbidden, "authorization_failed")]
+    [InlineData(HttpStatusCode.NotFound, "not_found")]
+    [InlineData(HttpStatusCode.Conflict, "conflict")]
+    [InlineData(HttpStatusCode.UnprocessableEntity, "validation_error")]
+    public async Task RejectedResponseWithoutConversationContractIsNotUncertain(
+        HttpStatusCode statusCode,
+        string expectedErrorCode)
+    {
+        var content = statusCode == HttpStatusCode.BadRequest
+            ? """{ "title": "One or more validation errors occurred.", "status": 400 }"""
+            : """{ "title": "The request was rejected." }""";
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(statusCode, content),
+        ]);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:5100/"),
+        };
+        var client = new PrivateApiClient(httpClient);
+
+        var result = await client.SendMessageAsync(
+            "session-token",
+            new SendMessageRequest("Hello", null, "fake", "direct"),
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(expectedErrorCode, result.Error!.Code);
+        Assert.False(result.Error.IsUncertain);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
     public async Task InvalidServerErrorForATurnIsReportedAsUncertainWithoutRetry()
     {
         var handler = new RecordingHttpMessageHandler(
@@ -161,6 +219,30 @@ public sealed class PrivateApiClientTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal("http_error", result.Error!.Code);
+        Assert.True(result.Error.IsUncertain);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task InvalidSuccessfulResponseForATurnIsReportedAsUncertainWithoutRetry()
+    {
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, "{}"),
+        ]);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:5100/"),
+        };
+        var client = new PrivateApiClient(httpClient);
+
+        var result = await client.SendMessageAsync(
+            "session-token",
+            new SendMessageRequest("Hello", null, "fake", "direct"),
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("invalid_response", result.Error!.Code);
         Assert.True(result.Error.IsUncertain);
         Assert.Single(handler.Requests);
     }

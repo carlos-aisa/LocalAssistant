@@ -72,9 +72,9 @@ public sealed class PrivateApiClient
         try
         {
             using var response = await _httpClient.SendAsync(request, cancellationToken);
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-            var conversation = ValidateConversation(document.RootElement);
+            var conversation = await TryReadConversationResponseAsync(
+                response.Content,
+                cancellationToken);
             if (conversation is not null)
             {
                 return ClientResults.Success(conversation);
@@ -85,7 +85,7 @@ public sealed class PrivateApiClient
                 return ClientResults.Failure<ConversationResponse>(
                     GetErrorCode(response.StatusCode),
                     GetErrorMessage(response.StatusCode),
-                    isUncertain: true);
+                    IsUncertainStatus(response.StatusCode));
             }
 
             return ClientResults.Failure<ConversationResponse>(
@@ -114,12 +114,21 @@ public sealed class PrivateApiClient
                 "The conversation request could not be completed.",
                 isUncertain: true);
         }
+    }
+
+    private static async Task<ConversationResponse?> TryReadConversationResponseAsync(
+        HttpContent content,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var stream = await content.ReadAsStreamAsync(cancellationToken);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            return ValidateConversation(document.RootElement);
+        }
         catch (JsonException)
         {
-            return ClientResults.Failure<ConversationResponse>(
-                "invalid_response",
-                "The API returned an invalid response.",
-                isUncertain: true);
+            return null;
         }
     }
 
