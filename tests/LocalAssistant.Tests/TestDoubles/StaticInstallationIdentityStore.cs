@@ -15,7 +15,6 @@ internal sealed class StaticInstallationIdentityStore(InstallationIdentity ident
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(new InstallationBootstrapResult(
             InstallationBootstrapStatus.Created,
-            identity.OwnerPrincipalId,
-            "test-bootstrap-api-key"));
+            identity.OwnerPrincipalId));
     }
 }

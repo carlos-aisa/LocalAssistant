@@ -1,8 +1,9 @@
 # Roadmap
 
 > Estado: la fase 4 está completada: las pruebas, OpenAPI y la revisión de seguridad
-> del bearer están cerradas. Caché y procedencia de evidencias externas pertenecen a
-> la fase 6 de meteorología, no al cierre de esta fase.
+> del bearer, el bootstrap de esquema 4 y la migración de capacidades del propietario
+> están cerrados. Caché y procedencia de evidencias externas pertenecen a la fase 6 de
+> meteorología, no al cierre de esta fase.
 
 ## Incremento de perfiles estables y continuidad (completado)
 
@@ -148,6 +149,9 @@ orden y cada uno incluye sus pruebas y documentación.
 5. **Cierre documental:** ámbitos de memoria compartida y de módulo;
    caché y procedencia de evidencia externa trasladadas a meteorología; revisión de
    seguridad, operaciones y criterios de finalización.
+6. **Capacidades privadas del propietario:** esquema 4 sin API key, migración
+   atómica de instalaciones existentes y permisos bearer efectivos para documentos y
+   recordatorios.
 
 **Capacidades incluidas:**
 
@@ -158,9 +162,12 @@ orden y cada uno incluye sus pruebas y documentación.
   implícita. Las conversaciones anónimas siguen siendo públicas y efímeras.
 - [x] Introducir la identidad de instalación y un bootstrap de un solo propietario,
   invalidado tras la configuración inicial y sin credenciales predeterminadas.
-- [x] Migrar de forma compatible la identidad de instalación para conceder al
-  propietario los scopes personales de memoria ya implementados, sin crear un bypass
-  de autorización ni ampliar otros permisos.
+- [x] Migrar de forma compatible la identidad de instalación al esquema 4 para
+  conceder al propietario los scopes personales de memoria y perfil, búsqueda y
+  lectura documental, búsqueda de contenido y recordatorios. La migración preserva
+  identidad, propietario y fecha, elimina el hash de API key heredado y no crea un
+  bypass de autorización: los clientes bearer activos heredan temporalmente las
+  capacidades del propietario hasta la gestión doméstica de permisos por cliente.
 - [x] Sustituir la API key educativa por autenticación adecuada para las interfaces
   escritas cuando exista el primer dato privado persistente; no elegir proveedor de
   identidad antes de concretar el despliegue.

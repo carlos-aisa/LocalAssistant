@@ -19,43 +19,39 @@ public static class TestApiKeyAuthenticationDefaults
 public sealed class TestApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
     private readonly IConfiguration _configuration;
-    private readonly IInstallationIdentityStore _installationIdentityStore;
-
     public TestApiKeyAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
         System.Text.Encodings.Web.UrlEncoder encoder,
-        IConfiguration configuration,
-        IInstallationIdentityStore installationIdentityStore)
+        IConfiguration configuration)
         : base(options, logger, encoder)
     {
         _configuration = configuration;
-        _installationIdentityStore = installationIdentityStore;
     }
 
-    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
+    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         if (!Request.Headers.TryGetValue(TestApiKeyAuthenticationDefaults.HeaderName, out var values))
         {
-            return AuthenticateResult.NoResult();
+            return Task.FromResult(AuthenticateResult.NoResult());
         }
 
         if (values.Count != 1 || string.IsNullOrWhiteSpace(values[0]))
         {
-            return AuthenticateResult.Fail("The test API key is invalid.");
+            return Task.FromResult(AuthenticateResult.Fail("The test API key is invalid."));
         }
 
-        var identity = await GetIdentityAsync(Context.RequestAborted);
+        var identity = GetIdentity();
         if (identity is null)
         {
-            return AuthenticateResult.NoResult();
+            return Task.FromResult(AuthenticateResult.NoResult());
         }
 
         var presentedHash = SHA256.HashData(Encoding.UTF8.GetBytes(values[0]!));
         var configuredHash = Convert.FromHexString(identity.ApiKeySha256);
         if (!CryptographicOperations.FixedTimeEquals(presentedHash, configuredHash))
         {
-            return AuthenticateResult.Fail("The test API key is invalid.");
+            return Task.FromResult(AuthenticateResult.Fail("The test API key is invalid."));
         }
 
         var claims = new List<Claim>
@@ -65,17 +61,12 @@ public sealed class TestApiKeyAuthenticationHandler : AuthenticationHandler<Auth
         claims.AddRange(identity.GrantedScopes.Select(
             scope => new Claim(TestApiKeyAuthenticationDefaults.ScopeClaimType, scope)));
         var claimsIdentity = new ClaimsIdentity(claims, Scheme.Name);
-        return AuthenticateResult.Success(
-            new AuthenticationTicket(new ClaimsPrincipal(claimsIdentity), Scheme.Name));
+        return Task.FromResult(AuthenticateResult.Success(
+            new AuthenticationTicket(new ClaimsPrincipal(claimsIdentity), Scheme.Name)));
     }
 
-    private async ValueTask<InstallationIdentity?> GetIdentityAsync(CancellationToken cancellationToken)
+    private TestIdentity? GetIdentity()
     {
-        if (!bool.TryParse(_configuration["LocalAssistant:Identity:Enabled"], out var enabled) || !enabled)
-        {
-            return await _installationIdentityStore.GetAsync(cancellationToken);
-        }
-
         var principalId = _configuration["LocalAssistant:Identity:PrincipalId"];
         var apiKeyHash = _configuration["LocalAssistant:Identity:ApiKeySha256"];
         var scopes = _configuration.GetSection("LocalAssistant:Identity:Scopes")
@@ -92,10 +83,14 @@ public sealed class TestApiKeyAuthenticationHandler : AuthenticationHandler<Auth
             return null;
         }
 
-        return new InstallationIdentity(
-            "test-configured-identity",
+        return new TestIdentity(
             principalId,
             apiKeyHash,
             scopes);
     }
+
+    private sealed record TestIdentity(
+        string OwnerPrincipalId,
+        string ApiKeySha256,
+        IReadOnlySet<string> GrantedScopes);
 }

@@ -9,6 +9,7 @@ using LocalAssistant.Tests.TestDoubles;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace LocalAssistant.Tests.Api;
 
@@ -185,22 +186,21 @@ public sealed class DocumentEndpointTests
     }
 
     [Fact]
-    public async Task RegisteredPrivateBearerCanSearchDocuments()
+    public async Task BootstrapOwnerPrivateBearerCanSearchReadAndSearchDocumentContent()
     {
         using var directory = new TemporaryDirectory();
         File.WriteAllText(Path.Combine(directory.Path, "private.txt"), "private content");
-        var owner = new InstallationIdentity(
-            "test-installation",
-            "document-owner",
-            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("legacy-hash"))),
-            new HashSet<string>(["documents.search"], StringComparer.Ordinal));
+        var stateDirectory = Path.Combine(directory.Path, "installation-state");
+        var bootstrapStore = new FileInstallationIdentityStore(
+            Options.Create(new InstallationIdentityOptions { StateDirectory = stateDirectory }),
+            new ManualTimeProvider(new DateTimeOffset(2026, 9, 1, 10, 0, 0, TimeSpan.Zero)));
+        var bootstrap = await bootstrapStore.BootstrapAsync(CancellationToken.None);
         using var factory = new LocalAssistantApiFactory().WithWebHostBuilder(builder =>
         {
+            builder.UseSetting("LocalAssistant:Installation:StateDirectory", stateDirectory);
             builder.UseSetting("LocalAssistant:PrivateClients:DatabasePath", Path.Combine(directory.Path, "clients.db"));
             builder.ConfigureServices(services =>
             {
-                services.RemoveAll<IInstallationIdentityStore>();
-                services.AddSingleton<IInstallationIdentityStore>(new StaticInstallationIdentityStore(owner));
                 services.RemoveAll<ILocalDocumentRoot>();
                 services.AddSingleton<ILocalDocumentRoot>(new StaticLocalDocumentRoot(directory.Path));
             });
@@ -213,7 +213,7 @@ public sealed class DocumentEndpointTests
             CancellationToken.None);
         var credential = await authentication.CompleteClientPairingAsync(
             challenge.Secret,
-            owner.OwnerPrincipalId,
+            Assert.IsType<string>(bootstrap.OwnerPrincipalId),
             "Document test client",
             CancellationToken.None);
         var session = await authentication.CreateSessionAsync(
@@ -225,9 +225,26 @@ public sealed class DocumentEndpointTests
         client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session!.Token);
 
-        using var response = await client.GetAsync("/api/documents", CancellationToken.None);
+        using var searchResponse = await client.GetAsync(
+            "/api/documents?name=private",
+            CancellationToken.None);
+        using var searchBody = await JsonDocument.ParseAsync(
+            await searchResponse.Content.ReadAsStreamAsync(CancellationToken.None),
+            cancellationToken: CancellationToken.None);
+        var documentId = Assert.IsType<string>(Assert.Single(
+            searchBody.RootElement.GetProperty("documents").EnumerateArray())
+            .GetProperty("id")
+            .GetString());
+        using var readResponse = await client.GetAsync(
+            $"/api/documents/{Uri.EscapeDataString(documentId)}/content",
+            CancellationToken.None);
+        using var contentSearchResponse = await client.GetAsync(
+            "/api/documents/content-search?text=private%20content",
+            CancellationToken.None);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, searchResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, readResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, contentSearchResponse.StatusCode);
     }
 
     [Fact]

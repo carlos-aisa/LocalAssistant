@@ -1,6 +1,6 @@
 # LocalAssistant
 
-> Estado de autenticación (fase 4 en verificación): las interfaces privadas usan un
+> Estado de autenticación (fase 4 completada): las interfaces privadas usan un
 > bearer opaco temporal emitido para un cliente registrado. La clave API heredada no
 > autentica conversaciones, memoria, documentos ni herramientas. Ejecuta
 > `--bootstrap-owner`, después `--bootstrap-private-client`, y finalmente
@@ -185,16 +185,19 @@ en la consola del equipo que la administra. No abre el servidor HTTP:
 dotnet run --project src/LocalAssistant.Api -- --bootstrap-owner
 ```
 
-El bootstrap crea el propietario local. El estado mínimo de instalación se guarda por
-defecto en `%LOCALAPPDATA%\LocalAssistant\installation-identity.json`; conserva solo
-metadatos de identidad y hashes. Una segunda ejecución se rechaza. A continuación,
-registra un cliente privado para acceder a interfaces protegidas.
+El bootstrap crea el propietario local y guarda el estado mínimo de instalación por
+defecto en `%LOCALAPPDATA%\LocalAssistant\installation-identity.json`. Las
+instalaciones nuevas usan el esquema 4 y no generan, muestran ni almacenan una API
+key. Una segunda ejecución se rechaza. A continuación, registra un cliente privado
+para acceder a interfaces protegidas.
 
-El propietario creado por bootstrap recibe además `memory.personal.read` y
-`memory.personal.write`, por lo que puede usar sus notas personales cuando la
-persistencia privada está activada. Las instalaciones anteriores se actualizan
-localmente al leer su estado; no se genera una clave nueva ni se conceden scopes de
-documentos, recordatorios o capacidades futuras.
+El propietario recibe `memory.personal.read`, `memory.personal.write`,
+`profile.personal.read`, `profile.personal.write`, `household.profile.read`,
+`household.profile.write`, `documents.search`, `documents.read`,
+`documents.content.search` y `reminders.write`. Al leer una instalación existente de
+esquema 1, 2 o 3, el estado se migra localmente y de forma atómica al esquema 4:
+conserva instalación, propietario y fecha original, añade esos scopes y elimina el
+hash de API key heredado. La migración es idempotente.
 
 La variable `LocalAssistant__Installation__StateDirectory` permite elegir una ruta
 absoluta distinta para ese estado.
@@ -211,8 +214,10 @@ dotnet run --project src/LocalAssistant.Api -- --bootstrap-private-client
 La credencial se muestra una sola vez. Las operaciones administrativas posteriores
 empiezan con `--create-administrative-challenge`; los desafíos expiran y se consumen
 una vez. Los endpoints de sesión y administración aceptan exclusivamente loopback.
-El token bearer solo debe permanecer en memoria. La API key educativa ya no autentica
-interfaces HTTP privadas.
+El token bearer solo debe permanecer en memoria. Cada cliente activo hereda las
+capacidades del propietario: la revocación y la rotación son por cliente, pero los
+clientes todavía no tienen permisos independientes. La API key educativa ya no
+autentica interfaces HTTP privadas.
 
 ### Nombre global del asistente
 

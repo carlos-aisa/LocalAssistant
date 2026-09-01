@@ -112,7 +112,6 @@ public sealed class PersonalMemoryEndpointTests
         var owner = new InstallationIdentity(
             "test-installation",
             "owner-a",
-            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("legacy-hash"))),
             new HashSet<string>(
                 ["memory.personal.read", "memory.personal.write"],
                 StringComparer.Ordinal));
@@ -271,9 +270,25 @@ public sealed class PersonalMemoryEndpointTests
                 "LocalAssistant:ConversationPersistence:DatabasePath",
                 directory.DatabasePath);
         });
-        using var client = CreateAuthenticatedClient(
-            factory,
-            Assert.IsType<string>(bootstrap.ApiKey));
+        var authentication = factory.Services.GetRequiredService<PrivateClientAuthenticationService>();
+        var challenge = await authentication.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.CreateClient,
+            null,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+        var credential = await authentication.CompleteClientPairingAsync(
+            challenge.Secret,
+            Assert.IsType<string>(bootstrap.OwnerPrincipalId),
+            "Memory bootstrap client",
+            CancellationToken.None);
+        var session = await authentication.CreateSessionAsync(
+            credential!.Client.ClientId,
+            credential.Secret,
+            TimeSpan.FromHours(1),
+            CancellationToken.None);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session!.Token);
 
         using var createResponse = await client.PostAsJsonAsync(
             "/api/memories/personal",

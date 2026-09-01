@@ -35,9 +35,11 @@ que los documentos fuente.
 
 El bootstrap de identidad guarda también
 `%LOCALAPPDATA%\LocalAssistant\installation-identity.json` por defecto. El directorio
-de estado configurado debe ser absoluto. Aunque el archivo no guarda credenciales de
-cliente en texto claro, contiene la identidad del propietario, los scopes concedidos y
-hashes de credenciales; debe tratarse como dato privado.
+de estado configurado debe ser absoluto. El esquema 4 contiene la identidad del
+propietario y los scopes concedidos, pero no una API key ni su hash. Al cargar esquemas
+1, 2 o 3, la aplicación conserva los datos estables, añade las capacidades vigentes y
+elimina el hash legado mediante una reescritura atómica. Aunque el archivo no guarda
+credenciales de cliente en texto claro, sigue siendo dato privado.
 
 El perfil global del asistente se guarda por separado como
 `assistant-profile.json` en ese mismo directorio. Contiene actualmente su nombre de

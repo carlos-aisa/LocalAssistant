@@ -1,6 +1,5 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
 
 namespace LocalAssistant.Api.Security;
@@ -15,15 +14,13 @@ public sealed class InstallationIdentityOptions
 public sealed record InstallationIdentity(
     string InstallationId,
     string OwnerPrincipalId,
-    string ApiKeySha256,
     IReadOnlySet<string> GrantedScopes);
 
 public enum InstallationBootstrapStatus { Created, AlreadyInitialized }
 
 public sealed record InstallationBootstrapResult(
     InstallationBootstrapStatus Status,
-    string? OwnerPrincipalId,
-    string? ApiKey);
+    string? OwnerPrincipalId);
 
 public interface IInstallationIdentityStore
 {
@@ -42,9 +39,14 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
     private const string PersonalProfileWriteScope = "profile.personal.write";
     private const string HouseholdProfileReadScope = "household.profile.read";
     private const string HouseholdProfileWriteScope = "household.profile.write";
+    private const string DocumentSearchScope = "documents.search";
+    private const string DocumentReadScope = "documents.read";
+    private const string DocumentContentSearchScope = "documents.content.search";
+    private const string ReminderWriteScope = "reminders.write";
     private const int LegacySchemaVersion = 1;
     private const int PersonalMemorySchemaVersion = 2;
-    private const int CurrentSchemaVersion = 3;
+    private const int PrivateClientSchemaVersion = 3;
+    private const int CurrentSchemaVersion = 4;
     private readonly InstallationIdentityOptions _options;
     private readonly TimeProvider _clock;
 
@@ -99,7 +101,7 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
         var stateFilePath = GetStateFilePath();
         if (File.Exists(stateFilePath))
         {
-            return new(InstallationBootstrapStatus.AlreadyInitialized, null, null);
+            return new(InstallationBootstrapStatus.AlreadyInitialized, null);
         }
 
         var stateDirectory = Path.GetDirectoryName(stateFilePath)
@@ -107,12 +109,11 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
         Directory.CreateDirectory(stateDirectory);
 
         var ownerPrincipalId = $"owner-{Guid.NewGuid():N}";
-        var apiKey = CreateApiKey();
         var state = new StoredInstallationIdentity(
             CurrentSchemaVersion,
             Guid.NewGuid().ToString("N"),
             ownerPrincipalId,
-            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey))),
+            null,
             OwnerScopes,
             _clock.GetUtcNow());
 
@@ -123,11 +124,11 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
                 state,
                 overwrite: false,
                 cancellationToken);
-            return new(InstallationBootstrapStatus.Created, ownerPrincipalId, apiKey);
+            return new(InstallationBootstrapStatus.Created, ownerPrincipalId);
         }
         catch (IOException) when (File.Exists(stateFilePath))
         {
-            return new(InstallationBootstrapStatus.AlreadyInitialized, null, null);
+            return new(InstallationBootstrapStatus.AlreadyInitialized, null);
         }
     }
 
@@ -152,10 +153,15 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
     private static StoredInstallationIdentity Validate(StoredInstallationIdentity? state)
     {
         if (state is null ||
-            state.SchemaVersion is not (LegacySchemaVersion or PersonalMemorySchemaVersion or CurrentSchemaVersion) ||
+            state.SchemaVersion is not (
+                LegacySchemaVersion or
+                PersonalMemorySchemaVersion or
+                PrivateClientSchemaVersion or
+                CurrentSchemaVersion) ||
             !Guid.TryParseExact(state.InstallationId, "N", out _) ||
             !IsValidPrincipalId(state.OwnerPrincipalId) ||
-            !IsSha256Hash(state.ApiKeySha256) ||
+            (state.SchemaVersion < CurrentSchemaVersion && !IsSha256Hash(state.ApiKeySha256)) ||
+            (state.SchemaVersion == CurrentSchemaVersion && state.ApiKeySha256 is not null) ||
             state.GrantedScopes is null || state.GrantedScopes.Length == 0 ||
             state.GrantedScopes.Any(scope => string.IsNullOrWhiteSpace(scope)) ||
             state.GrantedScopes.Distinct(StringComparer.Ordinal).Count() != state.GrantedScopes.Length ||
@@ -171,6 +177,7 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
         StoredInstallationIdentity state) => state with
         {
             SchemaVersion = CurrentSchemaVersion,
+            ApiKeySha256 = null,
             GrantedScopes = state.GrantedScopes
             .Append(PersonalMemoryReadScope)
             .Append(PersonalMemoryWriteScope)
@@ -178,6 +185,10 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
             .Append(PersonalProfileWriteScope)
             .Append(HouseholdProfileReadScope)
             .Append(HouseholdProfileWriteScope)
+            .Append(DocumentSearchScope)
+            .Append(DocumentReadScope)
+            .Append(DocumentContentSearchScope)
+            .Append(ReminderWriteScope)
             .Distinct(StringComparer.Ordinal)
             .ToArray(),
         };
@@ -185,7 +196,6 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
     private static InstallationIdentity ToIdentity(StoredInstallationIdentity state) => new(
         state.InstallationId,
         state.OwnerPrincipalId,
-        state.ApiKeySha256,
         new HashSet<string>(state.GrantedScopes, StringComparer.Ordinal));
 
     private static async Task WriteStateAsync(
@@ -220,19 +230,14 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
     private static bool IsValidPrincipalId(string? value) =>
         !string.IsNullOrWhiteSpace(value) && value.Length <= 128 && !value.Any(char.IsControl);
 
-    private static bool IsSha256Hash(string value) =>
-        value.Length == 64 && value.All(Uri.IsHexDigit);
+    private static bool IsSha256Hash(string? value) =>
+        value is { Length: 64 } && value.All(Uri.IsHexDigit);
 
-    private static string CreateApiKey()
+    private static readonly JsonSerializerOptions SerializerOptions = new()
     {
-        Span<byte> bytes = stackalloc byte[32];
-        RandomNumberGenerator.Fill(bytes);
-        var apiKey = Convert.ToHexString(bytes);
-        CryptographicOperations.ZeroMemory(bytes);
-        return apiKey;
-    }
-
-    private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = true };
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
 
     private static readonly string[] OwnerScopes =
     [
@@ -243,13 +248,17 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
         PersonalProfileWriteScope,
         HouseholdProfileReadScope,
         HouseholdProfileWriteScope,
+        DocumentSearchScope,
+        DocumentReadScope,
+        DocumentContentSearchScope,
+        ReminderWriteScope,
     ];
 
     private sealed record StoredInstallationIdentity(
         int SchemaVersion,
         string InstallationId,
         string OwnerPrincipalId,
-        string ApiKeySha256,
+        string? ApiKeySha256,
         string[] GrantedScopes,
         DateTimeOffset InitializedAtUtc);
 }
