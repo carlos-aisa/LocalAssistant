@@ -62,11 +62,67 @@ public sealed class PrivateApiClientTests
     }
 
     [Fact]
-    public async Task GatewayTimeoutForATurnIsReportedAsUncertainWithoutRetry()
+    public async Task StructuredGatewayTimeoutPreservesTheConversationResponseWithoutRetry()
+    {
+        var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(
+                HttpStatusCode.GatewayTimeout,
+                FailedConversationResponseJson(conversationId, "provider_timeout")),
+        ]);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:5100/"),
+        };
+        var client = new PrivateApiClient(httpClient);
+
+        var result = await client.SendMessageAsync(
+            "session-token",
+            new SendMessageRequest("Hello", null, "fake", "direct"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(conversationId, result.Value!.ConversationId);
+        Assert.Equal("provider_timeout", result.Value.Error!.Code);
+        Assert.Single(result.Value.Tools);
+        Assert.Equal(2, result.Value.Iterations);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task StructuredForbiddenPreservesTheConversationResponseWithoutRetry()
+    {
+        var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(
+                HttpStatusCode.Forbidden,
+                FailedConversationResponseJson(conversationId, "scope_not_granted")),
+        ]);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:5100/"),
+        };
+        var client = new PrivateApiClient(httpClient);
+
+        var result = await client.SendMessageAsync(
+            "session-token",
+            new SendMessageRequest("Hello", null, "fake", "direct"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(conversationId, result.Value!.ConversationId);
+        Assert.Equal("scope_not_granted", result.Value.Error!.Code);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task TransportTimeoutForATurnIsReportedAsUncertainWithoutRetry()
     {
         var handler = new RecordingHttpMessageHandler(
         [
-            _ => JsonResponse(HttpStatusCode.GatewayTimeout, "{}"),
+            _ => throw new TaskCanceledException(),
         ]);
         using var httpClient = new HttpClient(handler)
         {
@@ -80,7 +136,31 @@ public sealed class PrivateApiClientTests
             CancellationToken.None);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("provider_timeout", result.Error!.Code);
+        Assert.Equal("request_timeout", result.Error!.Code);
+        Assert.True(result.Error.IsUncertain);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task InvalidServerErrorForATurnIsReportedAsUncertainWithoutRetry()
+    {
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.InternalServerError, "{}"),
+        ]);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:5100/"),
+        };
+        var client = new PrivateApiClient(httpClient);
+
+        var result = await client.SendMessageAsync(
+            "session-token",
+            new SendMessageRequest("Hello", null, "fake", "direct"),
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("http_error", result.Error!.Code);
         Assert.True(result.Error.IsUncertain);
         Assert.Single(handler.Requests);
     }
@@ -171,6 +251,30 @@ public sealed class PrivateApiClientTests
           "iterations": 1,
           "timings": {},
           "error": null,
+          "confirmation": null
+        }
+        """;
+
+    private static string FailedConversationResponseJson(Guid conversationId, string errorCode) => $$"""
+        {
+          "conversationId": "{{conversationId}}",
+          "content": null,
+          "tools": [
+            {
+              "toolCallId": "tool-1",
+              "toolName": "search_documents",
+              "succeeded": false,
+              "durationMilliseconds": 2,
+              "errorCode": "provider_error"
+            }
+          ],
+          "iterations": 2,
+          "timings": {},
+          "error": {
+            "code": "{{errorCode}}",
+            "message": "The conversation could not be completed.",
+            "toolName": null
+          },
           "confirmation": null
         }
         """;

@@ -461,8 +461,12 @@ Solicita el identificador y la credencial de cliente de forma interactiva; la
 credencial y el bearer permanecen solo en memoria durante esa ejecución y no se
 aceptan como argumentos. El cliente comprueba primero health en loopback, conserva el
 `ConversationId` para los mensajes posteriores y muestra la respuesta, iteraciones y
-resumen de herramientas. Aún no incorpora pairing, DPAPI, completion, comandos,
-confirmaciones resolubles, reanudación entre ejecuciones, TUI ni salida de voz.
+resumen de herramientas. Si el servidor devuelve un resultado conversacional
+estructurado con un estado HTTP de error, el cliente conserva igualmente ese
+identificador y muestra el error del orquestador; solo un fallo de transporte o una
+respuesta sin contrato válido se informa como incierta y no se reintenta. Aún no
+incorpora pairing, DPAPI, completion, comandos, confirmaciones resolubles, reanudación
+entre ejecuciones, TUI ni salida de voz.
 
 ### Validación local observada
 
