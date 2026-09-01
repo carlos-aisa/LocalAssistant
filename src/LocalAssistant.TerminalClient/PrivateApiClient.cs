@@ -51,6 +51,86 @@ public sealed class PrivateApiClient
             cancellationToken);
     }
 
+    public async Task<ClientResult<PrivateClientCredentialResponse>> CompletePairingAsync(
+        string challenge,
+        string displayName,
+        CancellationToken cancellationToken)
+    {
+        using var request = CreateJsonRequest(
+            "api/private/admin/pairings",
+            new CompletePrivateClientPairingRequest(challenge, displayName));
+        return await SendAsync(
+            request,
+            static root => root.Deserialize<PrivateClientCredentialResponse>(JsonOptions),
+            "Pairing could not be completed.",
+            isTurnRequest: false,
+            cancellationToken);
+    }
+
+    public async Task<ClientResult<PrivateClientCredentialResponse>> RotateCredentialAsync(
+        string challenge,
+        string clientId,
+        CancellationToken cancellationToken)
+    {
+        using var request = CreateJsonRequest(
+            "api/private/admin/credential-rotations",
+            new ConsumeAdministrativeChallengeRequest(challenge, clientId));
+        return await SendAsync(
+            request,
+            static root => root.Deserialize<PrivateClientCredentialResponse>(JsonOptions),
+            "Credential rotation could not be completed.",
+            isTurnRequest: false,
+            cancellationToken);
+    }
+
+    public async Task<ClientResult<PrivateClientRevocationResponse>> RevokeClientAsync(
+        string challenge,
+        string clientId,
+        CancellationToken cancellationToken)
+    {
+        using var request = CreateJsonRequest(
+            "api/private/admin/client-revocations",
+            new ConsumeAdministrativeChallengeRequest(challenge, clientId));
+        return await SendAsync(
+            request,
+            static root => root.Deserialize<PrivateClientRevocationResponse>(JsonOptions),
+            "Client revocation could not be completed.",
+            isTurnRequest: false,
+            cancellationToken);
+    }
+
+    public async Task<ClientResult<ConversationResponse>> ResolveConfirmationAsync(
+        string accessToken,
+        Guid conversationId,
+        Guid confirmationId,
+        ResolveToolConfirmationRequest decision,
+        CancellationToken cancellationToken)
+    {
+        using var request = CreateJsonRequest(
+            $"api/conversations/{conversationId}/tool-confirmations/{confirmationId}/decisions",
+            decision);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        return await SendConversationAsync(request, cancellationToken);
+    }
+
+    public async Task<ClientResult<CompletionResponse>> CompleteConversationAsync(
+        string accessToken,
+        Guid conversationId,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"api/conversations/{conversationId}/completion");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        return await SendAsync(
+            request,
+            static _ => new CompletionResponse(),
+            "Conversation completion could not be requested.",
+            isTurnRequest: false,
+            cancellationToken,
+            canRenewSession: true);
+    }
+
     public async Task<ClientResult<ConversationResponse>> SendMessageAsync(
         string accessToken,
         SendMessageRequest message,
@@ -64,6 +144,12 @@ public sealed class PrivateApiClient
 
         return await SendConversationAsync(request, cancellationToken);
     }
+
+    private static HttpRequestMessage CreateJsonRequest<T>(string path, T value) =>
+        new(HttpMethod.Post, path)
+        {
+            Content = JsonContent.Create(value, options: JsonOptions),
+        };
 
     private async Task<ClientResult<ConversationResponse>> SendConversationAsync(
         HttpRequestMessage request,
@@ -85,7 +171,8 @@ public sealed class PrivateApiClient
                 return ClientResults.Failure<ConversationResponse>(
                     GetErrorCode(response.StatusCode),
                     GetErrorMessage(response.StatusCode),
-                    IsUncertainStatus(response.StatusCode));
+                    IsUncertainStatus(response.StatusCode),
+                    canRenewSession: response.StatusCode == HttpStatusCode.Unauthorized);
             }
 
             return ClientResults.Failure<ConversationResponse>(
@@ -137,7 +224,8 @@ public sealed class PrivateApiClient
         Func<JsonElement, T?> deserialize,
         string connectionErrorMessage,
         bool isTurnRequest,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool canRenewSession = false)
         where T : class
     {
         try
@@ -148,7 +236,8 @@ public sealed class PrivateApiClient
                 return ClientResults.Failure<T>(
                     GetErrorCode(response.StatusCode),
                     GetErrorMessage(response.StatusCode),
-                    isTurnRequest && IsUncertainStatus(response.StatusCode));
+                    isTurnRequest && IsUncertainStatus(response.StatusCode),
+                    canRenewSession && response.StatusCode == HttpStatusCode.Unauthorized);
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);

@@ -469,6 +469,14 @@ reintenta; un `4xx` sin contrato es un rechazo concluyente. Aún no incorpora pa
 DPAPI, completion, comandos, confirmaciones resolubles, reanudación entre ejecuciones,
 TUI ni salida de voz.
 
+El segundo incremento incorpora pairing de arranque al dejar vacío el ID, y protege la
+credencial duradera con DPAPI de usuario actual después de abrir una sesión válida. El
+bearer y los desafíos administrativos nunca se persisten ni se admiten como argumentos.
+Un `401` bearer no estructurado renueva la sesión y reintenta una vez; los resultados
+conversacionales estructurados y los fallos inciertos no se reintentan. `/admin rotate`
+y `/admin revoke` solicitan el desafío sin eco y solo pueden afectar al `ClientId` local;
+la revocación exige escribir `REVOKE` antes de descartar la credencial local.
+
 ### Validación local observada
 
 El 17 de agosto de 2026 se completó un smoke test real con Ollama `0.32.14`,

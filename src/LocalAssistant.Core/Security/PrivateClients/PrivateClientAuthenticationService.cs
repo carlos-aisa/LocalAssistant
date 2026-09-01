@@ -76,9 +76,10 @@ public sealed class PrivateClientAuthenticationService
 
     public async ValueTask<PrivateClientCredential?> RotateCredentialAsync(
         string challengeSecret,
+        string clientId,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(challengeSecret))
+        if (string.IsNullOrWhiteSpace(challengeSecret) || string.IsNullOrWhiteSpace(clientId))
         {
             return null;
         }
@@ -86,17 +87,21 @@ public sealed class PrivateClientAuthenticationService
         var credential = CreateSecret();
         var client = await _store.ConsumeRotateCredentialChallengeAsync(
             HashSecret(challengeSecret),
+            clientId,
             HashSecret(credential),
             _clock.GetUtcNow(),
             cancellationToken);
         return client is null ? null : new PrivateClientCredential(client, credential);
     }
 
-    public ValueTask<bool> RevokeClientAsync(string challengeSecret, CancellationToken cancellationToken) =>
-        string.IsNullOrWhiteSpace(challengeSecret)
-            ? ValueTask.FromResult(false)
+    public ValueTask<RegisteredPrivateClient?> RevokeClientAsync(
+        string challengeSecret,
+        string clientId,
+        CancellationToken cancellationToken) =>
+        string.IsNullOrWhiteSpace(challengeSecret) || string.IsNullOrWhiteSpace(clientId)
+            ? ValueTask.FromResult<RegisteredPrivateClient?>(null)
             : _store.ConsumeRevokeClientChallengeAsync(
-                HashSecret(challengeSecret), _clock.GetUtcNow(), cancellationToken);
+                HashSecret(challengeSecret), clientId, _clock.GetUtcNow(), cancellationToken);
 
     public async ValueTask<PrivateClientAccessToken?> CreateSessionAsync(
         string clientId,

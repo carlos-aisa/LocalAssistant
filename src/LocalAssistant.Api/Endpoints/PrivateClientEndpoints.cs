@@ -91,7 +91,15 @@ public static class PrivateClientEndpoints
             return Results.NotFound();
         }
 
-        var credential = await authentication.RotateCredentialAsync(request.Challenge, cancellationToken);
+        if (string.IsNullOrWhiteSpace(request.Challenge) || string.IsNullOrWhiteSpace(request.ClientId))
+        {
+            return Results.BadRequest();
+        }
+
+        var credential = await authentication.RotateCredentialAsync(
+            request.Challenge,
+            request.ClientId,
+            cancellationToken);
         return credential is null
             ? Results.NotFound()
             : Results.Ok(new PrivateClientCredentialResponse(
@@ -112,8 +120,17 @@ public static class PrivateClientEndpoints
             return Results.NotFound();
         }
 
-        return await authentication.RevokeClientAsync(request.Challenge, cancellationToken)
-            ? Results.NoContent()
-            : Results.NotFound();
+        if (string.IsNullOrWhiteSpace(request.Challenge) || string.IsNullOrWhiteSpace(request.ClientId))
+        {
+            return Results.BadRequest();
+        }
+
+        var revokedClient = await authentication.RevokeClientAsync(
+            request.Challenge,
+            request.ClientId,
+            cancellationToken);
+        return revokedClient is null
+            ? Results.NotFound()
+            : Results.Ok(new PrivateClientRevocationResponse(revokedClient.ClientId));
     }
 }

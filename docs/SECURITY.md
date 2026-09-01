@@ -24,6 +24,14 @@ límites que deben conservarse al añadir capacidades.
 
 ### Evolución prevista: cliente terminal y salida hablada
 
+El cliente terminal valida además que los endpoints administrativos de rotación y
+revocación afectan al mismo `ClientId` local que envía en el request. El servidor compara
+ese valor con el destino ligado al desafío dentro de la transacción antes de modificar
+credencial o sesiones; una discrepancia no consume el desafío ni altera el estado. El ID
+solo protege coherencia del dispositivo: el desafío administrativo conserva toda la
+autoridad. Tras una revocación confirmada del cliente local, el cliente borra su estado
+DPAPI y termina; ante una respuesta ambigua no borra credenciales locales.
+
 El futuro cliente terminal .NET seguirá limitado a loopback y usará únicamente una
 credencial de cliente registrada y una sesión bearer temporal. Guardará la credencial
 solo tras validar una sesión, preferentemente protegida con DPAPI de usuario actual; si

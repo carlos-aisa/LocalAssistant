@@ -59,11 +59,12 @@ paths:
             schema: { $ref: "#/components/schemas/ConsumeAdministrativeChallengeRequest" }
       responses:
         "200":
-          description: The replacement credential; existing sessions are invalidated.
+          description: The replacement credential for the requested client; existing sessions are invalidated.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PrivateClientCredentialResponse" }
-        "404": { description: "The challenge is invalid, expired, consumed, or the request is not loopback." }
+        "400": { description: The challenge or client ID is missing. }
+        "404": { description: "The challenge is invalid, expired, consumed, targets another client, or the request is not loopback." }
   /api/private/admin/client-revocations:
     post:
       operationId: revokePrivateClient
@@ -74,8 +75,13 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/ConsumeAdministrativeChallengeRequest" }
       responses:
-        "204": { description: The client and all of its sessions were revoked. }
-        "404": { description: "The challenge is invalid, expired, consumed, or the request is not loopback." }
+        "200":
+          description: The requested client and all of its sessions were revoked.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PrivateClientRevocationResponse" }
+        "400": { description: The challenge or client ID is missing. }
+        "404": { description: "The challenge is invalid, expired, consumed, targets another client, or the request is not loopback." }
   /health:
     get:
       operationId: getHealth
@@ -433,9 +439,17 @@ components:
         displayName: { type: string, maxLength: 128 }
     ConsumeAdministrativeChallengeRequest:
       type: object
-      required: [challenge]
+      required: [challenge, clientId]
       properties:
         challenge: { type: string, writeOnly: true }
+        clientId:
+          type: string
+          description: The local client ID expected to match the administrative challenge target. It is not authorization.
+    PrivateClientRevocationResponse:
+      type: object
+      required: [clientId]
+      properties:
+        clientId: { type: string }
     PrivateClientCredentialResponse:
       type: object
       required: [clientId, displayName, credential]

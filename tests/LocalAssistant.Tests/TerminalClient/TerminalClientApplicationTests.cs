@@ -85,7 +85,7 @@ public sealed class TerminalClientApplicationTests
     }
 
     [Fact]
-    public async Task PendingConfirmationStopsTheTextOnlyIncrement()
+    public async Task PendingConfirmationCanBeRejected()
     {
         var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
         var handler = new RecordingHttpMessageHandler(
@@ -95,13 +95,14 @@ public sealed class TerminalClientApplicationTests
                 { "accessToken": "session-token", "expiresAtUtc": "2026-09-01T12:00:00+00:00" }
                 """),
             _ => JsonResponse(HttpStatusCode.Accepted, ConfirmationResponseJson(conversationId)),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Reminder rejected")),
         ]);
         using var httpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri("http://localhost:5100/"),
         };
         using var console = new ScriptedTerminalConsole(
-            ["client-a", "Create a reminder", null],
+            ["client-a", "Create a reminder", "reject", null],
             "credential-a");
         var application = new TerminalClientApplication(
             new PrivateApiClient(httpClient),
@@ -110,9 +111,9 @@ public sealed class TerminalClientApplicationTests
 
         var exitCode = await application.RunAsync(CancellationToken.None);
 
-        Assert.Equal(1, exitCode);
-        Assert.Contains("cannot resolve it yet", console.Output, StringComparison.Ordinal);
-        Assert.Equal(3, handler.Requests.Count);
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Confirmation required", console.Output, StringComparison.Ordinal);
+        Assert.Equal(4, handler.Requests.Count);
     }
 
     private static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, string content) => new(statusCode)

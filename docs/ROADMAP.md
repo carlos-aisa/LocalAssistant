@@ -256,7 +256,7 @@ La fase se entrega mediante incrementos demostrables y en este orden:
 1. [x] **Cliente textual mínimo:** health check loopback, credencial en memoria, sesión
    bearer, mensajes, `ConversationId`, respuesta final, herramientas, iteraciones y
    errores que distingan fake de Ollama. No selecciona dependencias de TUI o voz.
-2. **Autenticación y operación:** abstracciones de credencial y almacenamiento,
+2. [x] **Autenticación y operación:** abstracciones de credencial y almacenamiento,
    DPAPI con entrada manual como fallback, persistencia solo después de una sesión
    válida, pairing, renovación de sesión, revocación y rotación administrativas,
    confirmaciones y comandos `new`, `info`, `provider` y `exit`. Los logs no copian

@@ -92,6 +92,7 @@ public sealed class SqlitePrivateClientAuthenticationStore : IPrivateClientAuthe
         ConsumeChallengeAsync(
             secretHash,
             AdministrativeChallengeOperation.CreateClient,
+            null,
             now,
             async (connection, transaction, _) =>
             {
@@ -116,12 +117,14 @@ public sealed class SqlitePrivateClientAuthenticationStore : IPrivateClientAuthe
 
     public ValueTask<RegisteredPrivateClient?> ConsumeRotateCredentialChallengeAsync(
         string secretHash,
+        string expectedClientId,
         string credentialHash,
         DateTimeOffset now,
         CancellationToken cancellationToken) =>
         ConsumeChallengeAsync(
             secretHash,
             AdministrativeChallengeOperation.RotateCredential,
+            expectedClientId,
             now,
             async (connection, transaction, challenge) =>
             {
@@ -150,14 +153,15 @@ public sealed class SqlitePrivateClientAuthenticationStore : IPrivateClientAuthe
             },
             cancellationToken);
 
-    public async ValueTask<bool> ConsumeRevokeClientChallengeAsync(
+    public ValueTask<RegisteredPrivateClient?> ConsumeRevokeClientChallengeAsync(
         string secretHash,
+        string expectedClientId,
         DateTimeOffset now,
-        CancellationToken cancellationToken)
-    {
-        var result = await ConsumeChallengeAsync(
+        CancellationToken cancellationToken) =>
+        ConsumeChallengeAsync(
             secretHash,
             AdministrativeChallengeOperation.RevokeClient,
+            expectedClientId,
             now,
             async (connection, transaction, challenge) =>
             {
@@ -181,8 +185,6 @@ public sealed class SqlitePrivateClientAuthenticationStore : IPrivateClientAuthe
                 return client;
             },
             cancellationToken);
-        return result is not null;
-    }
 
     public async ValueTask<PrivateClientSession?> CreateSessionAsync(
         string clientId,
@@ -254,6 +256,7 @@ public sealed class SqlitePrivateClientAuthenticationStore : IPrivateClientAuthe
     private async ValueTask<RegisteredPrivateClient?> ConsumeChallengeAsync(
         string secretHash,
         AdministrativeChallengeOperation expectedOperation,
+        string? expectedClientId,
         DateTimeOffset now,
         Func<SqliteConnection, SqliteTransaction, AdministrativeChallenge, Task<RegisteredPrivateClient?>> operation,
         CancellationToken cancellationToken)
@@ -262,7 +265,7 @@ public sealed class SqlitePrivateClientAuthenticationStore : IPrivateClientAuthe
         await using var connection = await OpenConnectionAsync(cancellationToken);
         using var transaction = connection.BeginTransaction();
         var challenge = await FindChallengeAsync(connection, transaction, secretHash, expectedOperation, now, cancellationToken);
-        if (challenge is null)
+        if (challenge is null || !string.Equals(challenge.ClientId, expectedClientId, StringComparison.Ordinal))
         {
             await transaction.RollbackAsync(cancellationToken);
             return null;

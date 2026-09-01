@@ -64,6 +64,31 @@ El cliente no registra mensajes, respuestas, secretos, cabeceras bearer, desafí
 argumentos de herramientas por defecto. Los artefactos temporales de audio se limitan
 a la sesión y se borran al finalizar o fallar.
 
+El pairing se realiza durante el arranque o una recuperación de credencial, nunca como
+un comando conversacional ordinario. La renovación de sesión es automática y distinta
+de la rotación administrativa de credencial. Esta última, junto con la revocación, se
+expone como `/admin rotate` y `/admin revoke`: ambos solicitan el desafío sin eco y no
+lo aceptan por argumentos ni lo registran.
+
+Rotación y revocación se limitan inicialmente al cliente local. Cada request incluye
+`challenge` y el `clientId` local; el servidor consume el desafío solamente si su
+operación y cliente de destino coinciden con ambos valores dentro de la misma transacción.
+En caso de discrepancia no produce efectos. Tras el éxito, la respuesta identifica el
+cliente afectado. El `ClientId` es una protección de coherencia del dispositivo, no una
+autorización: la autoridad sigue siendo exclusivamente el desafío administrativo.
+
+Antes de reemplazar el estado local tras una rotación, el cliente comprueba que la
+respuesta corresponde a su `ClientId`, abre una sesión con la credencial nueva y solo
+entonces sustituye atómicamente el estado DPAPI. Si la sustitución falla, conserva la
+sesión nueva solo hasta que termine el proceso y advierte que el siguiente arranque
+requerirá pairing; no muestra la credencial ni elimina el estado local anterior. La
+revocación exige confirmación explícita y borra el estado local, descarta el bearer y
+finaliza el cliente únicamente tras confirmar que se revocó ese mismo `ClientId`.
+
+La renovación automática se aplica solo a un `401` no estructurado de la frontera bearer.
+No se renueva ni se reintenta una respuesta conversacional estructurada, aunque su estado
+HTTP no sea 2xx, porque confirma que el orquestador ya procesó el turno.
+
 ## Contratos futuros necesarios para reanudación visible
 
 El ID local permite reanudar, pero un selector requiere contratos aún no implementados:
