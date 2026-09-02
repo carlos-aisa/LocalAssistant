@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LocalAssistant.TerminalClient;
 
 namespace LocalAssistant.Tests.TerminalClient;
@@ -49,6 +50,40 @@ public sealed class DpapiPrivateClientCredentialStoreTests
             var loaded = await store.LoadAsync(CancellationToken.None);
 
             Assert.Null(loaded);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LoadsThePreviousStateFormatWithoutLastConversationId()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            var path = Path.Combine(directory, "private-client.json");
+            var store = new DpapiPrivateClientCredentialStore(path);
+            Assert.True(await store.SaveAsync(
+                new PrivateClientCredential("client-a", "credential-a", Guid.NewGuid()),
+                CancellationToken.None));
+            using var currentState = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+            var legacyState = JsonSerializer.Serialize(new
+            {
+                clientId = currentState.RootElement.GetProperty("clientId").GetString(),
+                protectedCredential = currentState.RootElement.GetProperty("protectedCredential").GetString(),
+            });
+            await File.WriteAllTextAsync(path, legacyState);
+
+            var loaded = await store.LoadAsync(CancellationToken.None);
+
+            Assert.Equal(new PrivateClientCredential("client-a", "credential-a"), loaded);
         }
         finally
         {

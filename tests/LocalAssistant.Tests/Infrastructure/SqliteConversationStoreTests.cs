@@ -137,6 +137,72 @@ public sealed class SqliteConversationStoreTests
     }
 
     [Fact]
+    public async Task PaginatesOwnedConversationsAndPublicHistoryWithStableCursors()
+    {
+        using var directory = new LocalAssistant.Tests.Api.TemporaryInstallationStateDirectory();
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 9, 2, 10, 0, 0, TimeSpan.Zero));
+        var store = CreateStore(Path.Combine(directory.Path, "conversations.db"), clock);
+        var firstConversation = Guid.NewGuid();
+        var secondConversation = Guid.NewGuid();
+        var thirdConversation = Guid.NewGuid();
+
+        foreach (var conversationId in new[] { firstConversation, secondConversation, thirdConversation })
+        {
+            await store.GetOrCreateMetadataAsync(conversationId, "owner-a", CancellationToken.None);
+            await store.AppendAsync(
+                conversationId,
+                new ConversationMessage(ConversationRole.User, $"Message {conversationId:N}."),
+                CancellationToken.None);
+            clock.Advance(TimeSpan.FromMinutes(1));
+        }
+
+        var firstPage = await store.ListOwnedAsync("owner-a", null, 2, CancellationToken.None);
+        var secondPage = await store.ListOwnedAsync(
+            "owner-a",
+            firstPage.NextCursor,
+            2,
+            CancellationToken.None);
+
+        Assert.Equal(2, firstPage.Items.Count);
+        Assert.False(string.IsNullOrWhiteSpace(firstPage.NextCursor));
+        Assert.Single(secondPage.Items);
+        Assert.Null(secondPage.NextCursor);
+        Assert.Equal(
+            new[] { thirdConversation, secondConversation, firstConversation },
+            firstPage.Items.Concat(secondPage.Items).Select(item => item.ConversationId));
+
+        await store.AppendAsync(
+            thirdConversation,
+            new ConversationMessage(ConversationRole.Assistant, "First reply."),
+            CancellationToken.None);
+        await store.AppendAsync(
+            thirdConversation,
+            new ConversationMessage(ConversationRole.User, "Second request."),
+            CancellationToken.None);
+
+        var firstHistoryPage = await store.GetOwnedHistoryAsync(
+            thirdConversation,
+            "owner-a",
+            null,
+            2,
+            CancellationToken.None);
+        var secondHistoryPage = await store.GetOwnedHistoryAsync(
+            thirdConversation,
+            "owner-a",
+            firstHistoryPage!.NextCursor,
+            2,
+            CancellationToken.None);
+
+        Assert.Equal(2, firstHistoryPage.Items.Count);
+        Assert.False(string.IsNullOrWhiteSpace(firstHistoryPage.NextCursor));
+        Assert.Single(secondHistoryPage!.Items);
+        Assert.Null(secondHistoryPage.NextCursor);
+        Assert.Equal(
+            new[] { "Message " + thirdConversation.ToString("N") + ".", "First reply.", "Second request." },
+            firstHistoryPage.Items.Concat(secondHistoryPage.Items).Select(message => message.Content));
+    }
+
+    [Fact]
     public async Task RetrievesOnlyAnotherConversationOwnedByTheCurrentPrincipal()
     {
         using var directory = new LocalAssistant.Tests.Api.TemporaryInstallationStateDirectory();
