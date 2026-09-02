@@ -144,7 +144,7 @@ public sealed class PrivateApiClient
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         return await SendAsync(
             request,
-            static root => root.Deserialize<ConversationPageResponse<ConversationSummaryResponse>>(JsonOptions),
+            ValidateConversationSummaryPage,
             "The conversation list could not be retrieved.",
             isTurnRequest: false,
             cancellationToken,
@@ -160,7 +160,7 @@ public sealed class PrivateApiClient
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         return await SendAsync(
             request,
-            static root => root.Deserialize<ConversationDetailsResponse>(JsonOptions),
+            root => ValidateConversationDetails(root, conversationId),
             "The conversation details could not be retrieved.",
             isTurnRequest: false,
             cancellationToken,
@@ -184,7 +184,7 @@ public sealed class PrivateApiClient
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         return await SendAsync(
             request,
-            static root => root.Deserialize<ConversationPageResponse<PublicConversationMessageResponse>>(JsonOptions),
+            ValidateConversationHistoryPage,
             "The conversation history could not be retrieved.",
             isTurnRequest: false,
             cancellationToken,
@@ -380,6 +380,45 @@ public sealed class PrivateApiClient
         return response is null || response.ConversationId == Guid.Empty || response.Tools is null
             ? null
             : response;
+    }
+
+    private static ConversationPageResponse<ConversationSummaryResponse>? ValidateConversationSummaryPage(
+        JsonElement root)
+    {
+        var page = root.Deserialize<ConversationPageResponse<ConversationSummaryResponse>>(JsonOptions);
+        return page is null || page.Items is null || page.Items.Any(summary =>
+            summary is null ||
+            summary.ConversationId == Guid.Empty ||
+            string.IsNullOrWhiteSpace(summary.Title) ||
+            summary.LastActivityAtUtc == default)
+            ? null
+            : page;
+    }
+
+    private static ConversationDetailsResponse? ValidateConversationDetails(
+        JsonElement root,
+        Guid requestedConversationId)
+    {
+        var details = root.Deserialize<ConversationDetailsResponse>(JsonOptions);
+        return details is null ||
+            details.ConversationId == Guid.Empty ||
+            details.ConversationId != requestedConversationId ||
+            string.IsNullOrWhiteSpace(details.Title) ||
+            details.LastActivityAtUtc == default
+            ? null
+            : details;
+    }
+
+    private static ConversationPageResponse<PublicConversationMessageResponse>? ValidateConversationHistoryPage(
+        JsonElement root)
+    {
+        var page = root.Deserialize<ConversationPageResponse<PublicConversationMessageResponse>>(JsonOptions);
+        return page is null || page.Items is null || page.Items.Any(message =>
+            message is null ||
+            message.Role is not ("user" or "assistant") ||
+            string.IsNullOrWhiteSpace(message.Content))
+            ? null
+            : page;
     }
 
     private static bool IsUncertainStatus(HttpStatusCode statusCode) =>
