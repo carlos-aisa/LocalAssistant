@@ -247,6 +247,31 @@ public sealed class PrivateApiClientTests
         Assert.Single(handler.Requests);
     }
 
+    [Fact]
+    public async Task CompletionAcceptsNoContentResponse()
+    {
+        var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent),
+        ]);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:5100/"),
+        };
+        var client = new PrivateApiClient(httpClient);
+
+        var result = await client.CompleteConversationAsync(
+            "session-token",
+            conversationId,
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Single(handler.Requests);
+        Assert.Equal($"/api/conversations/{conversationId}/completion", handler.Requests[0].Path);
+        Assert.Equal("Bearer session-token", handler.Requests[0].Authorization);
+    }
+
     [Theory]
     [InlineData("http://192.168.1.10:5100")]
     [InlineData("https://example.com")]
