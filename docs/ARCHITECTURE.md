@@ -138,10 +138,10 @@ ocultar esas diferencias.
 
 El bootstrap implementado identifica una instalación y crea un único propietario
 local. Los clientes privados registrados obtienen credenciales revocables y sesiones
-bearer temporales. El estado vigente es el esquema 4: no contiene hash de API key ni
-otra credencial HTTP heredada. Al cargar un esquema 1, 2 o 3, el adaptador conserva
+bearer temporales. El estado vigente es el esquema 5: no contiene hash de API key ni
+otra credencial HTTP heredada. Al cargar un esquema 1, 2, 3 o 4, el adaptador conserva
 instalación, propietario y fecha, añade las capacidades vigentes y publica
-atómicamente el esquema 4 sin el hash. Esto todavía no modela hogar, usuarios,
+atómicamente el esquema 5 sin el hash. Esto todavía no modela hogar, usuarios,
 invitados ni niveles de confianza. La evolución no trasladará SDKs de identidad al
 núcleo ni permitirá que el cliente o el LLM creen permisos.
 
@@ -184,11 +184,12 @@ principal autenticado y no exponen dicho propietario. La persistencia desactivad
 responde `503`; las notas no se registran como herramientas ni se incorporan al
 orquestador, contexto del modelo o proveedores.
 
-El archivo de identidad creado por bootstrap usa el esquema 4 e incluye de forma
+El archivo de identidad creado por bootstrap usa el esquema 5 e incluye de forma
 explícita los scopes de memoria y perfil, `documents.search`, `documents.read`,
-`documents.content.search` y `reminders.write`. Al cargar un archivo válido de
-esquema 1, 2 o 3, `FileInstallationIdentityStore` conserva identidad y fecha, elimina
-el hash legado y publica el esquema 4 de forma atómica. Esto no da a
+`documents.content.search`, `reminders.write` y `conversations.read`. Al cargar un
+archivo válido de esquema 1, 2, 3 o 4, `FileInstallationIdentityStore` conserva
+identidad y fecha, elimina el hash legado cuando exista y publica el esquema 5 de
+forma atómica. Esto no da a
 `installation.owner` significado de comodín. En la etapa de propietario único, cada
 cliente bearer activo hereda todas las capacidades del propietario; la autorización
 diferenciada por cliente queda aplazada a la gestión doméstica de usuarios y
@@ -965,9 +966,9 @@ transacción. Los endpoints privados se limitan a loopback. El administrador cre
 desafíos de un solo uso mediante un comando local, por lo que una sesión ordinaria no
 obtiene privilegios administrativos.
 
-### Evolución prevista: cliente terminal .NET
+### Cliente terminal .NET
 
-La fase 5 añadirá un proceso cliente independiente que consumirá exclusivamente el
+La fase 5 incorpora un proceso cliente independiente que consume exclusivamente el
 contrato HTTP público. No referenciará `LocalAssistant.Api`, `LocalAssistant.Core` ni
 `LocalAssistant.Infrastructure`, ni abrirá SQLite, el estado de instalación o servicios
 internos. La API deberá estar ya en ejecución; un futuro lanzador, si se justifica,
@@ -979,11 +980,10 @@ disponible y mantendrá el bearer solo en memoria. Al expirar una sesión, abrir
 la credencial duradera; no convierte una desconexión posterior al envío de un turno en
 una operación repetible, porque el servidor puede haber persistido ya el mensaje.
 
-La continuidad con un `ConversationId` conocido usa el contrato actual. Un selector e
-historial visibles requieren una ampliación posterior y explícita de HTTP: listado
-paginado de conversaciones propias y lectura de mensajes, ambos filtrados por
-propietario y sin revelar si un identificador ajeno existe. El cliente no inventará
-esas rutas ni consultará el almacén para suplirlas.
+La continuidad con un `ConversationId` conocido usa el contrato HTTP actual. El
+selector e historial visibles usan listado, detalle e historial paginados de
+conversaciones propias, filtrados por propietario y sin revelar si un identificador
+ajeno existe. El cliente no consulta el almacén para suplir esas rutas.
 
 La salida de voz se ejecutará en el propio cliente y recibirá solo la respuesta textual
 final. Silenciar, detener reproducción y repetir son controles locales del plano de

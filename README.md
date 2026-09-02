@@ -187,15 +187,16 @@ dotnet run --project src/LocalAssistant.Api -- --bootstrap-owner
 
 El bootstrap crea el propietario local y guarda el estado mínimo de instalación por
 defecto en `%LOCALAPPDATA%\LocalAssistant\installation-identity.json`. Las
-instalaciones nuevas usan el esquema 4 y no generan, muestran ni almacenan una API
+instalaciones nuevas usan el esquema 5 y no generan, muestran ni almacenan una API
 key. Una segunda ejecución se rechaza. A continuación, registra un cliente privado
 para acceder a interfaces protegidas.
 
 El propietario recibe `memory.personal.read`, `memory.personal.write`,
 `profile.personal.read`, `profile.personal.write`, `household.profile.read`,
 `household.profile.write`, `documents.search`, `documents.read`,
-`documents.content.search` y `reminders.write`. Al leer una instalación existente de
-esquema 1, 2 o 3, el estado se migra localmente y de forma atómica al esquema 4:
+`documents.content.search`, `reminders.write` y `conversations.read`. Al leer una
+instalación existente de esquema 1, 2, 3 o 4, el estado se migra localmente y de
+forma atómica al esquema 5:
 conserva instalación, propietario y fecha original, añade esos scopes y elimina el
 hash de API key heredado. La migración es idempotente.
 
