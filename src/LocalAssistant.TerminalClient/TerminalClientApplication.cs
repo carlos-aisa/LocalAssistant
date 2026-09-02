@@ -233,7 +233,7 @@ public sealed class TerminalClientApplication
             {
                 credential = await UpdateLastConversationAsync(credential, null, cancellationToken);
             }
-            else if (details.Response.Error?.Code != "http_error")
+            else
             {
                 _console.WriteLine("The previous conversation could not be checked. Starting a new conversation.");
             }
@@ -253,9 +253,17 @@ public sealed class TerminalClientApplication
                 accessToken,
                 conversation.ConversationId,
                 cancellationToken);
-            return history.Loaded
-                ? (credential, history.AccessToken, conversation.ConversationId)
-                : (credential, history.AccessToken, null);
+            if (history.Loaded)
+            {
+                return (credential, history.AccessToken, conversation.ConversationId);
+            }
+
+            if (history.Error?.Code == "not_found")
+            {
+                credential = await UpdateLastConversationAsync(credential, null, cancellationToken);
+            }
+
+            return (credential, history.AccessToken, null);
         }
 
         if (string.Equals(selection, "l", StringComparison.OrdinalIgnoreCase) ||
@@ -278,6 +286,11 @@ public sealed class TerminalClientApplication
         Guid? conversationId,
         CancellationToken cancellationToken)
     {
+        if (credential.LastConversationId == conversationId)
+        {
+            return credential;
+        }
+
         var updated = credential with { LastConversationId = conversationId };
         if (!await _credentialStore.SaveAsync(updated, cancellationToken))
         {
@@ -531,7 +544,7 @@ public sealed class TerminalClientApplication
         }
     }
 
-    private async Task<(bool Loaded, string AccessToken)> ShowHistoryAsync(
+    private async Task<(bool Loaded, string AccessToken, ClientError? Error)> ShowHistoryAsync(
         PrivateClientCredential credential,
         string accessToken,
         Guid conversationId,
@@ -554,7 +567,7 @@ public sealed class TerminalClientApplication
             if (!history.Response.IsSuccess)
             {
                 WriteError(history.Response.Error!);
-                return (false, accessToken);
+                return (false, accessToken, history.Response.Error);
             }
 
             foreach (var message in history.Response.Value!.Items)
@@ -564,13 +577,13 @@ public sealed class TerminalClientApplication
 
             if (string.IsNullOrWhiteSpace(history.Response.Value.NextCursor))
             {
-                return (true, accessToken);
+                return (true, accessToken, null);
             }
 
             _console.Write("[N]ext history page or [C]ontinue: ");
             if (!string.Equals(_console.ReadLine()?.Trim(), "n", StringComparison.OrdinalIgnoreCase))
             {
-                return (true, accessToken);
+                return (true, accessToken, null);
             }
 
             cursor = history.Response.Value.NextCursor;

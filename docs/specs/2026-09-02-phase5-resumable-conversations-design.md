@@ -43,7 +43,7 @@ Los DTOs HTTP son nuevos y no exponen `ConversationMessage` ni tipos internos.
 
 `indexingRequestedAtUtc` expresa una solicitud de indexación derivada de `completion`; no representa una conversación cerrada ni impide seguir enviando mensajes.
 
-`ConversationDetailResponse` usa los mismos metadatos para la validación puntual. `ConversationHistoryPageResponse` añade una lista de `ConversationHistoryEntryResponse` y el cursor siguiente. Cada entrada contiene rol público (`user` o `assistant`), contenido visible y marca temporal. Nunca incluye prompts de sistema, contexto de recuperación, argumentos o resultados de herramientas, ni detalles internos de error.
+`ConversationDetailResponse` usa los mismos metadatos para la validación puntual. `ConversationHistoryPageResponse` añade una lista de `ConversationHistoryEntryResponse` y el cursor siguiente. Cada entrada contiene rol público (`user` o `assistant`) y contenido visible. Nunca incluye prompts de sistema, contexto de recuperación, argumentos o resultados de herramientas, ni detalles internos de error.
 
 El título se calcula de manera determinista desde el primer mensaje visible del usuario, con normalización, truncado seguro y fallback fijo si no existe. El listado no invoca un modelo ni genera resúmenes nuevos.
 
@@ -65,7 +65,7 @@ Tras autenticarse, el cliente carga la preferencia local. Si contiene un ID, pid
 - con `404`, limpia la preferencia y comienza una conversación nueva;
 - con error incierto o `503`, informa de que no pudo validar la reanudación y comienza una conversación nueva sin borrar la preferencia.
 
-`R` carga el historial público paginado y establece la conversación actual. `N` no realiza completion y comienza una conversación nueva. `L` abre el selector textual `/conversations`, que pagina el listado y permite elegir una conversación por su índice en la página actual, avanzar, retroceder o volver al chat.
+`R` carga el historial público paginado y establece la conversación actual. `N` no realiza completion y comienza una conversación nueva. `L` abre el selector textual `/conversations`, que pagina el listado y permite elegir una conversación por su índice en la página actual, avanzar o volver al chat. El retroceso se aplaza a la TUI.
 
 Al seleccionar una conversación distinta mientras existe una conversación activa, el cliente solicita primero su `completion`. Si la solicitud falla, no cambia la conversación actual ni la preferencia local. Si tiene éxito, recupera detalle e historial de la elegida, y solo después actualiza `LastConversationId`. Listar nunca completa la conversación actual.
 
