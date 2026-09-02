@@ -248,7 +248,14 @@ public sealed class TerminalClientApplication
         if (string.Equals(selection, "r", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(selection, "resume", StringComparison.OrdinalIgnoreCase))
         {
-            return (credential, accessToken, conversation.ConversationId);
+            var history = await ShowHistoryAsync(
+                credential,
+                accessToken,
+                conversation.ConversationId,
+                cancellationToken);
+            return history.Loaded
+                ? (credential, history.AccessToken, conversation.ConversationId)
+                : (credential, history.AccessToken, null);
         }
 
         if (string.Equals(selection, "l", StringComparison.OrdinalIgnoreCase) ||
@@ -262,6 +269,7 @@ public sealed class TerminalClientApplication
             return (listed.Credential, listed.AccessToken, listed.ConversationId);
         }
 
+        credential = await UpdateLastConversationAsync(credential, null, cancellationToken);
         return (credential, accessToken, null);
     }
 
@@ -397,7 +405,10 @@ public sealed class TerminalClientApplication
                 return new(true, 0, completion.AccessToken, provider, conversationId);
             }
 
-            return new(true, 0, completion.AccessToken, parts[1], null);
+            return new(true, 0, completion.AccessToken, parts[1], null)
+            {
+                Credential = await UpdateLastConversationAsync(credential, null, cancellationToken),
+            };
         }
 
         if (parts[0].Equals("/new", StringComparison.OrdinalIgnoreCase))
@@ -405,7 +416,10 @@ public sealed class TerminalClientApplication
             var completion = await CompleteAsync(credential, accessToken, conversationId, cancellationToken);
             return !completion.Completed
                 ? new(true, 0, completion.AccessToken, provider, conversationId)
-                : new(true, 0, completion.AccessToken, provider, null);
+                : new(true, 0, completion.AccessToken, provider, null)
+                {
+                    Credential = await UpdateLastConversationAsync(credential, null, cancellationToken),
+                };
         }
 
         if (parts[0].Equals("/exit", StringComparison.OrdinalIgnoreCase))
@@ -484,23 +498,6 @@ public sealed class TerminalClientApplication
                 return (credential, accessToken, currentConversationId);
             }
 
-            var history = await ExecuteWithRenewalAsync(
-                credential,
-                accessToken,
-                token => _apiClient.GetConversationHistoryAsync(token, selected.ConversationId, null, 20, cancellationToken),
-                cancellationToken);
-            accessToken = history.AccessToken;
-            if (!history.Response.IsSuccess)
-            {
-                WriteError(history.Response.Error!);
-                return (credential, accessToken, currentConversationId);
-            }
-
-            foreach (var message in history.Response.Value!.Items)
-            {
-                _console.WriteLine($"{message.Role}: {message.Content}");
-            }
-
             if (currentConversationId.HasValue && currentConversationId != selected.ConversationId)
             {
                 var completion = await CompleteAsync(
@@ -515,11 +512,68 @@ public sealed class TerminalClientApplication
                 }
             }
 
+            var history = await ShowHistoryAsync(
+                credential,
+                accessToken,
+                selected.ConversationId,
+                cancellationToken);
+            accessToken = history.AccessToken;
+            if (!history.Loaded)
+            {
+                return (credential, accessToken, currentConversationId);
+            }
+
             credential = await UpdateLastConversationAsync(
                 credential,
                 details.Response.Value!.ConversationId,
                 cancellationToken);
             return (credential, accessToken, details.Response.Value.ConversationId);
+        }
+    }
+
+    private async Task<(bool Loaded, string AccessToken)> ShowHistoryAsync(
+        PrivateClientCredential credential,
+        string accessToken,
+        Guid conversationId,
+        CancellationToken cancellationToken)
+    {
+        string? cursor = null;
+        while (true)
+        {
+            var history = await ExecuteWithRenewalAsync(
+                credential,
+                accessToken,
+                token => _apiClient.GetConversationHistoryAsync(
+                    token,
+                    conversationId,
+                    cursor,
+                    20,
+                    cancellationToken),
+                cancellationToken);
+            accessToken = history.AccessToken;
+            if (!history.Response.IsSuccess)
+            {
+                WriteError(history.Response.Error!);
+                return (false, accessToken);
+            }
+
+            foreach (var message in history.Response.Value!.Items)
+            {
+                _console.WriteLine($"{message.Role}: {message.Content}");
+            }
+
+            if (string.IsNullOrWhiteSpace(history.Response.Value.NextCursor))
+            {
+                return (true, accessToken);
+            }
+
+            _console.Write("[N]ext history page or [C]ontinue: ");
+            if (!string.Equals(_console.ReadLine()?.Trim(), "n", StringComparison.OrdinalIgnoreCase))
+            {
+                return (true, accessToken);
+            }
+
+            cursor = history.Response.Value.NextCursor;
         }
     }
 
