@@ -78,4 +78,3 @@ Las pruebas de integración HTTP cubrirán bearer y `conversations.read`, pagina
 Las pruebas del cliente cubrirán reanudación asistida, `404` que limpia el ID, errores inciertos que lo conservan, degradación ante `503`, paginación y selección, completion previa a selección, actualización solo tras respuestas válidas y ausencia de secretos en salida o estado. Las pruebas del almacén validarán compatibilidad, escritura atómica y conservación de la credencial ante un fallo al guardar el último ID.
 
 `docs/api/openapi.yaml`, README, SECURITY y ROADMAP se actualizarán junto a la implementación para reflejar únicamente los contratos y comportamientos entregados.
-
