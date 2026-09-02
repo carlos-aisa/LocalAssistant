@@ -111,6 +111,30 @@ public sealed class SqlitePrivateClientAuthenticationStoreTests
     }
 
     [Fact]
+    public async Task TargetMismatchDoesNotConsumeOrApplyClientRevocation()
+    {
+        using var directory = new TemporaryDirectory();
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 8, 31, 10, 0, 0, TimeSpan.Zero));
+        var service = CreateService(directory.Path, clock);
+        var client = await CreateClientAsync(service);
+        var challenge = await service.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.RevokeClient,
+            client.Client.ClientId,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+
+        var mismatch = await service.RevokeClientAsync(challenge.Secret, "other-client", CancellationToken.None);
+        var revoked = await service.RevokeClientAsync(
+            challenge.Secret,
+            client.Client.ClientId,
+            CancellationToken.None);
+
+        Assert.Null(mismatch);
+        Assert.NotNull(revoked);
+        Assert.Equal(client.Client.ClientId, revoked.ClientId);
+    }
+
+    [Fact]
     public async Task ExpiredPairingChallengeCannotCreateAClient()
     {
         using var directory = new TemporaryDirectory();

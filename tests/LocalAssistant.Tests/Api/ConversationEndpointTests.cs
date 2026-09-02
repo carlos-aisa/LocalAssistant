@@ -379,6 +379,60 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
     }
 
     [Fact]
+    public async Task PrivateClientAdministrativeEndpointsDoNotConsumeChallengesForAnotherClient()
+    {
+        using var factory = new LocalAssistantApiFactory();
+        using var client = factory.CreateClient();
+        var installation = factory.Services.GetRequiredService<IInstallationIdentityStore>();
+        await installation.BootstrapAsync(CancellationToken.None);
+        var authentication = factory.Services.GetRequiredService<PrivateClientAuthenticationService>();
+        var pairingChallenge = await authentication.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.CreateClient,
+            null,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+        using var pairingResponse = await client.PostAsJsonAsync(
+            "/api/private/admin/pairings",
+            new { challenge = pairingChallenge.Secret, displayName = "Test client" },
+            CancellationToken.None);
+        var paired = await pairingResponse.Content.ReadFromJsonAsync<PrivateClientCredentialResponse>(
+            cancellationToken: CancellationToken.None);
+        var rotationChallenge = await authentication.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.RotateCredential,
+            paired!.ClientId,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+
+        using var rotationMismatch = await client.PostAsJsonAsync(
+            "/api/private/admin/credential-rotations",
+            new { challenge = rotationChallenge.Secret, clientId = "other-client" },
+            CancellationToken.None);
+        using var rotationSuccess = await client.PostAsJsonAsync(
+            "/api/private/admin/credential-rotations",
+            new { challenge = rotationChallenge.Secret, clientId = paired.ClientId },
+            CancellationToken.None);
+        var revocationChallenge = await authentication.CreateAdministrativeChallengeAsync(
+            AdministrativeChallengeOperation.RevokeClient,
+            paired.ClientId,
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+
+        using var revocationMismatch = await client.PostAsJsonAsync(
+            "/api/private/admin/client-revocations",
+            new { challenge = revocationChallenge.Secret, clientId = "other-client" },
+            CancellationToken.None);
+        using var revocationSuccess = await client.PostAsJsonAsync(
+            "/api/private/admin/client-revocations",
+            new { challenge = revocationChallenge.Secret, clientId = paired.ClientId },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.NotFound, rotationMismatch.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, rotationSuccess.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, revocationMismatch.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, revocationSuccess.StatusCode);
+    }
+
+    [Fact]
     public async Task TimeScenarioIncludesAuthoritativeTimeBeforeTheProviderToolCall()
     {
         using var response = await _client.PostAsJsonAsync(

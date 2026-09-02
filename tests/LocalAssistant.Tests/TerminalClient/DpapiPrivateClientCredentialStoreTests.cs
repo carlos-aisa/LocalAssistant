@@ -80,6 +80,39 @@ public sealed class DpapiPrivateClientCredentialStoreTests
         }
     }
 
+    [Fact]
+    public async Task FailedReplacementPreservesTheExistingCredential()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            var path = Path.Combine(directory, "private-client.json");
+            var store = new DpapiPrivateClientCredentialStore(path);
+            var original = new PrivateClientCredential("client-a", "original-credential");
+            Assert.True(await store.SaveAsync(original, CancellationToken.None));
+
+            await using (var lockStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                var saved = await store.SaveAsync(
+                    new PrivateClientCredential("client-a", "replacement-credential"),
+                    CancellationToken.None);
+
+                Assert.False(saved);
+            }
+
+            Assert.Equal(original, await store.LoadAsync(CancellationToken.None));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static string CreateTemporaryDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), "LocalAssistant.Tests", Guid.NewGuid().ToString("N"));
