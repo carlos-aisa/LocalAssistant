@@ -189,6 +189,30 @@ public sealed class TerminalClientApplicationTests
     }
 
     [Fact]
+    public async Task PairingCredentialIsNotPersistedWhenItCannotOpenASession()
+    {
+        var store = new TestCredentialStore();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => JsonResponse(HttpStatusCode.OK, """
+                { "clientId": "paired-client", "displayName": "Desktop", "credential": "paired-credential" }
+                """),
+            _ => JsonResponse(HttpStatusCode.Unauthorized, string.Empty),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole([string.Empty, "Desktop"], "pairing-challenge");
+        var application = CreateApplication(httpClient, console, store);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, exitCode);
+        Assert.Null(store.SavedCredential);
+        Assert.DoesNotContain("pairing-challenge", console.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("paired-credential", console.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SessionRenewalRetriesAMessageExactlyOnce()
     {
         var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
@@ -285,6 +309,35 @@ public sealed class TerminalClientApplicationTests
     }
 
     [Fact]
+    public async Task FailedCompletionRetainsTheRenewedSessionForTheNextMessage()
+    {
+        var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("expired-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "First response")),
+            _ => JsonResponse(HttpStatusCode.Unauthorized, string.Empty),
+            _ => SessionResponse("renewed-token"),
+            _ => JsonResponse(HttpStatusCode.InternalServerError, string.Empty),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Second response")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "Hello", "/new", "Again", null],
+            "credential-a");
+        var application = CreateApplication(httpClient, console);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(7, handler.Requests.Count);
+        Assert.Equal("Bearer expired-token", handler.Requests[3].Authorization);
+        Assert.Equal("Bearer renewed-token", handler.Requests[5].Authorization);
+        Assert.Equal("Bearer renewed-token", handler.Requests[6].Authorization);
+    }
+
+    [Fact]
     public async Task ConfirmationRenewsTheSessionOnceBeforeRetrying()
     {
         var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
@@ -337,6 +390,37 @@ public sealed class TerminalClientApplicationTests
         Assert.Equal(4, handler.Requests.Count);
         Assert.Equal("client-a", handler.Requests[2].Body.RootElement.GetProperty("clientId").GetString());
         Assert.Equal(new PrivateClientCredential("client-a", "replacement-credential"), store.SavedCredential);
+        Assert.DoesNotContain("credential-a", console.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("rotation-challenge", console.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("replacement-credential", console.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("old-token", console.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("replacement-token", console.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RotationForAnotherClientDoesNotReplaceTheLocalCredential()
+    {
+        var store = new TestCredentialStore();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("old-token"),
+            _ => JsonResponse(HttpStatusCode.OK, """
+                { "clientId": "other-client", "displayName": "Desktop", "credential": "other-credential" }
+                """),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "/admin rotate", null],
+            "credential-a",
+            "rotation-challenge");
+        var application = CreateApplication(httpClient, console, store);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(new PrivateClientCredential("client-a", "credential-a"), store.SavedCredential);
+        Assert.Contains("Credential rotation was rejected", console.Output, StringComparison.Ordinal);
     }
 
     [Fact]

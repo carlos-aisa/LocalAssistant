@@ -28,7 +28,8 @@ public sealed class TerminalClientApplication
             return 1;
         }
 
-        var credential = await GetCredentialAsync(loadStoredCredential: true, cancellationToken);
+        var storedCredential = await _credentialStore.LoadAsync(cancellationToken);
+        var credential = storedCredential ?? await GetCredentialAsync(cancellationToken);
         if (credential is null)
         {
             return 2;
@@ -37,14 +38,14 @@ public sealed class TerminalClientApplication
         var session = await _apiClient.CreateSessionAsync(credential.ClientId, credential.Credential, cancellationToken);
         if (!session.IsSuccess)
         {
-            if (session.Error?.Code != "authentication_failed")
+            if (session.Error?.Code != "authentication_failed" || storedCredential is null)
             {
                 WriteError(session.Error!);
                 return 1;
             }
 
             _console.WriteLine("The stored private-client credential was rejected. Recover with pairing or a manual credential.");
-            credential = await GetCredentialAsync(loadStoredCredential: false, cancellationToken);
+            credential = await GetCredentialAsync(cancellationToken);
             if (credential is null)
             {
                 return 2;
@@ -62,19 +63,8 @@ public sealed class TerminalClientApplication
         return await ProcessMessagesAsync(credential, session.Value!.AccessToken, cancellationToken);
     }
 
-    private async Task<PrivateClientCredential?> GetCredentialAsync(
-        bool loadStoredCredential,
-        CancellationToken cancellationToken)
+    private async Task<PrivateClientCredential?> GetCredentialAsync(CancellationToken cancellationToken)
     {
-        if (loadStoredCredential)
-        {
-            var stored = await _credentialStore.LoadAsync(cancellationToken);
-            if (stored is not null)
-            {
-                return stored;
-            }
-        }
-
         _console.Write("Private client ID (leave empty to pair): ");
         var clientId = _console.ReadLine()?.Trim();
         if (string.IsNullOrWhiteSpace(clientId))
@@ -306,7 +296,7 @@ public sealed class TerminalClientApplication
             var completion = await CompleteAsync(credential, accessToken, conversationId, cancellationToken);
             if (!completion.Completed)
             {
-                return new(true, 0, accessToken, provider, conversationId);
+                return new(true, 0, completion.AccessToken, provider, conversationId);
             }
 
             return new(true, 0, completion.AccessToken, parts[1], null);
@@ -316,7 +306,7 @@ public sealed class TerminalClientApplication
         {
             var completion = await CompleteAsync(credential, accessToken, conversationId, cancellationToken);
             return !completion.Completed
-                ? new(true, 0, accessToken, provider, conversationId)
+                ? new(true, 0, completion.AccessToken, provider, conversationId)
                 : new(true, 0, completion.AccessToken, provider, null);
         }
 
@@ -324,7 +314,7 @@ public sealed class TerminalClientApplication
         {
             var completion = await CompleteAsync(credential, accessToken, conversationId, cancellationToken);
             return !completion.Completed
-                ? new(true, 0, accessToken, provider, conversationId)
+                ? new(true, 0, completion.AccessToken, provider, conversationId)
                 : new(false, 0, completion.AccessToken, provider, conversationId);
         }
 
