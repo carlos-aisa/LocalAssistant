@@ -28,7 +28,7 @@ public sealed class TerminalClientApplication
             return 1;
         }
 
-        var credential = await GetCredentialAsync(cancellationToken);
+        var credential = await GetCredentialAsync(loadStoredCredential: true, cancellationToken);
         if (credential is null)
         {
             return 2;
@@ -37,20 +37,42 @@ public sealed class TerminalClientApplication
         var session = await _apiClient.CreateSessionAsync(credential.ClientId, credential.Credential, cancellationToken);
         if (!session.IsSuccess)
         {
-            WriteError(session.Error!);
-            return 1;
+            if (session.Error?.Code != "authentication_failed")
+            {
+                WriteError(session.Error!);
+                return 1;
+            }
+
+            _console.WriteLine("The stored private-client credential was rejected. Recover with pairing or a manual credential.");
+            credential = await GetCredentialAsync(loadStoredCredential: false, cancellationToken);
+            if (credential is null)
+            {
+                return 2;
+            }
+
+            session = await _apiClient.CreateSessionAsync(credential.ClientId, credential.Credential, cancellationToken);
+            if (!session.IsSuccess)
+            {
+                WriteError(session.Error!);
+                return 1;
+            }
         }
 
         await SaveCredentialAsync(credential, cancellationToken);
         return await ProcessMessagesAsync(credential, session.Value!.AccessToken, cancellationToken);
     }
 
-    private async Task<PrivateClientCredential?> GetCredentialAsync(CancellationToken cancellationToken)
+    private async Task<PrivateClientCredential?> GetCredentialAsync(
+        bool loadStoredCredential,
+        CancellationToken cancellationToken)
     {
-        var stored = await _credentialStore.LoadAsync(cancellationToken);
-        if (stored is not null)
+        if (loadStoredCredential)
         {
-            return stored;
+            var stored = await _credentialStore.LoadAsync(cancellationToken);
+            if (stored is not null)
+            {
+                return stored;
+            }
         }
 
         _console.Write("Private client ID (leave empty to pair): ");
@@ -176,7 +198,20 @@ public sealed class TerminalClientApplication
         SendMessageRequest request,
         CancellationToken cancellationToken)
     {
-        var response = await _apiClient.SendMessageAsync(accessToken, request, cancellationToken);
+        return await ExecuteWithRenewalAsync(
+            credential,
+            accessToken,
+            token => _apiClient.SendMessageAsync(token, request, cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task<(ClientResult<T> Response, string AccessToken)> ExecuteWithRenewalAsync<T>(
+        PrivateClientCredential credential,
+        string accessToken,
+        Func<string, Task<ClientResult<T>>> operation,
+        CancellationToken cancellationToken)
+    {
+        var response = await operation(accessToken);
         if (!response.Error?.CanRenewSession ?? true)
         {
             return (response, accessToken);
@@ -189,7 +224,7 @@ public sealed class TerminalClientApplication
         }
 
         accessToken = renewed.Value!.AccessToken;
-        return (await _apiClient.SendMessageAsync(accessToken, request, cancellationToken), accessToken);
+        return (await operation(accessToken), accessToken);
     }
 
     private async Task<(ClientResult<ConversationResponse> Response, string AccessToken)> ResolveConfirmationAsync(
@@ -202,12 +237,35 @@ public sealed class TerminalClientApplication
         CancellationToken cancellationToken)
     {
         _console.WriteLine($"Confirmation required for tool '{confirmation.ToolName}' before {confirmation.ExpiresAtUtc:O}.");
-        _console.Write("Type approve or reject: ");
-        var approved = string.Equals(_console.ReadLine()?.Trim(), "approve", StringComparison.OrdinalIgnoreCase);
-        var response = await _apiClient.ResolveConfirmationAsync(
-            accessToken, conversationId, confirmation.ConfirmationId,
-            new ResolveToolConfirmationRequest(approved, provider, scenario), cancellationToken);
-        return (response, accessToken);
+        while (true)
+        {
+            _console.Write("Type approve, reject, or cancel: ");
+            var decision = _console.ReadLine()?.Trim();
+            if (decision is null || decision.Equals("cancel", StringComparison.OrdinalIgnoreCase))
+            {
+                return (ClientResults.Failure<ConversationResponse>(
+                    "confirmation_cancelled",
+                    "The pending confirmation was not resolved."), accessToken);
+            }
+
+            if (decision.Equals("approve", StringComparison.OrdinalIgnoreCase) ||
+                decision.Equals("reject", StringComparison.OrdinalIgnoreCase))
+            {
+                var approved = decision.Equals("approve", StringComparison.OrdinalIgnoreCase);
+                return await ExecuteWithRenewalAsync(
+                    credential,
+                    accessToken,
+                    token => _apiClient.ResolveConfirmationAsync(
+                        token,
+                        conversationId,
+                        confirmation.ConfirmationId,
+                        new ResolveToolConfirmationRequest(approved, provider, scenario),
+                        cancellationToken),
+                    cancellationToken);
+            }
+
+            _console.WriteLine("Type approve, reject, or cancel.");
+        }
     }
 
     private async Task<CommandResult> HandleCommandAsync(
@@ -245,26 +303,29 @@ public sealed class TerminalClientApplication
                 return new(true, 0, accessToken, provider, conversationId);
             }
 
-            if (!await CompleteAsync(accessToken, conversationId, cancellationToken))
+            var completion = await CompleteAsync(credential, accessToken, conversationId, cancellationToken);
+            if (!completion.Completed)
             {
                 return new(true, 0, accessToken, provider, conversationId);
             }
 
-            return new(true, 0, accessToken, parts[1], null);
+            return new(true, 0, completion.AccessToken, parts[1], null);
         }
 
         if (parts[0].Equals("/new", StringComparison.OrdinalIgnoreCase))
         {
-            return !await CompleteAsync(accessToken, conversationId, cancellationToken)
+            var completion = await CompleteAsync(credential, accessToken, conversationId, cancellationToken);
+            return !completion.Completed
                 ? new(true, 0, accessToken, provider, conversationId)
-                : new(true, 0, accessToken, provider, null);
+                : new(true, 0, completion.AccessToken, provider, null);
         }
 
         if (parts[0].Equals("/exit", StringComparison.OrdinalIgnoreCase))
         {
-            return !await CompleteAsync(accessToken, conversationId, cancellationToken)
+            var completion = await CompleteAsync(credential, accessToken, conversationId, cancellationToken);
+            return !completion.Completed
                 ? new(true, 0, accessToken, provider, conversationId)
-                : new(false, 0, accessToken, provider, conversationId);
+                : new(false, 0, completion.AccessToken, provider, conversationId);
         }
 
         _console.WriteLine("Unknown command. Type /help for available commands.");
@@ -338,21 +399,29 @@ public sealed class TerminalClientApplication
         return new(true, 0, accessToken, provider, conversationId);
     }
 
-    private async Task<bool> CompleteAsync(string accessToken, Guid? conversationId, CancellationToken cancellationToken)
+    private async Task<(bool Completed, string AccessToken)> CompleteAsync(
+        PrivateClientCredential credential,
+        string accessToken,
+        Guid? conversationId,
+        CancellationToken cancellationToken)
     {
         if (!conversationId.HasValue)
         {
-            return true;
+            return (true, accessToken);
         }
 
-        var result = await _apiClient.CompleteConversationAsync(accessToken, conversationId.Value, cancellationToken);
-        if (!result.IsSuccess)
+        var completed = await ExecuteWithRenewalAsync(
+            credential,
+            accessToken,
+            token => _apiClient.CompleteConversationAsync(token, conversationId.Value, cancellationToken),
+            cancellationToken);
+        if (!completed.Response.IsSuccess)
         {
-            WriteError(result.Error!);
-            return false;
+            WriteError(completed.Response.Error!);
+            return (false, completed.AccessToken);
         }
 
-        return true;
+        return (true, completed.AccessToken);
     }
 
     private void ShowResponse(ConversationResponse response)

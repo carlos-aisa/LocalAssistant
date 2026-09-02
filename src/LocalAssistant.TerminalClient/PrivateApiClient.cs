@@ -122,13 +122,10 @@ public sealed class PrivateApiClient
             HttpMethod.Post,
             $"api/conversations/{conversationId}/completion");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        return await SendAsync(
+        return await SendNoContentAsync(
             request,
-            static _ => new CompletionResponse(),
             "Conversation completion could not be requested.",
-            isTurnRequest: false,
-            cancellationToken,
-            canRenewSession: true);
+            cancellationToken);
     }
 
     public async Task<ClientResult<ConversationResponse>> SendMessageAsync(
@@ -271,6 +268,38 @@ public sealed class PrivateApiClient
         catch (JsonException)
         {
             return ClientResults.Failure<T>("invalid_response", "The API returned an invalid response.");
+        }
+    }
+
+    private async Task<ClientResult<CompletionResponse>> SendNoContentAsync(
+        HttpRequestMessage request,
+        string connectionErrorMessage,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.NoContent)
+            {
+                return ClientResults.Success(new CompletionResponse());
+            }
+
+            return ClientResults.Failure<CompletionResponse>(
+                GetErrorCode(response.StatusCode),
+                GetErrorMessage(response.StatusCode),
+                canRenewSession: response.StatusCode == HttpStatusCode.Unauthorized);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return ClientResults.Failure<CompletionResponse>("request_cancelled", "The request was cancelled.");
+        }
+        catch (OperationCanceledException)
+        {
+            return ClientResults.Failure<CompletionResponse>("request_timeout", "The request timed out.");
+        }
+        catch (HttpRequestException)
+        {
+            return ClientResults.Failure<CompletionResponse>("connection_error", connectionErrorMessage);
         }
     }
 

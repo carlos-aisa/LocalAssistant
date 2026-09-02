@@ -40,7 +40,7 @@ public sealed class DpapiPrivateClientCredentialStore : IPrivateClientCredential
     {
     }
 
-    internal DpapiPrivateClientCredentialStore(string statePath)
+    public DpapiPrivateClientCredentialStore(string statePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(statePath);
         _statePath = statePath;
@@ -85,7 +85,7 @@ public sealed class DpapiPrivateClientCredentialStore : IPrivateClientCredential
                 }
             }
         }
-        catch (Exception exception) when (exception is CryptographicException or IOException or JsonException or FormatException)
+        catch (Exception exception) when (exception is CryptographicException or IOException or UnauthorizedAccessException or JsonException or FormatException)
         {
             return null;
         }
