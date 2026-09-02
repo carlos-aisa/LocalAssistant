@@ -32,9 +32,16 @@ El snapshot separa tres dimensiones para evitar un enum plano ambiguo:
 | Error | Ninguno o error seguro `Recoverable`, `Uncertain` o `Blocking` |
 
 El snapshot añade solo contexto no sensible: proveedor seleccionado, identificador de
-la conversación activa y metadatos seguros de una confirmación pendiente. Nunca
-contiene credenciales, bearer, desafíos, mensajes, prompts, argumentos ni resultados
-de herramientas.
+la conversación activa y metadatos seguros de una confirmación pendiente. Los cambios
+de proveedor, conversación o confirmación son cambios observables aunque el ciclo de
+vida y la actividad no cambien. Nunca contiene credenciales, bearer, desafíos,
+mensajes, prompts, argumentos ni resultados de herramientas.
+
+El error usa un DTO seguro con `Category`, `Code`, `SafeMessage` y `Operation`. La
+categoría es `Recoverable`, `Uncertain` o `Blocking`; la operación identifica la fase
+segura, como health, autenticación, reanudación, turno, confirmación o completion. El
+error se conserva en snapshots posteriores hasta que una operación posterior termina
+correctamente. Un éxito publica entonces el snapshot actualizado sin error.
 
 ## Transiciones
 
@@ -56,13 +63,40 @@ de herramientas.
 
 Una recuperación satisfactoria publica un snapshot `Ready` sin error tras el snapshot
 del error. Un `404` concluyente durante la reanudación conserva esta regla y limpia la
-preferencia local existente. Una cancelación HTTP no se anuncia como cancelación fiable
-del turno: si el servidor pudo recibirlo, el estado será `Uncertain`.
+preferencia local existente. Solo una operación que pudo alcanzar el servidor, como un
+turno, una decisión de confirmación o completion tras enviar la solicitud, puede ser
+`Uncertain`. Health, validación local, detalle, listado, errores HTTP concluyentes y
+cancelaciones antes del envío no se clasifican como incertidumbre de turno.
+
+## Grafo de transiciones permitidas
+
+| Origen | Destino permitido | Condición y retorno |
+| --- | --- | --- |
+| `Disconnected` | `Connecting` | Inicio de una ejecución. |
+| `Connecting` | `Authenticating` | Health correcto y credencial disponible. |
+| `Connecting` | `Blocked` | Health falla de forma bloqueante. |
+| `Authenticating` | `Ready/None` | Sesión o pairing válido. |
+| `Authenticating` | `Blocked` | Autenticación definitivamente rechazada o cancelada. |
+| `Ready/None` | `Ready/ResumingConversation` | Validar o cargar la última conversación. Retorna a `Ready/None`. |
+| `Ready/None` | `Ready/SelectingConversation` | Listar, paginar o seleccionar conversación. Retorna a `Ready/None`. |
+| `Ready/None` | `Ready/SendingTurn` | Enviar turno. Retorna a `Ready/None` o pasa a `Ready/AwaitingConfirmation`. |
+| `Ready/AwaitingConfirmation` | `Ready/ResolvingConfirmation` | Usuario aprueba o rechaza. Retorna a `Ready/None` o a `Ready/AwaitingConfirmation` si sigue pendiente. |
+| `Ready/*` | `Ready/CompletingConversation` | `/new`, cambio de proveedor, selección o `/exit`. Retorna a `Ready/None` antes de cualquier cierre. |
+| `Ready/*` | `Ready/None` con error | Error recuperable o incierto; toda actividad termina explícitamente. |
+| `Ready/*` | `Blocked/None` | Error bloqueante; toda actividad termina explícitamente. |
+| `Ready/None` | `Closing/None` | EOF o salida sin completion pendiente. |
+| `Ready/CompletingConversation` | `Ready/None` | Completion de `/exit`, antes de `Closing`. |
+| `Closing/*` o `Blocked/*` | `Closed/None` | `finally` de `RunAsync`, para salida controlada, error capturado o cancelación capturada. |
+
+No existe una transición entrante hacia `PlayingVoice` en este incremento. Toda
+actividad alcanzable vuelve obligatoriamente a `Ready/None` antes de iniciar otra
+actividad, bloquear o cerrar.
 
 ## Invariantes
 
 1. Cada ejecución publica un snapshot inicial `Disconnected` y termina con uno final
-   `Closed`, incluso si pasa por `Blocked`.
+   `Closed`, incluso si pasa por `Blocked`; `RunAsync` usa `finally` para garantizar
+   `Closing → Closed` en toda salida controlada, error o cancelación capturada.
 2. Dos snapshots iguales consecutivos no generan notificación.
 3. Una transición no permitida no modifica el snapshot ni genera publicación.
 4. Solo `TerminalClientApplication` solicita transiciones; los sinks son pasivos.
@@ -70,7 +104,9 @@ del turno: si el servidor pudo recibirlo, el estado será `Uncertain`.
    excepciones del sink quedan aisladas.
 6. `PlayingVoice` no puede ser el destino de ninguna transición del incremento 4.
 7. El sink textual no repite snapshots ni vuelca contexto sensible o contenido
-   conversacional.
+   conversacional. Solo muestra cambios operacionales que no estén ya descritos por
+   `ITerminalConsole`; no reproduce respuestas, historial, herramientas, prompts ni
+   compone un modelo de pantalla.
 
 ## Pruebas
 
