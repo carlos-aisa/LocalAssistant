@@ -96,11 +96,39 @@ public sealed class InstallationIdentityStoreTests
             await store.GetAsync(CancellationToken.None));
     }
 
+    [Fact]
+    public async Task MigratesSchemaFourIdentityWithoutALegacyApiKeyHash()
+    {
+        using var stateDirectory = new TemporaryInstallationStateDirectory();
+        var store = CreateStore(stateDirectory.Path);
+        Directory.CreateDirectory(stateDirectory.Path);
+        await File.WriteAllTextAsync(
+            store.GetStateFilePath(),
+            """
+            {
+              "SchemaVersion": 4,
+              "InstallationId": "8196f6e9b019487e927ca07f6d3855e9",
+              "OwnerPrincipalId": "owner-schema-four",
+              "GrantedScopes": ["installation.owner"],
+              "InitializedAtUtc": "2026-08-20T10:00:00+00:00"
+            }
+            """,
+            CancellationToken.None);
+
+        var identity = await store.GetAsync(CancellationToken.None);
+
+        Assert.NotNull(identity);
+        Assert.Contains("conversations.read", identity.GrantedScopes);
+        using var state = JsonDocument.Parse(
+            await File.ReadAllTextAsync(store.GetStateFilePath(), CancellationToken.None));
+        Assert.Equal(5, state.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.False(state.RootElement.TryGetProperty("ApiKeySha256", out _));
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
-    [InlineData(4)]
     public async Task MigratesLegacyIdentityToSchemaFiveWithoutChangingStableData(int schemaVersion)
     {
         using var stateDirectory = new TemporaryInstallationStateDirectory();

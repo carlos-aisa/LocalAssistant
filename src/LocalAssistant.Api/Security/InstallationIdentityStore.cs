@@ -162,8 +162,8 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
                 CurrentSchemaVersion) ||
             !Guid.TryParseExact(state.InstallationId, "N", out _) ||
             !IsValidPrincipalId(state.OwnerPrincipalId) ||
-            (state.SchemaVersion < CurrentSchemaVersion && !IsSha256Hash(state.ApiKeySha256)) ||
-            (state.SchemaVersion == CurrentSchemaVersion && state.ApiKeySha256 is not null) ||
+            (state.SchemaVersion <= PrivateClientSchemaVersion && !IsSha256Hash(state.ApiKeySha256)) ||
+            (state.SchemaVersion >= 4 && state.ApiKeySha256 is not null) ||
             state.GrantedScopes is null || state.GrantedScopes.Length == 0 ||
             state.GrantedScopes.Any(scope => string.IsNullOrWhiteSpace(scope)) ||
             state.GrantedScopes.Distinct(StringComparer.Ordinal).Count() != state.GrantedScopes.Length ||

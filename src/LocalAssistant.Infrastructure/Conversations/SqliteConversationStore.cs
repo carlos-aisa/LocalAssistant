@@ -159,7 +159,7 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
         {
             items.Add(new ConversationSummary(
                 row.ConversationId,
-                await GetTitleAsync(connection, row.ConversationId, cancellationToken),
+                await GetTitleAsync(connection, row.ConversationId, ownerPrincipalId, cancellationToken),
                 DateTimeOffset.FromUnixTimeMilliseconds(row.LastActivityUnixMilliseconds),
                 row.IndexingRequestedAtUnixMilliseconds is long indexingRequested
                     ? DateTimeOffset.FromUnixTimeMilliseconds(indexingRequested)
@@ -194,7 +194,7 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
         await reader.DisposeAsync();
         return new ConversationDetails(
             conversationId,
-            await GetTitleAsync(connection, conversationId, cancellationToken),
+            await GetTitleAsync(connection, conversationId, ownerPrincipalId, cancellationToken),
             DateTimeOffset.FromUnixTimeMilliseconds(lastActivity),
             indexingRequested is long timestamp
                 ? DateTimeOffset.FromUnixTimeMilliseconds(timestamp)
@@ -218,8 +218,9 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
         }
 
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT SequenceNumber, PayloadJson FROM ConversationMessages WHERE ConversationId = $id AND SequenceNumber > $cursor ORDER BY SequenceNumber ASC;";
+        command.CommandText = "SELECT messages.SequenceNumber, messages.PayloadJson FROM ConversationMessages messages INNER JOIN Conversations conversations ON conversations.ConversationId = messages.ConversationId AND conversations.OwnerPrincipalId = $owner WHERE messages.ConversationId = $id AND messages.SequenceNumber > $cursor ORDER BY messages.SequenceNumber ASC;";
         command.Parameters.AddWithValue("$id", conversationId.ToString("N"));
+        command.Parameters.AddWithValue("$owner", ownerPrincipalId);
         command.Parameters.AddWithValue("$cursor", cursorValue?.SequenceNumber ?? -1);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var messages = new List<PublicConversationMessage>();
@@ -474,11 +475,13 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
     private static async Task<string> GetTitleAsync(
         SqliteConnection connection,
         Guid conversationId,
+        string ownerPrincipalId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT PayloadJson FROM ConversationMessages WHERE ConversationId = $id ORDER BY SequenceNumber ASC;";
+        command.CommandText = "SELECT messages.PayloadJson FROM ConversationMessages messages INNER JOIN Conversations conversations ON conversations.ConversationId = messages.ConversationId AND conversations.OwnerPrincipalId = $owner WHERE messages.ConversationId = $id ORDER BY messages.SequenceNumber ASC;";
         command.Parameters.AddWithValue("$id", conversationId.ToString("N"));
+        command.Parameters.AddWithValue("$owner", ownerPrincipalId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
