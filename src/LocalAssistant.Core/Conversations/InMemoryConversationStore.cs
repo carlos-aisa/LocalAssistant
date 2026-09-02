@@ -87,6 +87,85 @@ public sealed class InMemoryConversationStore : IConversationStore
         }
     }
 
+    public ValueTask<ConversationPage<ConversationSummary>> ListOwnedAsync(
+        string ownerPrincipalId,
+        string? cursor,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerPrincipalId);
+
+        var conversations = _conversations.Values
+            .Where(state => string.Equals(
+                state.Metadata.OwnerPrincipalId,
+                ownerPrincipalId,
+                StringComparison.Ordinal))
+            .OrderBy(state => state.Metadata.ConversationId)
+            .Take(limit)
+            .Select(state => new ConversationSummary(
+                state.Metadata.ConversationId,
+                GetTitle(state.Messages),
+                DateTimeOffset.UnixEpoch,
+                null))
+            .ToArray();
+        return ValueTask.FromResult(new ConversationPage<ConversationSummary>(conversations, null));
+    }
+
+    public ValueTask<ConversationDetails?> GetOwnedDetailsAsync(
+        Guid conversationId,
+        string ownerPrincipalId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_conversations.TryGetValue(conversationId, out var state) ||
+            !string.Equals(state.Metadata.OwnerPrincipalId, ownerPrincipalId, StringComparison.Ordinal))
+        {
+            return ValueTask.FromResult<ConversationDetails?>(null);
+        }
+
+        lock (state.SyncRoot)
+        {
+            return ValueTask.FromResult<ConversationDetails?>(new ConversationDetails(
+                conversationId,
+                GetTitle(state.Messages),
+                DateTimeOffset.UnixEpoch,
+                null));
+        }
+    }
+
+    public ValueTask<ConversationPage<PublicConversationMessage>?> GetOwnedHistoryAsync(
+        Guid conversationId,
+        string ownerPrincipalId,
+        string? cursor,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_conversations.TryGetValue(conversationId, out var state) ||
+            !string.Equals(state.Metadata.OwnerPrincipalId, ownerPrincipalId, StringComparison.Ordinal))
+        {
+            return ValueTask.FromResult<ConversationPage<PublicConversationMessage>?>(null);
+        }
+
+        lock (state.SyncRoot)
+        {
+            var messages = state.Messages
+                .Where(message => message.Role is ConversationRole.User or ConversationRole.Assistant)
+                .Where(message => !string.IsNullOrWhiteSpace(message.Content))
+                .Take(limit)
+                .Select(message => new PublicConversationMessage(message.Role, message.Content!))
+                .ToArray();
+            return ValueTask.FromResult<ConversationPage<PublicConversationMessage>?>(
+                new ConversationPage<PublicConversationMessage>(messages, null));
+        }
+    }
+
+    private static string GetTitle(IEnumerable<ConversationMessage> messages) =>
+        messages.FirstOrDefault(message =>
+            message.Role == ConversationRole.User &&
+            !string.IsNullOrWhiteSpace(message.Content))?.Content?.Trim() ?? "Untitled conversation";
+
     private sealed class ConversationState
     {
         public ConversationState(ConversationMetadata metadata)

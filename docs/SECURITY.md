@@ -209,6 +209,13 @@ conversaciones anónimas siguen fuera de SQLite. Backups y restauraciones conser
 misma propiedad, retención y requisitos de protección;
 no constituyen una excepción de acceso.
 
+El listado, detalle e historial de conversaciones exigen bearer válido, loopback y el
+scope `conversations.read`. Se filtran siempre por el principal humano autenticado y
+devuelven el mismo `404` para un identificador ajeno o inexistente. El historial
+público excluye prompts de sistema, contexto, argumentos y resultados de herramientas.
+El cliente guarda solo un último identificador como preferencia DPAPI local; esa
+preferencia no demuestra propiedad y solo se elimina tras un `404` concluyente.
+
 Las notas de memoria personal son un recurso SQLite separado de las conversaciones,
 pero usan la misma activación explícita y retención configurada. Solo un principal
 autenticado con `memory.personal.read` puede listarlas, y solo uno con

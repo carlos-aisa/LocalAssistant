@@ -100,6 +100,43 @@ public sealed class SqliteConversationStoreTests
     }
 
     [Fact]
+    public async Task ListsOnlyOwnedConversationsAndSanitizesPublicHistory()
+    {
+        using var directory = new LocalAssistant.Tests.Api.TemporaryInstallationStateDirectory();
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 9, 2, 10, 0, 0, TimeSpan.Zero));
+        var store = CreateStore(Path.Combine(directory.Path, "conversations.db"), clock);
+        var ownedConversation = Guid.NewGuid();
+        var otherConversation = Guid.NewGuid();
+        await store.GetOrCreateMetadataAsync(ownedConversation, "owner-a", CancellationToken.None);
+        await store.AppendAsync(ownedConversation, new ConversationMessage(ConversationRole.System, "Internal prompt."), CancellationToken.None);
+        await store.AppendAsync(ownedConversation, new ConversationMessage(ConversationRole.User, "Plan dinner."), CancellationToken.None);
+        await store.AppendAsync(ownedConversation, new ConversationMessage(ConversationRole.Tool, ToolResult: new ToolResultMessage("call", "secret", "sensitive", false)), CancellationToken.None);
+        await store.AppendAsync(ownedConversation, new ConversationMessage(ConversationRole.Assistant, "Here is a plan."), CancellationToken.None);
+        await store.GetOrCreateMetadataAsync(otherConversation, "owner-b", CancellationToken.None);
+
+        var page = await store.ListOwnedAsync("owner-a", null, 50, CancellationToken.None);
+        var history = await store.GetOwnedHistoryAsync(ownedConversation, "owner-a", null, 100, CancellationToken.None);
+
+        var summary = Assert.Single(page.Items);
+        Assert.Equal(ownedConversation, summary.ConversationId);
+        Assert.Equal("Plan dinner.", summary.Title);
+        Assert.NotNull(history);
+        Assert.Collection(
+            history!.Items,
+            message =>
+            {
+                Assert.Equal(ConversationRole.User, message.Role);
+                Assert.Equal("Plan dinner.", message.Content);
+            },
+            message =>
+            {
+                Assert.Equal(ConversationRole.Assistant, message.Role);
+                Assert.Equal("Here is a plan.", message.Content);
+            });
+        Assert.Null(await store.GetOwnedDetailsAsync(ownedConversation, "owner-b", CancellationToken.None));
+    }
+
+    [Fact]
     public async Task RetrievesOnlyAnotherConversationOwnedByTheCurrentPrincipal()
     {
         using var directory = new LocalAssistant.Tests.Api.TemporaryInstallationStateDirectory();

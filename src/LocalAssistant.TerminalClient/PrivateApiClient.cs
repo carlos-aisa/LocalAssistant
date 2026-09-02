@@ -128,6 +128,69 @@ public sealed class PrivateApiClient
             cancellationToken);
     }
 
+    public async Task<ClientResult<ConversationPageResponse<ConversationSummaryResponse>>> ListConversationsAsync(
+        string accessToken,
+        string? cursor,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var path = $"api/conversations?limit={limit}";
+        if (!string.IsNullOrWhiteSpace(cursor))
+        {
+            path += $"&cursor={Uri.EscapeDataString(cursor)}";
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        return await SendAsync(
+            request,
+            static root => root.Deserialize<ConversationPageResponse<ConversationSummaryResponse>>(JsonOptions),
+            "The conversation list could not be retrieved.",
+            isTurnRequest: false,
+            cancellationToken,
+            canRenewSession: true);
+    }
+
+    public async Task<ClientResult<ConversationDetailsResponse>> GetConversationDetailsAsync(
+        string accessToken,
+        Guid conversationId,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/conversations/{conversationId}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        return await SendAsync(
+            request,
+            static root => root.Deserialize<ConversationDetailsResponse>(JsonOptions),
+            "The conversation details could not be retrieved.",
+            isTurnRequest: false,
+            cancellationToken,
+            canRenewSession: true);
+    }
+
+    public async Task<ClientResult<ConversationPageResponse<PublicConversationMessageResponse>>> GetConversationHistoryAsync(
+        string accessToken,
+        Guid conversationId,
+        string? cursor,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var path = $"api/conversations/{conversationId}/history?limit={limit}";
+        if (!string.IsNullOrWhiteSpace(cursor))
+        {
+            path += $"&cursor={Uri.EscapeDataString(cursor)}";
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        return await SendAsync(
+            request,
+            static root => root.Deserialize<ConversationPageResponse<PublicConversationMessageResponse>>(JsonOptions),
+            "The conversation history could not be retrieved.",
+            isTurnRequest: false,
+            cancellationToken,
+            canRenewSession: true);
+    }
+
     public async Task<ClientResult<ConversationResponse>> SendMessageAsync(
         string accessToken,
         SendMessageRequest message,
@@ -330,6 +393,7 @@ public sealed class PrivateApiClient
         HttpStatusCode.NotFound => "not_found",
         HttpStatusCode.Conflict => "conflict",
         HttpStatusCode.UnprocessableEntity => "validation_error",
+        HttpStatusCode.ServiceUnavailable => "persistence_unavailable",
         HttpStatusCode.BadGateway => "provider_error",
         HttpStatusCode.GatewayTimeout => "provider_timeout",
         _ => "http_error",
@@ -343,6 +407,7 @@ public sealed class PrivateApiClient
         HttpStatusCode.Conflict => "The conversation is not ready for another message.",
         HttpStatusCode.BadGateway => "The configured language provider failed.",
         HttpStatusCode.GatewayTimeout => "The configured language provider timed out.",
+        HttpStatusCode.ServiceUnavailable => "Conversation persistence is unavailable.",
         _ => "The API rejected the request.",
     };
 }

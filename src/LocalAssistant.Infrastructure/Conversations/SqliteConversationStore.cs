@@ -18,6 +18,10 @@ public sealed class SqliteConversationStoreOptions
 
 public sealed class SqliteConversationStore : IConversationStore, IConversationContextRetriever
 {
+    public const int MaximumListPageSize = 50;
+    public const int MaximumHistoryPageSize = 100;
+    private const string UntitledConversation = "Untitled conversation";
+    private const int MaximumTitleLength = 80;
     private readonly string _connectionString;
     private readonly object _initializationSync = new();
     private readonly TimeProvider _clock;
@@ -119,6 +123,133 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
         var deleted = await ExecuteAsync(connection, transaction, "DELETE FROM Conversations WHERE ConversationId = $id AND OwnerPrincipalId = $owner;", cancellationToken, ("$id", (object)identifier), ("$owner", ownerPrincipalId));
         await transaction.CommitAsync(cancellationToken);
         return deleted > 0;
+    }
+
+    public async ValueTask<ConversationPage<ConversationSummary>> ListOwnedAsync(
+        string ownerPrincipalId,
+        string? cursor,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerPrincipalId);
+        var pageSize = NormalizePageSize(limit, MaximumListPageSize);
+        var cursorValue = ConversationListCursor.Parse(cursor);
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT ConversationId, LastActivityUnixMilliseconds, IndexingRequestedAtUnixMilliseconds FROM Conversations WHERE OwnerPrincipalId = $owner AND ($cursorActivity IS NULL OR LastActivityUnixMilliseconds < $cursorActivity OR (LastActivityUnixMilliseconds = $cursorActivity AND ConversationId > $cursorId)) ORDER BY LastActivityUnixMilliseconds DESC, ConversationId ASC LIMIT $limit;";
+        command.Parameters.AddWithValue("$owner", ownerPrincipalId);
+        command.Parameters.AddWithValue("$cursorActivity", cursorValue?.LastActivityUnixMilliseconds ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$cursorId", cursorValue?.ConversationId.ToString("N") ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$limit", pageSize + 1);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var rows = new List<ConversationListRow>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new ConversationListRow(
+                Guid.ParseExact(reader.GetString(0), "N"),
+                reader.GetInt64(1),
+                reader.IsDBNull(2) ? null : reader.GetInt64(2)));
+        }
+        await reader.DisposeAsync();
+
+        var hasMore = rows.Count > pageSize;
+        var pageRows = rows.Take(pageSize).ToArray();
+        var items = new List<ConversationSummary>(pageRows.Length);
+        foreach (var row in pageRows)
+        {
+            items.Add(new ConversationSummary(
+                row.ConversationId,
+                await GetTitleAsync(connection, row.ConversationId, cancellationToken),
+                DateTimeOffset.FromUnixTimeMilliseconds(row.LastActivityUnixMilliseconds),
+                row.IndexingRequestedAtUnixMilliseconds is long indexingRequested
+                    ? DateTimeOffset.FromUnixTimeMilliseconds(indexingRequested)
+                    : null));
+        }
+
+        var nextCursor = hasMore
+            ? ConversationListCursor.Create(pageRows[^1].LastActivityUnixMilliseconds, pageRows[^1].ConversationId)
+            : null;
+        return new ConversationPage<ConversationSummary>(items, nextCursor);
+    }
+
+    public async ValueTask<ConversationDetails?> GetOwnedDetailsAsync(
+        Guid conversationId,
+        string ownerPrincipalId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerPrincipalId);
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT LastActivityUnixMilliseconds, IndexingRequestedAtUnixMilliseconds FROM Conversations WHERE ConversationId = $id AND OwnerPrincipalId = $owner;";
+        command.Parameters.AddWithValue("$id", conversationId.ToString("N"));
+        command.Parameters.AddWithValue("$owner", ownerPrincipalId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var lastActivity = reader.GetInt64(0);
+        long? indexingRequested = reader.IsDBNull(1) ? null : reader.GetInt64(1);
+        await reader.DisposeAsync();
+        return new ConversationDetails(
+            conversationId,
+            await GetTitleAsync(connection, conversationId, cancellationToken),
+            DateTimeOffset.FromUnixTimeMilliseconds(lastActivity),
+            indexingRequested is long timestamp
+                ? DateTimeOffset.FromUnixTimeMilliseconds(timestamp)
+                : null);
+    }
+
+    public async ValueTask<ConversationPage<PublicConversationMessage>?> GetOwnedHistoryAsync(
+        Guid conversationId,
+        string ownerPrincipalId,
+        string? cursor,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerPrincipalId);
+        var pageSize = NormalizePageSize(limit, MaximumHistoryPageSize);
+        var cursorValue = ConversationHistoryCursor.Parse(cursor);
+        await using var connection = await OpenAsync(cancellationToken);
+        if (!await ExistsOwnedAsync(connection, conversationId, ownerPrincipalId, cancellationToken))
+        {
+            return null;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT SequenceNumber, PayloadJson FROM ConversationMessages WHERE ConversationId = $id AND SequenceNumber > $cursor ORDER BY SequenceNumber ASC;";
+        command.Parameters.AddWithValue("$id", conversationId.ToString("N"));
+        command.Parameters.AddWithValue("$cursor", cursorValue?.SequenceNumber ?? -1);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var messages = new List<PublicConversationMessage>();
+        long? lastSequenceNumber = null;
+        var hasMore = false;
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var message = JsonSerializer.Deserialize<ConversationMessage>(reader.GetString(1), SerializerOptions);
+            if (message is null ||
+                message.Role is not (ConversationRole.User or ConversationRole.Assistant) ||
+                string.IsNullOrWhiteSpace(message.Content))
+            {
+                continue;
+            }
+
+            if (messages.Count == pageSize)
+            {
+                hasMore = true;
+                break;
+            }
+
+            messages.Add(new PublicConversationMessage(message.Role, message.Content));
+            lastSequenceNumber = reader.GetInt64(0);
+        }
+
+        return new ConversationPage<PublicConversationMessage>(
+            messages,
+            hasMore && lastSequenceNumber is long sequenceNumber
+                ? ConversationHistoryCursor.Create(sequenceNumber)
+                : null);
     }
 
     public async ValueTask<bool> RequestImmediateIndexingAsync(
@@ -315,6 +446,52 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
 
         await transaction.CommitAsync(cancellationToken);
         return updated;
+    }
+
+    private static int NormalizePageSize(int requestedLimit, int maximumLimit)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(requestedLimit);
+
+        return Math.Min(requestedLimit, maximumLimit);
+    }
+
+    private static async Task<bool> ExistsOwnedAsync(
+        SqliteConnection connection,
+        Guid conversationId,
+        string ownerPrincipalId,
+        CancellationToken cancellationToken)
+    {
+        var owner = await ScalarAsync(
+            connection,
+            null,
+            "SELECT OwnerPrincipalId FROM Conversations WHERE ConversationId = $id AND OwnerPrincipalId = $owner;",
+            cancellationToken,
+            ("$id", conversationId.ToString("N")),
+            ("$owner", ownerPrincipalId));
+        return owner is not null;
+    }
+
+    private static async Task<string> GetTitleAsync(
+        SqliteConnection connection,
+        Guid conversationId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT PayloadJson FROM ConversationMessages WHERE ConversationId = $id ORDER BY SequenceNumber ASC;";
+        command.Parameters.AddWithValue("$id", conversationId.ToString("N"));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var message = JsonSerializer.Deserialize<ConversationMessage>(reader.GetString(0), SerializerOptions);
+            if (message?.Role != ConversationRole.User || string.IsNullOrWhiteSpace(message.Content))
+            {
+                continue;
+            }
+
+            return LimitText(message.Content.Trim(), MaximumTitleLength);
+        }
+
+        return UntitledConversation;
     }
 
     private async ValueTask<SqliteConnection> OpenAsync(CancellationToken cancellationToken)
@@ -531,6 +708,65 @@ public sealed class SqliteConversationStore : IConversationStore, IConversationC
         return Path.GetFullPath(path);
     }
 
+    private sealed record ConversationListCursor(long LastActivityUnixMilliseconds, Guid ConversationId)
+    {
+        public static string Create(long lastActivityUnixMilliseconds, Guid conversationId) =>
+            Encode(new ConversationListCursor(lastActivityUnixMilliseconds, conversationId));
+
+        public static ConversationListCursor? Parse(string? value) =>
+            string.IsNullOrWhiteSpace(value)
+                ? null
+                : Decode<ConversationListCursor>(value);
+    }
+
+    private sealed record ConversationHistoryCursor(long SequenceNumber)
+    {
+        public static string Create(long sequenceNumber) =>
+            Encode(new ConversationHistoryCursor(sequenceNumber));
+
+        public static ConversationHistoryCursor? Parse(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            var cursor = Decode<ConversationHistoryCursor>(value);
+            if (cursor.SequenceNumber < 0)
+            {
+                throw new ArgumentException("The conversation history cursor is invalid.", nameof(value));
+            }
+
+            return cursor;
+        }
+    }
+
+    private sealed record ConversationListRow(
+        Guid ConversationId,
+        long LastActivityUnixMilliseconds,
+        long? IndexingRequestedAtUnixMilliseconds);
+
+    private static string Encode<T>(T value) =>
+        Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(value, SerializerOptions))
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+
+    private static T Decode<T>(string value)
+    {
+        try
+        {
+            var padded = value.Replace('-', '+').Replace('_', '/');
+            padded = padded.PadRight(padded.Length + (4 - padded.Length % 4) % 4, '=');
+            return JsonSerializer.Deserialize<T>(Convert.FromBase64String(padded), SerializerOptions)
+                ?? throw new ArgumentException("The conversation cursor is invalid.", nameof(value));
+        }
+        catch (Exception exception) when (exception is FormatException or JsonException)
+        {
+            throw new ArgumentException("The conversation cursor is invalid.", nameof(value), exception);
+        }
+    }
+
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 }
 
@@ -590,5 +826,38 @@ public sealed class AuthenticatedConversationStore(IConversationStore persistent
         persistentStore.DeleteOwnedAsync(
             conversationId,
             ownerPrincipalId,
+            cancellationToken);
+
+    public ValueTask<ConversationPage<ConversationSummary>> ListOwnedAsync(
+        string ownerPrincipalId,
+        string? cursor,
+        int limit,
+        CancellationToken cancellationToken) =>
+        persistentStore.ListOwnedAsync(
+            ownerPrincipalId,
+            cursor,
+            limit,
+            cancellationToken);
+
+    public ValueTask<ConversationDetails?> GetOwnedDetailsAsync(
+        Guid conversationId,
+        string ownerPrincipalId,
+        CancellationToken cancellationToken) =>
+        persistentStore.GetOwnedDetailsAsync(
+            conversationId,
+            ownerPrincipalId,
+            cancellationToken);
+
+    public ValueTask<ConversationPage<PublicConversationMessage>?> GetOwnedHistoryAsync(
+        Guid conversationId,
+        string ownerPrincipalId,
+        string? cursor,
+        int limit,
+        CancellationToken cancellationToken) =>
+        persistentStore.GetOwnedHistoryAsync(
+            conversationId,
+            ownerPrincipalId,
+            cursor,
+            limit,
             cancellationToken);
 }

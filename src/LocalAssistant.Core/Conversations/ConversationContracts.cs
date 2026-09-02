@@ -28,6 +28,26 @@ public sealed record ConversationMetadata(
     Guid ConversationId,
     string? OwnerPrincipalId);
 
+public sealed record ConversationSummary(
+    Guid ConversationId,
+    string Title,
+    DateTimeOffset LastActivityAtUtc,
+    DateTimeOffset? IndexingRequestedAtUtc);
+
+public sealed record ConversationDetails(
+    Guid ConversationId,
+    string Title,
+    DateTimeOffset LastActivityAtUtc,
+    DateTimeOffset? IndexingRequestedAtUtc);
+
+public sealed record PublicConversationMessage(
+    ConversationRole Role,
+    string Content);
+
+public sealed record ConversationPage<T>(
+    IReadOnlyList<T> Items,
+    string? NextCursor);
+
 public interface IConversationStore
 {
     ValueTask<ConversationMetadata> GetOrCreateMetadataAsync(
@@ -51,5 +71,23 @@ public interface IConversationStore
     ValueTask<bool> DeleteOwnedAsync(
         Guid conversationId,
         string ownerPrincipalId,
+        CancellationToken cancellationToken);
+
+    ValueTask<ConversationPage<ConversationSummary>> ListOwnedAsync(
+        string ownerPrincipalId,
+        string? cursor,
+        int limit,
+        CancellationToken cancellationToken);
+
+    ValueTask<ConversationDetails?> GetOwnedDetailsAsync(
+        Guid conversationId,
+        string ownerPrincipalId,
+        CancellationToken cancellationToken);
+
+    ValueTask<ConversationPage<PublicConversationMessage>?> GetOwnedHistoryAsync(
+        Guid conversationId,
+        string ownerPrincipalId,
+        string? cursor,
+        int limit,
         CancellationToken cancellationToken);
 }
