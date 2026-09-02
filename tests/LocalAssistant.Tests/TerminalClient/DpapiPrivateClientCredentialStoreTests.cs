@@ -15,6 +15,14 @@ public sealed class DpapiPrivateClientCredentialStoreTests
             var credential = new PrivateClientCredential("client-a", "credential-a");
 
             var saved = await store.SaveAsync(credential, CancellationToken.None);
+            if (!OperatingSystem.IsWindows())
+            {
+                Assert.False(saved);
+                Assert.Null(await store.LoadAsync(CancellationToken.None));
+                Assert.False(File.Exists(path));
+                return;
+            }
+
             var loaded = await store.LoadAsync(CancellationToken.None);
             var storedJson = await File.ReadAllTextAsync(path);
 
