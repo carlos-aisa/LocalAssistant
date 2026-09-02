@@ -363,6 +363,318 @@ public sealed class TerminalClientApplicationTests
     }
 
     [Fact]
+    public async Task ResumeLoadsAndDisplaysThePublicHistory()
+    {
+        var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => ConversationDetailsResponse(conversationId, "Previous conversation"),
+            _ => JsonResponse(HttpStatusCode.OK, """
+                {
+                  "items": [
+                    { "role": "user", "content": "Previous question" },
+                    { "role": "assistant", "content": "Previous answer" }
+                  ],
+                  "nextCursor": null
+                }
+                """),
+        ]);
+        var store = new TestCredentialStore(
+            new PrivateClientCredential("client-a", "credential-a", conversationId));
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["R", null]);
+        var application = CreateApplication(httpClient, console, store);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(conversationId, store.Credential!.LastConversationId);
+        Assert.Contains("user: Previous question", console.Output, StringComparison.Ordinal);
+        Assert.Contains("assistant: Previous answer", console.Output, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task ResumeValidationFailuresOtherThanNotFoundPreserveTheLastConversationId(
+        HttpStatusCode statusCode)
+    {
+        var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(statusCode, string.Empty),
+        ]);
+        var store = new TestCredentialStore(
+            new PrivateClientCredential("client-a", "credential-a", conversationId));
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole([null]);
+        var application = CreateApplication(httpClient, console, store);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(conversationId, store.Credential!.LastConversationId);
+    }
+
+    [Fact]
+    public async Task ProviderCommandClearsThePersistedLastConversationId()
+    {
+        var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "First response")),
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent),
+        ]);
+        var store = new TestCredentialStore(new PrivateClientCredential("client-a", "credential-a"));
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["Hello", "/provider ollama", null]);
+        var application = CreateApplication(httpClient, console, store);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Null(store.Credential!.LastConversationId);
+    }
+
+    [Fact]
+    public async Task NewChoiceAtStartupClearsThePersistedLastConversationId()
+    {
+        var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => ConversationDetailsResponse(conversationId, "Previous conversation"),
+        ]);
+        var store = new TestCredentialStore(
+            new PrivateClientCredential("client-a", "credential-a", conversationId));
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["N", null]);
+        var application = CreateApplication(httpClient, console, store);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Null(store.Credential!.LastConversationId);
+    }
+
+    [Fact]
+    public async Task SelectingAnotherConversationCompletesTheCurrentConversationBeforeLoadingHistory()
+    {
+        var currentConversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var selectedConversationId = Guid.Parse("4b384d77-2681-4d55-8d18-cb27f74cdd1b");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(currentConversationId, "First response")),
+            _ => JsonResponse(HttpStatusCode.OK, $$"""
+                {
+                  "items": [
+                    {
+                      "conversationId": "{{selectedConversationId}}",
+                      "title": "Selected conversation",
+                      "lastActivityAtUtc": "2026-09-02T10:00:00+00:00",
+                      "indexingRequestedAtUtc": null
+                    }
+                  ],
+                  "nextCursor": null
+                }
+                """),
+            _ => ConversationDetailsResponse(selectedConversationId, "Selected conversation"),
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent),
+            _ => JsonResponse(HttpStatusCode.OK, """
+                {
+                  "items": [ { "role": "assistant", "content": "Selected history" } ],
+                  "nextCursor": null
+                }
+                """),
+        ]);
+        var store = new TestCredentialStore(new PrivateClientCredential("client-a", "credential-a"));
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["Hello", "/conversations", "1", null]);
+        var application = CreateApplication(httpClient, console, store);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal($"/api/conversations/{currentConversationId}/completion", handler.Requests[5].Path);
+        Assert.Equal($"/api/conversations/{selectedConversationId}/history", handler.Requests[6].Path);
+        Assert.Equal(selectedConversationId, store.Credential!.LastConversationId);
+        Assert.Contains("assistant: Selected history", console.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ResumeRenewsTheBearerWhenLoadingConversationDetails()
+    {
+        var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("expired-token"),
+            _ => JsonResponse(HttpStatusCode.Unauthorized, string.Empty),
+            _ => SessionResponse("renewed-token"),
+            _ => ConversationDetailsResponse(conversationId, "Previous conversation"),
+        ]);
+        var store = new TestCredentialStore(
+            new PrivateClientCredential("client-a", "credential-a", conversationId));
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["N", null]);
+        var application = CreateApplication(httpClient, console, store);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("Bearer expired-token", handler.Requests[2].Authorization);
+        Assert.Equal("Bearer renewed-token", handler.Requests[4].Authorization);
+    }
+
+    [Fact]
+    public async Task ResumeRenewsTheBearerWhenLoadingConversationHistory()
+    {
+        var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("expired-token"),
+            _ => ConversationDetailsResponse(conversationId, "Previous conversation"),
+            _ => JsonResponse(HttpStatusCode.Unauthorized, string.Empty),
+            _ => SessionResponse("renewed-token"),
+            _ => JsonResponse(HttpStatusCode.OK, """
+                { "items": [ { "role": "assistant", "content": "History" } ], "nextCursor": null }
+                """),
+        ]);
+        var store = new TestCredentialStore(
+            new PrivateClientCredential("client-a", "credential-a", conversationId));
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["R", null]);
+        var application = CreateApplication(httpClient, console, store);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("Bearer expired-token", handler.Requests[3].Authorization);
+        Assert.Equal("Bearer renewed-token", handler.Requests[5].Authorization);
+    }
+
+    [Fact]
+    public async Task ConversationSelectorRenewsTheBearerWhenListing()
+    {
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("expired-token"),
+            _ => JsonResponse(HttpStatusCode.Unauthorized, string.Empty),
+            _ => SessionResponse("renewed-token"),
+            _ => JsonResponse(HttpStatusCode.OK, """{ "items": [], "nextCursor": null }"""),
+        ]);
+        var store = new TestCredentialStore(new PrivateClientCredential("client-a", "credential-a"));
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["/conversations", "C", null]);
+        var application = CreateApplication(httpClient, console, store);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("Bearer expired-token", handler.Requests[2].Authorization);
+        Assert.Equal("Bearer renewed-token", handler.Requests[4].Authorization);
+    }
+
+    [Fact]
+    public async Task ConversationSelectorRequestsTheNextPageBeforeSelection()
+    {
+        var selectedConversationId = Guid.Parse("4b384d77-2681-4d55-8d18-cb27f74cdd1b");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, """
+                {
+                  "items": [],
+                  "nextCursor": "opaque-next-page"
+                }
+                """),
+            _ => JsonResponse(HttpStatusCode.OK, $$"""
+                {
+                  "items": [
+                    {
+                      "conversationId": "{{selectedConversationId}}",
+                      "title": "Second page",
+                      "lastActivityAtUtc": "2026-09-02T10:00:00+00:00",
+                      "indexingRequestedAtUtc": null
+                    }
+                  ],
+                  "nextCursor": null
+                }
+                """),
+            _ => ConversationDetailsResponse(selectedConversationId, "Second page"),
+            _ => JsonResponse(HttpStatusCode.OK, """
+                { "items": [ { "role": "assistant", "content": "History" } ], "nextCursor": null }
+                """),
+        ]);
+        var store = new TestCredentialStore(new PrivateClientCredential("client-a", "credential-a"));
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["/conversations", "N", "1", null]);
+        var application = CreateApplication(httpClient, console, store);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(6, handler.Requests.Count);
+        Assert.Equal(selectedConversationId, store.Credential!.LastConversationId);
+    }
+
+    [Fact]
+    public async Task InvalidResumeDetailsResponsePreservesTheLastConversationId()
+    {
+        var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, "{}"),
+        ]);
+        var store = new TestCredentialStore(
+            new PrivateClientCredential("client-a", "credential-a", conversationId));
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole([null]);
+        var application = CreateApplication(httpClient, console, store);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(conversationId, store.Credential!.LastConversationId);
+    }
+
+    [Fact]
+    public async Task ResumeTimeoutPreservesTheLastConversationId()
+    {
+        var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => throw new TaskCanceledException(),
+        ]);
+        var store = new TestCredentialStore(
+            new PrivateClientCredential("client-a", "credential-a", conversationId));
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole([null]);
+        var application = CreateApplication(httpClient, console, store);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(conversationId, store.Credential!.LastConversationId);
+    }
+
+    [Fact]
     public async Task FailedCompletionRetainsTheRenewedSessionForTheNextMessage()
     {
         var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
@@ -563,6 +875,17 @@ public sealed class TerminalClientApplicationTests
     private static HttpResponseMessage SessionResponse(string accessToken) => JsonResponse(
         HttpStatusCode.OK,
         $$"""{ "accessToken": "{{accessToken}}", "expiresAtUtc": "2026-09-01T12:00:00+00:00" }""");
+
+    private static HttpResponseMessage ConversationDetailsResponse(Guid conversationId, string title) => JsonResponse(
+        HttpStatusCode.OK,
+        $$"""
+        {
+          "conversationId": "{{conversationId}}",
+          "title": "{{title}}",
+          "lastActivityAtUtc": "2026-09-02T10:00:00+00:00",
+          "indexingRequestedAtUtc": null
+        }
+        """);
 
     private static HttpClient CreateHttpClient(HttpMessageHandler handler) => new(handler)
     {

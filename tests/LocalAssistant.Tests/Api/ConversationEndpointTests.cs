@@ -209,6 +209,63 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
     }
 
     [Fact]
+    public async Task ConversationReadEndpointsRejectAPrincipalWithoutTheReadScope()
+    {
+        using var directory = new TemporaryInstallationStateDirectory();
+        using var client = CreatePersistentIdentityClient(
+            Path.Combine(directory.Path, "conversations.db"),
+            "owner-a",
+            []);
+
+        using var response = await client.GetAsync("/api/conversations", CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ConversationReadDetailsReturnTheSameNotFoundForOtherOwnersAndUnknownIds()
+    {
+        using var directory = new TemporaryInstallationStateDirectory();
+        var databasePath = Path.Combine(directory.Path, "conversations.db");
+        using var ownerClient = CreatePersistentIdentityClient(
+            databasePath,
+            "owner-a",
+            ["conversations.read"]);
+        var conversationId = await CreateConversationAsync(ownerClient);
+        using var otherOwnerClient = CreatePersistentIdentityClient(
+            databasePath,
+            "owner-b",
+            ["conversations.read"]);
+
+        using var inaccessible = await otherOwnerClient.GetAsync(
+            $"/api/conversations/{conversationId}",
+            CancellationToken.None);
+        using var unknown = await otherOwnerClient.GetAsync(
+            $"/api/conversations/{Guid.NewGuid()}",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.NotFound, inaccessible.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+        Assert.Equal(
+            await inaccessible.Content.ReadAsStringAsync(CancellationToken.None),
+            await unknown.Content.ReadAsStringAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ConversationReadEndpointsReturnServiceUnavailableWhenPersistenceIsDisabled()
+    {
+        using var factory = new LocalAssistantApiFactory();
+        using var client = factory.CreateClient();
+        var session = await CreatePrivateBearerAsync(factory);
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.Token);
+
+        using var response = await client.GetAsync("/api/conversations", CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+    }
+
+    [Fact]
     public async Task ExpiredRevokedAndRotatedBearerTokensAreRejectedOverHttp()
     {
         using var factory = new LocalAssistantApiFactory();
