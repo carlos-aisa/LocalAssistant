@@ -49,6 +49,7 @@ public sealed class TerminalClientApplicationTests
     public async Task StructuredConversationErrorReusesConversationIdForTheNextMessage()
     {
         var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var sink = new RecordingTerminalClientStateSink();
         var handler = new RecordingHttpMessageHandler(
         [
             _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
@@ -70,7 +71,9 @@ public sealed class TerminalClientApplicationTests
         var application = new TerminalClientApplication(
             new PrivateApiClient(httpClient),
             console,
-            TerminalClientOptions.Parse(["--provider=fake", "--scenario=direct"]));
+            TerminalClientOptions.Parse(["--provider=fake", "--scenario=direct"]),
+            new ManualPrivateClientCredentialStore(),
+            sink);
 
         var exitCode = await application.RunAsync(CancellationToken.None);
 
@@ -82,6 +85,11 @@ public sealed class TerminalClientApplicationTests
             handler.Requests[3].Body.RootElement.GetProperty("conversationId").GetGuid());
         Assert.Contains("Conversation error: provider_timeout", console.Output, StringComparison.Ordinal);
         Assert.Contains("Assistant: Second response", console.Output, StringComparison.Ordinal);
+        Assert.Contains(sink.Snapshots, snapshot =>
+            snapshot.Lifecycle == TerminalClientLifecycle.Ready &&
+            snapshot.Error?.Category == TerminalClientErrorCategory.Recoverable &&
+            snapshot.Error.Code == "provider_timeout" &&
+            snapshot.ConversationId == conversationId);
     }
 
     [Fact]
@@ -867,6 +875,251 @@ public sealed class TerminalClientApplicationTests
         Assert.Contains("Client revocation was rejected", console.Output, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task RunPublishesTheCompleteStartupAndClosingSequence()
+    {
+        var sink = new RecordingTerminalClientStateSink();
+        var store = new TestCredentialStore(new PrivateClientCredential("client-a", "credential-a"));
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole([null]);
+        var application = CreateApplication(httpClient, console, store, sink);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(
+        [
+            (TerminalClientLifecycle.Disconnected, TerminalClientActivity.None),
+            (TerminalClientLifecycle.Connecting, TerminalClientActivity.None),
+            (TerminalClientLifecycle.Authenticating, TerminalClientActivity.None),
+            (TerminalClientLifecycle.Ready, TerminalClientActivity.None),
+            (TerminalClientLifecycle.Ready, TerminalClientActivity.ResumingConversation),
+            (TerminalClientLifecycle.Ready, TerminalClientActivity.None),
+            (TerminalClientLifecycle.Closing, TerminalClientActivity.None),
+            (TerminalClientLifecycle.Closed, TerminalClientActivity.None),
+        ],
+        sink.Snapshots.Select(snapshot => (snapshot.Lifecycle, snapshot.Activity)));
+    }
+
+    [Fact]
+    public async Task ExitCompletesBeforePublishingTheClosingSequence()
+    {
+        var conversationId = Guid.Parse("bc6b7aaf-3020-44c5-a3b9-47e9db32f24b");
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Answer")),
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["client-a", "Message", "/exit"], "credential-a");
+        var application = CreateApplication(httpClient, console, stateSink: sink);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        var completionIndex = sink.Snapshots.FindIndex(snapshot =>
+            snapshot.Activity == TerminalClientActivity.CompletingConversation);
+        Assert.True(completionIndex >= 0);
+        Assert.Equal(TerminalClientLifecycle.Ready, sink.Snapshots[completionIndex + 1].Lifecycle);
+        Assert.Equal(TerminalClientActivity.None, sink.Snapshots[completionIndex + 1].Activity);
+        Assert.Equal(TerminalClientLifecycle.Closing, sink.Snapshots[^2].Lifecycle);
+        Assert.Equal(TerminalClientLifecycle.Closed, sink.Snapshots[^1].Lifecycle);
+    }
+
+    [Fact]
+    public async Task UncertainTurnFailureIsPublishedWithoutBlockingTheClient()
+    {
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.InternalServerError, string.Empty),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["client-a", "Message", null], "credential-a");
+        var application = CreateApplication(httpClient, console, stateSink: sink);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        var uncertain = Assert.Single(
+            sink.Snapshots,
+            snapshot => snapshot.Lifecycle == TerminalClientLifecycle.Ready &&
+                snapshot.Error?.Category == TerminalClientErrorCategory.Uncertain);
+        Assert.Equal("turn", uncertain.Error!.Operation);
+        Assert.Equal(TerminalClientLifecycle.Ready, uncertain.Lifecycle);
+        Assert.Equal(TerminalClientActivity.None, uncertain.Activity);
+    }
+
+    [Fact]
+    public async Task SuccessfulTurnClearsThePreviousRecoverableError()
+    {
+        var conversationId = Guid.Parse("ee13aa74-1971-4fcb-817e-96621190408e");
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.Forbidden, string.Empty),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Recovered")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "First message", "Second message", null],
+            "credential-a");
+        var application = CreateApplication(httpClient, console, stateSink: sink);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        var errorIndex = sink.Snapshots.FindIndex(snapshot =>
+            snapshot.Error?.Category == TerminalClientErrorCategory.Recoverable &&
+            snapshot.Error.Operation == "turn");
+        Assert.True(errorIndex >= 0);
+        Assert.Contains(
+            sink.Snapshots.Skip(errorIndex + 1),
+            snapshot => snapshot.Lifecycle == TerminalClientLifecycle.Ready &&
+                snapshot.Activity == TerminalClientActivity.None &&
+                snapshot.Error is null &&
+                snapshot.ConversationId == conversationId);
+    }
+
+    [Fact]
+    public async Task ReadFailureIsRecoverableRatherThanUncertain()
+    {
+        var conversationId = Guid.Parse("24cc7ee6-91cf-4464-9909-e7f7b1159191");
+        var sink = new RecordingTerminalClientStateSink();
+        var store = new TestCredentialStore(
+            new PrivateClientCredential("client-a", "credential-a", conversationId));
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.InternalServerError, string.Empty),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole([null]);
+        var application = CreateApplication(httpClient, console, store, sink);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        var error = Assert.Single(
+            sink.Snapshots,
+            snapshot => snapshot.Lifecycle == TerminalClientLifecycle.Ready &&
+                snapshot.Error?.Operation == "resume");
+        Assert.Equal(TerminalClientErrorCategory.Recoverable, error.Error!.Category);
+    }
+
+    [Fact]
+    public async Task BlockingHealthFailureStillClosesTheClient()
+    {
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.ServiceUnavailable, string.Empty),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole([]);
+        var application = CreateApplication(httpClient, console, stateSink: sink);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, exitCode);
+        var blocked = Assert.Single(sink.Snapshots, snapshot =>
+            snapshot.Lifecycle == TerminalClientLifecycle.Blocked);
+        Assert.Equal(TerminalClientErrorCategory.Blocking, blocked.Error!.Category);
+        Assert.Equal(TerminalClientLifecycle.Closing, sink.Snapshots[^2].Lifecycle);
+        Assert.Equal(TerminalClientLifecycle.Closed, sink.Snapshots[^1].Lifecycle);
+    }
+
+    [Fact]
+    public async Task CompletionFailureAfterDispatchIsPublishedAsUncertain()
+    {
+        var conversationId = Guid.Parse("989452a2-5cf8-4fdf-a83c-59d43bdad08f");
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Answer")),
+            _ => JsonResponse(HttpStatusCode.InternalServerError, string.Empty),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "Message", "/exit", null],
+            "credential-a");
+        var application = CreateApplication(httpClient, console, stateSink: sink);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        var error = Assert.Single(
+            sink.Snapshots,
+            snapshot => snapshot.Lifecycle == TerminalClientLifecycle.Ready &&
+                snapshot.Error?.Operation == "completion");
+        Assert.Equal(TerminalClientErrorCategory.Uncertain, error.Error!.Category);
+        Assert.Equal(TerminalClientActivity.None, error.Activity);
+    }
+
+    [Fact]
+    public async Task CapturedCancellationStillPublishesClosingAndClosed()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ =>
+            {
+                cancellationSource.Cancel();
+                return JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }""");
+            },
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole([]);
+        var application = CreateApplication(
+            httpClient,
+            console,
+            new CancellationAwareCredentialStore(),
+            sink);
+
+        var exitCode = await application.RunAsync(cancellationSource.Token);
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains(sink.Snapshots, snapshot =>
+            snapshot.Lifecycle == TerminalClientLifecycle.Blocked &&
+            snapshot.Error?.Code == "operation_cancelled");
+        Assert.Equal(TerminalClientLifecycle.Closing, sink.Snapshots[^2].Lifecycle);
+        Assert.Equal(TerminalClientLifecycle.Closed, sink.Snapshots[^1].Lifecycle);
+    }
+
+    [Fact]
+    public async Task ThrowingStateSinkDoesNotInterruptTheClient()
+    {
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["client-a", null], "credential-a");
+        var application = CreateApplication(httpClient, console, stateSink: new ThrowingTerminalClientStateSink());
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
     private static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, string content) => new(statusCode)
     {
         Content = new StringContent(content, Encoding.UTF8, "application/json"),
@@ -895,11 +1148,19 @@ public sealed class TerminalClientApplicationTests
     private static TerminalClientApplication CreateApplication(
         HttpClient httpClient,
         ITerminalConsole console,
-        IPrivateClientCredentialStore? credentialStore = null) => new(
-        new PrivateApiClient(httpClient),
-        console,
-        TerminalClientOptions.Parse(["--provider=fake"]),
-        credentialStore);
+        IPrivateClientCredentialStore? credentialStore = null,
+        ITerminalClientStateSink? stateSink = null)
+    {
+        var options = TerminalClientOptions.Parse(["--provider=fake"]);
+        return stateSink is null
+            ? new TerminalClientApplication(new PrivateApiClient(httpClient), console, options, credentialStore)
+            : new TerminalClientApplication(
+                new PrivateApiClient(httpClient),
+                console,
+                options,
+                credentialStore ?? new ManualPrivateClientCredentialStore(),
+                stateSink);
+    }
 
     private static string ConversationResponseJson(Guid conversationId, string content) => $$"""
         {
@@ -1022,4 +1283,31 @@ internal sealed class TestCredentialStore : IPrivateClientCredentialStore
         Credential = null;
         return Task.FromResult(true);
     }
+}
+
+internal sealed class RecordingTerminalClientStateSink : ITerminalClientStateSink
+{
+    public List<TerminalClientStateSnapshot> Snapshots { get; } = [];
+
+    public void OnStateChanged(TerminalClientStateSnapshot snapshot) => Snapshots.Add(snapshot);
+}
+
+internal sealed class ThrowingTerminalClientStateSink : ITerminalClientStateSink
+{
+    public void OnStateChanged(TerminalClientStateSnapshot snapshot) =>
+        throw new InvalidOperationException("Observer failure.");
+}
+
+internal sealed class CancellationAwareCredentialStore : IPrivateClientCredentialStore
+{
+    public Task<PrivateClientCredential?> LoadAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult<PrivateClientCredential?>(null);
+    }
+
+    public Task<bool> SaveAsync(PrivateClientCredential credential, CancellationToken cancellationToken) =>
+        Task.FromResult(false);
+
+    public Task<bool> DeleteAsync(CancellationToken cancellationToken) => Task.FromResult(true);
 }

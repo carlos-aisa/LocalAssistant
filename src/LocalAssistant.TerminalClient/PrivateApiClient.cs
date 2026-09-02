@@ -350,19 +350,29 @@ public sealed class PrivateApiClient
             return ClientResults.Failure<CompletionResponse>(
                 GetErrorCode(response.StatusCode),
                 GetErrorMessage(response.StatusCode),
+                IsUncertainStatus(response.StatusCode),
                 canRenewSession: response.StatusCode == HttpStatusCode.Unauthorized);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return ClientResults.Failure<CompletionResponse>("request_cancelled", "The request was cancelled.");
+            return ClientResults.Failure<CompletionResponse>(
+                "request_cancelled",
+                "The request was cancelled.",
+                isUncertain: true);
         }
         catch (OperationCanceledException)
         {
-            return ClientResults.Failure<CompletionResponse>("request_timeout", "The request timed out.");
+            return ClientResults.Failure<CompletionResponse>(
+                "request_timeout",
+                "The request timed out.",
+                isUncertain: true);
         }
         catch (HttpRequestException)
         {
-            return ClientResults.Failure<CompletionResponse>("connection_error", connectionErrorMessage);
+            return ClientResults.Failure<CompletionResponse>(
+                "connection_error",
+                connectionErrorMessage,
+                isUncertain: true);
         }
     }
 

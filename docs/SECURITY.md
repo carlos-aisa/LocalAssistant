@@ -52,6 +52,15 @@ forma indiscriminada. El cliente terminal actual ya usa contratos HTTP de select
 historial que filtran por propietario, paginan el resultado y mantienen la misma
 respuesta ante identificador inexistente o ajeno.
 
+El cliente terminal publica internamente snapshots operacionales completos para su
+futura TUI. Separan ciclo de vida, actividad, error seguro y el contexto mínimo de
+proveedor, conversación y confirmación pendiente; no contienen bearer, credenciales,
+desafíos, mensajes, prompts, historial, argumentos ni resultados de herramientas. Los
+observadores no pueden iniciar transiciones y sus fallos se ignoran sin interrumpir la
+autenticación, la conversación ni el cierre. Un resultado incierto solo expresa que un
+turno, una decisión o completion pudo alcanzar el servidor; no afirma cancelación HTTP
+fiable ni autoriza un reintento automático.
+
 La síntesis y reproducción de fase 5 son locales por defecto y no añaden audio a la
 API ni al orquestador. Los buffers o archivos temporales se limitarán a la sesión,
 se eliminarán al terminar o fallar la reproducción y no se conservarán por defecto.

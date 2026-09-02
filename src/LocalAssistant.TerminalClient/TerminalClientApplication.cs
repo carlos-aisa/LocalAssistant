@@ -6,61 +6,110 @@ public sealed class TerminalClientApplication
     private readonly ITerminalConsole _console;
     private readonly TerminalClientOptions _options;
     private readonly IPrivateClientCredentialStore _credentialStore;
+    private readonly TerminalClientStateCoordinator _stateCoordinator;
 
     public TerminalClientApplication(
         PrivateApiClient apiClient,
         ITerminalConsole console,
         TerminalClientOptions options,
         IPrivateClientCredentialStore? credentialStore = null)
+        : this(
+            apiClient,
+            console,
+            options,
+            credentialStore ?? new ManualPrivateClientCredentialStore(),
+            new TerminalClientStateTextSink(console))
+    {
+    }
+
+    internal TerminalClientApplication(
+        PrivateApiClient apiClient,
+        ITerminalConsole console,
+        TerminalClientOptions options,
+        IPrivateClientCredentialStore credentialStore,
+        ITerminalClientStateSink stateSink)
     {
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _console = console ?? throw new ArgumentNullException(nameof(console));
         _options = options ?? throw new ArgumentNullException(nameof(options));
-        _credentialStore = credentialStore ?? new ManualPrivateClientCredentialStore();
+        _credentialStore = credentialStore ?? throw new ArgumentNullException(nameof(credentialStore));
+        _stateCoordinator = new TerminalClientStateCoordinator(stateSink);
     }
 
     public async Task<int> RunAsync(CancellationToken cancellationToken)
     {
-        var health = await _apiClient.CheckHealthAsync(cancellationToken);
-        if (!health.IsSuccess)
+        _stateCoordinator.PublishInitial();
+        try
         {
-            WriteError(health.Error!);
-            return 1;
-        }
-
-        var storedCredential = await _credentialStore.LoadAsync(cancellationToken);
-        var credential = storedCredential ?? await GetCredentialAsync(cancellationToken);
-        if (credential is null)
-        {
-            return 2;
-        }
-
-        var session = await _apiClient.CreateSessionAsync(credential.ClientId, credential.Credential, cancellationToken);
-        if (!session.IsSuccess)
-        {
-            if (session.Error?.Code != "authentication_failed" || storedCredential is null)
+            MoveTo(TerminalClientLifecycle.Connecting, TerminalClientActivity.None, error: null);
+            var health = await _apiClient.CheckHealthAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!health.IsSuccess)
             {
-                WriteError(session.Error!);
+                Block(health.Error!, "health");
+                WriteError(health.Error!);
                 return 1;
             }
 
-            _console.WriteLine("The stored private-client credential was rejected. Recover with pairing or a manual credential.");
-            credential = await GetCredentialAsync(cancellationToken);
+            MoveTo(TerminalClientLifecycle.Authenticating, TerminalClientActivity.None, error: null);
+            var storedCredential = await _credentialStore.LoadAsync(cancellationToken);
+            var credential = storedCredential ?? await GetCredentialAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             if (credential is null)
             {
+                Block(new ClientError("authentication_cancelled", "Authentication was not completed."), "authentication");
                 return 2;
             }
 
-            session = await _apiClient.CreateSessionAsync(credential.ClientId, credential.Credential, cancellationToken);
+            var session = await _apiClient.CreateSessionAsync(credential.ClientId, credential.Credential, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             if (!session.IsSuccess)
             {
-                WriteError(session.Error!);
-                return 1;
-            }
-        }
+                if (session.Error?.Code != "authentication_failed" || storedCredential is null)
+                {
+                    Block(session.Error!, "authentication");
+                    WriteError(session.Error!);
+                    return 1;
+                }
 
-        await SaveCredentialAsync(credential, cancellationToken);
-        return await ProcessMessagesAsync(credential, session.Value!.AccessToken, cancellationToken);
+                _console.WriteLine("The stored private-client credential was rejected. Recover with pairing or a manual credential.");
+                credential = await GetCredentialAsync(cancellationToken);
+                if (credential is null)
+                {
+                    Block(new ClientError("authentication_cancelled", "Authentication was not completed."), "authentication");
+                    return 2;
+                }
+
+                session = await _apiClient.CreateSessionAsync(credential.ClientId, credential.Credential, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!session.IsSuccess)
+                {
+                    Block(session.Error!, "authentication");
+                    WriteError(session.Error!);
+                    return 1;
+                }
+            }
+
+            Ready(_options.Provider, conversationId: null, pendingConfirmation: null, clearError: true);
+            await SaveCredentialAsync(credential, cancellationToken);
+            return await ProcessMessagesAsync(credential, session.Value!.AccessToken, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            HandleCancellation();
+            _console.WriteLine("The client operation was cancelled.");
+            return 2;
+        }
+        catch (Exception)
+        {
+            Block(new ClientError("client_error", "The client could not continue."), "client");
+            _console.WriteLine("The client could not continue.");
+            return 1;
+        }
+        finally
+        {
+            Close();
+        }
     }
 
     private async Task<PrivateClientCredential?> GetCredentialAsync(CancellationToken cancellationToken)
@@ -79,6 +128,7 @@ public sealed class TerminalClientApplication
             }
 
             var paired = await _apiClient.CompletePairingAsync(challenge, displayName, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             if (!paired.IsSuccess)
             {
                 WriteError(paired.Error!);
@@ -100,6 +150,10 @@ public sealed class TerminalClientApplication
         if (!await _credentialStore.SaveAsync(credential, cancellationToken))
         {
             _console.WriteLine("The credential is valid for this session but could not be stored securely.");
+            RecordError(
+                new ClientError("credential_not_saved", "The credential could not be stored securely."),
+                "credential",
+                canBeUncertain: false);
         }
     }
 
@@ -119,6 +173,7 @@ public sealed class TerminalClientApplication
         _console.WriteLine("Type /help for commands.");
 
         var resumed = await ResumeAsync(credential, accessToken, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         credential = resumed.Credential;
         accessToken = resumed.AccessToken;
         conversationId = resumed.ConversationId;
@@ -142,6 +197,7 @@ public sealed class TerminalClientApplication
             {
                 var command = await HandleCommandAsync(
                     input, credential, accessToken, conversationId, provider, scenario, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
                 accessToken = command.AccessToken;
                 conversationId = command.ConversationId;
                 provider = command.Provider;
@@ -154,19 +210,31 @@ public sealed class TerminalClientApplication
                 continue;
             }
 
+            BeginActivity(TerminalClientActivity.SendingTurn);
             var sent = await SendAsync(
                 credential,
                 accessToken,
                 new SendMessageRequest(input, conversationId, provider, scenario),
                 cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             accessToken = sent.AccessToken;
             if (!sent.Response.IsSuccess)
             {
+                RecordError(sent.Response.Error!, "turn", canBeUncertain: true);
                 WriteError(sent.Response.Error!);
                 continue;
             }
 
             conversationId = sent.Response.Value!.ConversationId;
+            var currentState = _stateCoordinator.Current;
+            MoveTo(
+                TerminalClientLifecycle.Ready,
+                TerminalClientActivity.SendingTurn,
+                currentState.Error,
+                provider,
+                conversationId,
+                pendingConfirmation: null,
+                replaceConversation: true);
             credential = await UpdateLastConversationAsync(
                 credential,
                 conversationId.Value,
@@ -174,9 +242,21 @@ public sealed class TerminalClientApplication
             ShowResponse(sent.Response.Value);
             if (sent.Response.Value.Confirmation is not null)
             {
+                var confirmation = sent.Response.Value.Confirmation;
+                MoveTo(
+                    TerminalClientLifecycle.Ready,
+                    TerminalClientActivity.AwaitingConfirmation,
+                    ToConversationError(sent.Response.Value.Error, "turn"),
+                    provider,
+                    conversationId,
+                    new TerminalClientPendingConfirmation(
+                        confirmation.ToolName,
+                        confirmation.ExpiresAtUtc),
+                    replaceConversation: true);
                 var resolved = await ResolveConfirmationAsync(
-                    credential, accessToken, conversationId.Value, sent.Response.Value.Confirmation,
+                    credential, accessToken, conversationId.Value, confirmation,
                     provider, scenario, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
                 accessToken = resolved.AccessToken;
                 if (resolved.Response.IsSuccess)
                 {
@@ -186,10 +266,47 @@ public sealed class TerminalClientApplication
                         conversationId.Value,
                         cancellationToken);
                     ShowResponse(resolved.Response.Value);
+                    if (resolved.Response.Value.Confirmation is not null)
+                    {
+                        var nextConfirmation = resolved.Response.Value.Confirmation;
+                        MoveTo(
+                            TerminalClientLifecycle.Ready,
+                            TerminalClientActivity.AwaitingConfirmation,
+                            ToConversationError(resolved.Response.Value.Error, "confirmation"),
+                            provider,
+                            conversationId,
+                            new TerminalClientPendingConfirmation(
+                                nextConfirmation.ToolName,
+                                nextConfirmation.ExpiresAtUtc),
+                            replaceConversation: true);
+                    }
+                    else
+                    {
+                        if (resolved.Response.Value.Error is not null)
+                        {
+                            RecordConversationError(resolved.Response.Value.Error, "confirmation");
+                        }
+                        else
+                        {
+                            Ready(provider, conversationId, pendingConfirmation: null, clearError: true);
+                        }
+                    }
                 }
                 else
                 {
+                    RecordError(resolved.Response.Error!, "confirmation", canBeUncertain: true);
                     WriteError(resolved.Response.Error!);
+                }
+            }
+            else
+            {
+                if (sent.Response.Value.Error is not null)
+                {
+                    RecordConversationError(sent.Response.Value.Error, "turn");
+                }
+                else
+                {
+                    Ready(provider, conversationId, pendingConfirmation: null, clearError: true);
                 }
             }
         }
@@ -213,8 +330,10 @@ public sealed class TerminalClientApplication
         string accessToken,
         CancellationToken cancellationToken)
     {
+        BeginActivity(TerminalClientActivity.ResumingConversation);
         if (!credential.LastConversationId.HasValue)
         {
+            Ready(_options.Provider, conversationId: null, pendingConfirmation: null, clearError: true);
             return (credential, accessToken, null);
         }
 
@@ -232,10 +351,12 @@ public sealed class TerminalClientApplication
             if (details.Response.Error?.Code == "not_found")
             {
                 credential = await UpdateLastConversationAsync(credential, null, cancellationToken);
+                Ready(_options.Provider, conversationId: null, pendingConfirmation: null, clearError: true);
             }
             else
             {
                 _console.WriteLine("The previous conversation could not be checked. Starting a new conversation.");
+                RecordError(details.Response.Error!, "resume", canBeUncertain: false);
             }
 
             return (credential, accessToken, null);
@@ -255,12 +376,22 @@ public sealed class TerminalClientApplication
                 cancellationToken);
             if (history.Loaded)
             {
+                Ready(
+                    _options.Provider,
+                    conversation.ConversationId,
+                    pendingConfirmation: null,
+                    clearError: true);
                 return (credential, history.AccessToken, conversation.ConversationId);
             }
 
             if (history.Error?.Code == "not_found")
             {
                 credential = await UpdateLastConversationAsync(credential, null, cancellationToken);
+                Ready(_options.Provider, conversationId: null, pendingConfirmation: null, clearError: true);
+            }
+            else if (history.Error is not null)
+            {
+                RecordError(history.Error, "resume", canBeUncertain: false);
             }
 
             return (credential, history.AccessToken, null);
@@ -269,6 +400,7 @@ public sealed class TerminalClientApplication
         if (string.Equals(selection, "l", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(selection, "list", StringComparison.OrdinalIgnoreCase))
         {
+            Ready(_options.Provider, conversationId: null, pendingConfirmation: null, clearError: true);
             var listed = await SelectConversationAsync(
                 credential,
                 accessToken,
@@ -278,6 +410,7 @@ public sealed class TerminalClientApplication
         }
 
         credential = await UpdateLastConversationAsync(credential, null, cancellationToken);
+        Ready(_options.Provider, conversationId: null, pendingConfirmation: null, clearError: true);
         return (credential, accessToken, null);
     }
 
@@ -348,6 +481,7 @@ public sealed class TerminalClientApplication
                 decision.Equals("reject", StringComparison.OrdinalIgnoreCase))
             {
                 var approved = decision.Equals("approve", StringComparison.OrdinalIgnoreCase);
+                BeginActivity(TerminalClientActivity.ResolvingConfirmation);
                 return await ExecuteWithRenewalAsync(
                     credential,
                     accessToken,
@@ -418,21 +552,28 @@ public sealed class TerminalClientApplication
                 return new(true, 0, completion.AccessToken, provider, conversationId);
             }
 
+            var updatedCredential = await UpdateLastConversationAsync(credential, null, cancellationToken);
+            Ready(parts[1], conversationId: null, pendingConfirmation: null, clearError: true);
             return new(true, 0, completion.AccessToken, parts[1], null)
             {
-                Credential = await UpdateLastConversationAsync(credential, null, cancellationToken),
+                Credential = updatedCredential,
             };
         }
 
         if (parts[0].Equals("/new", StringComparison.OrdinalIgnoreCase))
         {
             var completion = await CompleteAsync(credential, accessToken, conversationId, cancellationToken);
-            return !completion.Completed
-                ? new(true, 0, completion.AccessToken, provider, conversationId)
-                : new(true, 0, completion.AccessToken, provider, null)
-                {
-                    Credential = await UpdateLastConversationAsync(credential, null, cancellationToken),
-                };
+            if (!completion.Completed)
+            {
+                return new(true, 0, completion.AccessToken, provider, conversationId);
+            }
+
+            var updatedCredential = await UpdateLastConversationAsync(credential, null, cancellationToken);
+            Ready(provider, conversationId: null, pendingConfirmation: null, clearError: true);
+            return new(true, 0, completion.AccessToken, provider, null)
+            {
+                Credential = updatedCredential,
+            };
         }
 
         if (parts[0].Equals("/exit", StringComparison.OrdinalIgnoreCase))
@@ -453,6 +594,7 @@ public sealed class TerminalClientApplication
         Guid? currentConversationId,
         CancellationToken cancellationToken)
     {
+        BeginActivity(TerminalClientActivity.SelectingConversation);
         string? cursor = null;
         while (true)
         {
@@ -473,6 +615,7 @@ public sealed class TerminalClientApplication
                     WriteError(listed.Response.Error!);
                 }
 
+                RecordError(listed.Response.Error!, "selection", canBeUncertain: false);
                 return (credential, accessToken, currentConversationId);
             }
 
@@ -495,6 +638,7 @@ public sealed class TerminalClientApplication
             if (!int.TryParse(selection, out var selectedIndex) ||
                 selectedIndex < 1 || selectedIndex > page.Items.Count)
             {
+                Ready(_options.Provider, currentConversationId, pendingConfirmation: null, clearError: true);
                 return (credential, accessToken, currentConversationId);
             }
 
@@ -507,6 +651,7 @@ public sealed class TerminalClientApplication
             accessToken = details.AccessToken;
             if (!details.Response.IsSuccess)
             {
+                RecordError(details.Response.Error!, "selection", canBeUncertain: false);
                 WriteError(details.Response.Error!);
                 return (credential, accessToken, currentConversationId);
             }
@@ -523,6 +668,8 @@ public sealed class TerminalClientApplication
                 {
                     return (credential, accessToken, currentConversationId);
                 }
+
+                BeginActivity(TerminalClientActivity.SelectingConversation);
             }
 
             var history = await ShowHistoryAsync(
@@ -533,6 +680,11 @@ public sealed class TerminalClientApplication
             accessToken = history.AccessToken;
             if (!history.Loaded)
             {
+                if (history.Error is not null)
+                {
+                    RecordError(history.Error, "selection", canBeUncertain: false);
+                }
+
                 return (credential, accessToken, currentConversationId);
             }
 
@@ -540,6 +692,11 @@ public sealed class TerminalClientApplication
                 credential,
                 details.Response.Value!.ConversationId,
                 cancellationToken);
+            Ready(
+                _options.Provider,
+                details.Response.Value.ConversationId,
+                pendingConfirmation: null,
+                clearError: true);
             return (credential, accessToken, details.Response.Value.ConversationId);
         }
     }
@@ -671,6 +828,7 @@ public sealed class TerminalClientApplication
             return (true, accessToken);
         }
 
+        BeginActivity(TerminalClientActivity.CompletingConversation);
         var completed = await ExecuteWithRenewalAsync(
             credential,
             accessToken,
@@ -678,10 +836,13 @@ public sealed class TerminalClientApplication
             cancellationToken);
         if (!completed.Response.IsSuccess)
         {
+            RecordError(completed.Response.Error!, "completion", canBeUncertain: true);
             WriteError(completed.Response.Error!);
             return (false, completed.AccessToken);
         }
 
+        var current = _stateCoordinator.Current;
+        Ready(current.Provider, current.ConversationId, pendingConfirmation: null, clearError: true);
         return (true, completed.AccessToken);
     }
 
@@ -710,6 +871,163 @@ public sealed class TerminalClientApplication
         var suffix = error.IsUncertain ? " The server may have received the turn; it was not retried." : string.Empty;
         _console.WriteLine($"Error ({error.Code}): {error.Message}{suffix}");
     }
+
+    private void BeginActivity(TerminalClientActivity activity)
+    {
+        var current = _stateCoordinator.Current;
+        MoveTo(
+            TerminalClientLifecycle.Ready,
+            activity,
+            current.Error,
+            current.Provider,
+            current.ConversationId,
+            current.PendingConfirmation);
+    }
+
+    private void Ready(
+        string? provider,
+        Guid? conversationId,
+        TerminalClientPendingConfirmation? pendingConfirmation,
+        bool clearError)
+    {
+        var current = _stateCoordinator.Current;
+        MoveTo(
+            TerminalClientLifecycle.Ready,
+            TerminalClientActivity.None,
+            clearError ? null : current.Error,
+            provider,
+            conversationId,
+            pendingConfirmation,
+            replaceConversation: true);
+    }
+
+    private void RecordError(ClientError error, string operation, bool canBeUncertain)
+    {
+        var current = _stateCoordinator.Current;
+        var category = canBeUncertain && error.IsUncertain
+            ? TerminalClientErrorCategory.Uncertain
+            : TerminalClientErrorCategory.Recoverable;
+        MoveTo(
+            TerminalClientLifecycle.Ready,
+            TerminalClientActivity.None,
+            new TerminalClientOperationError(category, error.Code, error.Message, operation),
+            current.Provider,
+            current.ConversationId,
+            pendingConfirmation: null);
+    }
+
+    private void RecordConversationError(ConversationErrorResponse error, string operation)
+    {
+        RecordError(
+            new ClientError(error.Code, error.Message),
+            operation,
+            canBeUncertain: false);
+    }
+
+    private static TerminalClientOperationError? ToConversationError(
+        ConversationErrorResponse? error,
+        string operation) => error is null
+        ? null
+        : new TerminalClientOperationError(
+            TerminalClientErrorCategory.Recoverable,
+            error.Code,
+            error.Message,
+            operation);
+
+    private void Block(ClientError error, string operation)
+    {
+        var current = _stateCoordinator.Current;
+        MoveTo(
+            TerminalClientLifecycle.Blocked,
+            TerminalClientActivity.None,
+            new TerminalClientOperationError(
+                TerminalClientErrorCategory.Blocking,
+                error.Code,
+                error.Message,
+                operation),
+            current.Provider,
+            current.ConversationId,
+            pendingConfirmation: null);
+    }
+
+    private void HandleCancellation()
+    {
+        var current = _stateCoordinator.Current;
+        if (current.Lifecycle is TerminalClientLifecycle.Connecting or TerminalClientLifecycle.Authenticating)
+        {
+            Block(new ClientError("operation_cancelled", "The operation was cancelled."), "authentication");
+            return;
+        }
+
+        if (current.Lifecycle != TerminalClientLifecycle.Ready)
+        {
+            return;
+        }
+
+        var canBeUncertain = current.Activity is
+            TerminalClientActivity.SendingTurn or
+            TerminalClientActivity.ResolvingConfirmation or
+            TerminalClientActivity.CompletingConversation;
+        RecordError(
+            new ClientError("operation_cancelled", "The operation was cancelled.", canBeUncertain),
+            GetOperation(current.Activity),
+            canBeUncertain);
+    }
+
+    private void Close()
+    {
+        var current = _stateCoordinator.Current;
+        if (current.Lifecycle == TerminalClientLifecycle.Closed)
+        {
+            return;
+        }
+
+        MoveTo(
+            TerminalClientLifecycle.Closing,
+            TerminalClientActivity.None,
+            current.Error,
+            current.Provider,
+            current.ConversationId,
+            pendingConfirmation: null);
+        current = _stateCoordinator.Current;
+        MoveTo(
+            TerminalClientLifecycle.Closed,
+            TerminalClientActivity.None,
+            current.Error,
+            current.Provider,
+            current.ConversationId,
+            pendingConfirmation: null);
+    }
+
+    private void MoveTo(
+        TerminalClientLifecycle lifecycle,
+        TerminalClientActivity activity,
+        TerminalClientOperationError? error,
+        string? provider = null,
+        Guid? conversationId = null,
+        TerminalClientPendingConfirmation? pendingConfirmation = null,
+        bool replaceConversation = false)
+    {
+        var current = _stateCoordinator.Current;
+        var next = new TerminalClientStateSnapshot(
+            lifecycle,
+            activity,
+            error,
+            provider ?? current.Provider,
+            replaceConversation ? conversationId : conversationId ?? current.ConversationId,
+            pendingConfirmation);
+        _stateCoordinator.TryTransition(next);
+    }
+
+    private static string GetOperation(TerminalClientActivity activity) => activity switch
+    {
+        TerminalClientActivity.SendingTurn => "turn",
+        TerminalClientActivity.ResolvingConfirmation => "confirmation",
+        TerminalClientActivity.CompletingConversation => "completion",
+        TerminalClientActivity.ResumingConversation => "resume",
+        TerminalClientActivity.SelectingConversation => "selection",
+        _ => "client",
+    };
 
     private sealed record CommandResult(
         bool Continue,

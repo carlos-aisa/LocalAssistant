@@ -486,6 +486,16 @@ exponen mensajes públicos de usuario y asistente. Si la persistencia está desh
 o la validación es incierta, el cliente inicia una conversación nueva sin borrar la
 preferencia local; un `404` concluyente sí la elimina.
 
+El cuarto incremento publica internamente snapshots inmutables del estado operacional:
+ciclo de vida, actividad, error seguro, proveedor, conversación y confirmación pendiente.
+La consola conserva su salida textual y solo anuncia conexión o autenticación cuando es
+útil; no vuelca el snapshot, historial ni contenido conversacional. Los snapshots no
+incluyen bearer, credenciales, desafíos, mensajes ni argumentos de herramientas. Un
+timeout, desconexión o cancelación de un turno, una decisión o completion ya enviados se
+presenta como incierto y no se reintenta; las lecturas y los rechazos concluyentes son
+errores recuperables. `Ctrl+C` solicita el cierre local, pero no promete cancelar un
+turno HTTP que ya haya llegado al servidor.
+
 ### Validación local observada
 
 El 17 de agosto de 2026 se completó un smoke test real con Ollama `0.32.14`,

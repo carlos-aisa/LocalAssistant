@@ -268,7 +268,7 @@ La fase se entrega mediante incrementos demostrables y en este orden:
    paginado y una lectura de historial autorizada. Los contratos deberán filtrar por
    propietario y devolver el mismo resultado para una conversación inexistente o
    ajena. `completion` solicita indexación, no cierra definitivamente la conversación.
-4. **Modelo de estado:** `Disconnected`, conexión, autenticación, listo, espera de
+4. [x] **Modelo de estado:** `Disconnected`, conexión, autenticación, listo, espera de
    turno, espera de confirmación, reproducción de voz y errores recuperables o
    bloqueantes. Las transiciones, cierre y recuperación se harán explícitos. Detener
    la reproducción es local; cancelar un turno HTTP no se presentará como cancelación
