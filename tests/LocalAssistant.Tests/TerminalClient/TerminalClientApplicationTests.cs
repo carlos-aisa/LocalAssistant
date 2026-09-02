@@ -332,6 +332,37 @@ public sealed class TerminalClientApplicationTests
     }
 
     [Fact]
+    public async Task ResumeHistoryNotFoundClearsThePersistedLastConversationId()
+    {
+        var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, $$"""
+                {
+                  "conversationId": "{{conversationId}}",
+                  "title": "Previous conversation",
+                  "lastActivityAtUtc": "2026-09-02T10:00:00+00:00",
+                  "indexingRequestedAtUtc": null
+                }
+                """),
+            _ => JsonResponse(HttpStatusCode.NotFound, string.Empty),
+        ]);
+        var store = new TestCredentialStore(
+            new PrivateClientCredential("client-a", "credential-a", conversationId));
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["R", null]);
+        var application = CreateApplication(httpClient, console, store);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.NotNull(store.Credential);
+        Assert.Null(store.Credential.LastConversationId);
+    }
+
+    [Fact]
     public async Task FailedCompletionRetainsTheRenewedSessionForTheNextMessage()
     {
         var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
