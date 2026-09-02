@@ -248,6 +248,112 @@ public sealed class PrivateApiClientTests
     }
 
     [Fact]
+    public async Task ConversationListWithMissingItemsIsAnInvalidResponse()
+    {
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, "{}"),
+        ]);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:5100/"),
+        };
+        var client = new PrivateApiClient(httpClient);
+
+        var result = await client.ListConversationsAsync(
+            "session-token",
+            null,
+            20,
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("invalid_response", result.Error!.Code);
+    }
+
+    [Fact]
+    public async Task ConversationListWithANullItemIsAnInvalidResponse()
+    {
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "items": [null] }"""),
+        ]);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:5100/"),
+        };
+        var client = new PrivateApiClient(httpClient);
+
+        var result = await client.ListConversationsAsync(
+            "session-token",
+            null,
+            20,
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("invalid_response", result.Error!.Code);
+    }
+
+    [Fact]
+    public async Task ConversationDetailsWithADifferentIdIsAnInvalidResponse()
+    {
+        var requestedId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, $$"""
+                {
+                  "conversationId": "{{Guid.NewGuid()}}",
+                  "title": "Unexpected conversation",
+                  "lastActivityAtUtc": "2026-09-02T10:00:00+00:00"
+                }
+                """),
+        ]);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:5100/"),
+        };
+        var client = new PrivateApiClient(httpClient);
+
+        var result = await client.GetConversationDetailsAsync(
+            "session-token",
+            requestedId,
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("invalid_response", result.Error!.Code);
+    }
+
+    [Fact]
+    public async Task ConversationHistoryWithANonPublicRoleIsAnInvalidResponse()
+    {
+        var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """
+                {
+                  "items": [
+                    { "role": "tool", "content": "Sensitive internal result" }
+                  ]
+                }
+                """),
+        ]);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:5100/"),
+        };
+        var client = new PrivateApiClient(httpClient);
+
+        var result = await client.GetConversationHistoryAsync(
+            "session-token",
+            conversationId,
+            null,
+            20,
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("invalid_response", result.Error!.Code);
+    }
+
+    [Fact]
     public async Task CompletionAcceptsNoContentResponse()
     {
         var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
