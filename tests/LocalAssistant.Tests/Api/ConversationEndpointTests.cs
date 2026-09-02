@@ -172,6 +172,43 @@ public sealed class ConversationEndpointTests : IClassFixture<LocalAssistantApiF
     }
 
     [Fact]
+    public async Task ConversationReadEndpointsRequireBearerScopeAndExposeOnlyPublicHistory()
+    {
+        using var directory = new TemporaryInstallationStateDirectory();
+        using var factory = new LocalAssistantApiFactory().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("LocalAssistant:ConversationPersistence:Enabled", "true");
+            builder.UseSetting(
+                "LocalAssistant:ConversationPersistence:DatabasePath",
+                Path.Combine(directory.Path, "conversations.db"));
+        });
+        using var client = factory.CreateClient();
+        var session = await CreatePrivateBearerAsync(factory);
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.Token);
+        var conversationId = await CreateConversationAsync(client);
+
+        using var list = await client.GetAsync("/api/conversations?limit=1", CancellationToken.None);
+        using var details = await client.GetAsync($"/api/conversations/{conversationId}", CancellationToken.None);
+        using var history = await client.GetAsync(
+            $"/api/conversations/{conversationId}/history?limit=100",
+            CancellationToken.None);
+        using var anonymous = await factory.CreateClient().GetAsync(
+            $"/api/conversations/{conversationId}",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, details.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, history.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        using var historyBody = JsonDocument.Parse(
+            await history.Content.ReadAsStringAsync(CancellationToken.None));
+        var messages = historyBody.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        Assert.All(messages, message => Assert.True(
+            message.GetProperty("role").GetString() is "user" or "assistant"));
+    }
+
+    [Fact]
     public async Task ExpiredRevokedAndRotatedBearerTokensAreRejectedOverHttp()
     {
         using var factory = new LocalAssistantApiFactory();

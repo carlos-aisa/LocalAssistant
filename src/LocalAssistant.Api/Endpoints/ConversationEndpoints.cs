@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using LocalAssistant.Api.Contracts;
 using LocalAssistant.Api.LanguageModels;
+using LocalAssistant.Api.Security;
 using LocalAssistant.Core.Conversations;
 using LocalAssistant.Core.Orchestration;
 using LocalAssistant.Infrastructure.Conversations;
@@ -11,6 +12,7 @@ namespace LocalAssistant.Api.Endpoints;
 public static class ConversationEndpoints
 {
     private const string DeleteConfirmationHeader = "X-LocalAssistant-Confirm-Delete";
+    private const string ConversationReadScope = "conversations.read";
 
     public static IEndpointRouteBuilder MapConversationEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -26,9 +28,153 @@ public static class ConversationEndpoints
         endpoints.MapPost("/api/conversations/{conversationId:guid}/completion", CompleteAsync)
             .WithName("CompleteConversation")
             .WithSummary("Marks one authenticated conversation eligible for immediate background indexing.");
+        endpoints.MapGet("/api/conversations", ListAsync)
+            .WithName("ListConversations")
+            .WithSummary("Lists the authenticated principal's persisted conversations.");
+        endpoints.MapGet("/api/conversations/{conversationId:guid}", GetDetailsAsync)
+            .WithName("GetConversationDetails")
+            .WithSummary("Gets public metadata for one authenticated principal's persisted conversation.");
+        endpoints.MapGet("/api/conversations/{conversationId:guid}/history", GetHistoryAsync)
+            .WithName("GetConversationHistory")
+            .WithSummary("Gets the sanitized public history for one authenticated principal's conversation.");
 
         return endpoints;
     }
+
+    private static async Task<IResult> ListAsync(
+        [AsParameters] ListConversationsRequest request,
+        HttpContext httpContext,
+        IOptions<SqliteConversationStoreOptions> persistenceOptions,
+        SqliteConversationStore conversationStore,
+        CancellationToken cancellationToken)
+    {
+        var authorization = AuthorizeConversationRead(httpContext, persistenceOptions.Value.Enabled);
+        if (authorization.Failure is not null)
+        {
+            return authorization.Failure;
+        }
+
+        try
+        {
+            var page = await conversationStore.ListOwnedAsync(
+                authorization.OwnerPrincipalId!,
+                request.Cursor,
+                request.Limit ?? SqliteConversationStore.MaximumListPageSize,
+                cancellationToken);
+            return Results.Ok(new ConversationPageResponse<ConversationSummaryResponse>(
+                page.Items.Select(ToResponse).ToArray(),
+                page.NextCursor));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [exception.ParamName ?? "query"] = [exception.Message],
+            });
+        }
+    }
+
+    private static async Task<IResult> GetDetailsAsync(
+        Guid conversationId,
+        HttpContext httpContext,
+        IOptions<SqliteConversationStoreOptions> persistenceOptions,
+        SqliteConversationStore conversationStore,
+        CancellationToken cancellationToken)
+    {
+        var authorization = AuthorizeConversationRead(httpContext, persistenceOptions.Value.Enabled);
+        if (authorization.Failure is not null)
+        {
+            return authorization.Failure;
+        }
+
+        var details = await conversationStore.GetOwnedDetailsAsync(
+            conversationId,
+            authorization.OwnerPrincipalId!,
+            cancellationToken);
+        return details is null ? Results.NotFound() : Results.Ok(ToResponse(details));
+    }
+
+    private static async Task<IResult> GetHistoryAsync(
+        Guid conversationId,
+        [AsParameters] ConversationHistoryRequest request,
+        HttpContext httpContext,
+        IOptions<SqliteConversationStoreOptions> persistenceOptions,
+        SqliteConversationStore conversationStore,
+        CancellationToken cancellationToken)
+    {
+        var authorization = AuthorizeConversationRead(httpContext, persistenceOptions.Value.Enabled);
+        if (authorization.Failure is not null)
+        {
+            return authorization.Failure;
+        }
+
+        try
+        {
+            var page = await conversationStore.GetOwnedHistoryAsync(
+                conversationId,
+                authorization.OwnerPrincipalId!,
+                request.Cursor,
+                request.Limit ?? SqliteConversationStore.MaximumHistoryPageSize,
+                cancellationToken);
+            return page is null
+                ? Results.NotFound()
+                : Results.Ok(new ConversationPageResponse<PublicConversationMessageResponse>(
+                    page.Items.Select(message => new PublicConversationMessageResponse(
+                        message.Role.ToString().ToLowerInvariant(),
+                        message.Content)).ToArray(),
+                    page.NextCursor));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [exception.ParamName ?? "query"] = [exception.Message],
+            });
+        }
+    }
+
+    private static ConversationReadAuthorization AuthorizeConversationRead(
+        HttpContext httpContext,
+        bool persistenceEnabled)
+    {
+        if (!persistenceEnabled)
+        {
+            return new(Results.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Conversation persistence is disabled."), null);
+        }
+
+        if (httpContext.User.Identity?.IsAuthenticated != true)
+        {
+            return new(Results.Unauthorized(), null);
+        }
+
+        if (!httpContext.User.HasClaim(
+                AuthorizationClaimTypes.Scope,
+                ConversationReadScope))
+        {
+            return new(Results.Forbid(), null);
+        }
+
+        var ownerPrincipalId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return string.IsNullOrWhiteSpace(ownerPrincipalId)
+            ? new(Results.Unauthorized(), null)
+            : new(null, ownerPrincipalId);
+    }
+
+    private static ConversationSummaryResponse ToResponse(ConversationSummary summary) => new(
+        summary.ConversationId,
+        summary.Title,
+        summary.LastActivityAtUtc,
+        summary.IndexingRequestedAtUtc);
+
+    private static ConversationDetailsResponse ToResponse(ConversationDetails details) => new(
+        details.ConversationId,
+        details.Title,
+        details.LastActivityAtUtc,
+        details.IndexingRequestedAtUtc);
+
+    private sealed record ConversationReadAuthorization(IResult? Failure, string? OwnerPrincipalId);
 
     private static async Task<IResult> SendMessageAsync(
         SendMessageRequest request,

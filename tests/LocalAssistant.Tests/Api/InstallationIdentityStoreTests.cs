@@ -21,7 +21,7 @@ public sealed class InstallationIdentityStoreTests
         Assert.NotNull(bootstrap.OwnerPrincipalId);
         var persistedState = await File.ReadAllTextAsync(store.GetStateFilePath(), CancellationToken.None);
         using var persistedDocument = JsonDocument.Parse(persistedState);
-        Assert.Equal(4, persistedDocument.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.Equal(5, persistedDocument.RootElement.GetProperty("SchemaVersion").GetInt32());
         Assert.False(persistedDocument.RootElement.TryGetProperty("ApiKeySha256", out _));
 
         var identity = await store.GetAsync(CancellationToken.None);
@@ -57,7 +57,7 @@ public sealed class InstallationIdentityStoreTests
         Directory.CreateDirectory(stateDirectory.Path);
         var stateWithUnknownSchema = new
         {
-            SchemaVersion = 5,
+            SchemaVersion = 6,
             InstallationId = "8196f6e9b019487e927ca07f6d3855e9",
             OwnerPrincipalId = "owner-unknown-schema",
             GrantedScopes = new[] { "installation.owner" },
@@ -73,14 +73,14 @@ public sealed class InstallationIdentityStoreTests
     }
 
     [Fact]
-    public async Task RejectsSchemaFourIdentityThatStillContainsALegacyApiKeyHash()
+    public async Task RejectsSchemaFiveIdentityThatStillContainsALegacyApiKeyHash()
     {
         using var stateDirectory = new TemporaryInstallationStateDirectory();
         var store = CreateStore(stateDirectory.Path);
         Directory.CreateDirectory(stateDirectory.Path);
         var stateWithLegacyHash = new
         {
-            SchemaVersion = 4,
+            SchemaVersion = 5,
             InstallationId = "8196f6e9b019487e927ca07f6d3855e9",
             OwnerPrincipalId = "owner-current-schema",
             ApiKeySha256 = CreateApiKeyHash(),
@@ -100,7 +100,8 @@ public sealed class InstallationIdentityStoreTests
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
-    public async Task MigratesLegacyIdentityToSchemaFourWithoutChangingStableData(int schemaVersion)
+    [InlineData(4)]
+    public async Task MigratesLegacyIdentityToSchemaFiveWithoutChangingStableData(int schemaVersion)
     {
         using var stateDirectory = new TemporaryInstallationStateDirectory();
         var store = CreateStore(stateDirectory.Path);
@@ -140,7 +141,7 @@ public sealed class InstallationIdentityStoreTests
         Assert.Equal(migratedState, stateAfterSecondRead);
 
         using var migratedDocument = JsonDocument.Parse(migratedState);
-        Assert.Equal(4, migratedDocument.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.Equal(5, migratedDocument.RootElement.GetProperty("SchemaVersion").GetInt32());
         Assert.False(migratedDocument.RootElement.TryGetProperty("ApiKeySha256", out _));
         Assert.Equal(
             initializedAtUtc,
@@ -156,7 +157,7 @@ public sealed class InstallationIdentityStoreTests
 
     private static void AssertOwnerScopes(IReadOnlySet<string> scopes)
     {
-        Assert.Equal(11, scopes.Count);
+        Assert.Equal(12, scopes.Count);
         Assert.Contains("installation.owner", scopes);
         Assert.Contains("memory.personal.read", scopes);
         Assert.Contains("memory.personal.write", scopes);
@@ -168,6 +169,7 @@ public sealed class InstallationIdentityStoreTests
         Assert.Contains("documents.read", scopes);
         Assert.Contains("documents.content.search", scopes);
         Assert.Contains("reminders.write", scopes);
+        Assert.Contains("conversations.read", scopes);
     }
 }
 

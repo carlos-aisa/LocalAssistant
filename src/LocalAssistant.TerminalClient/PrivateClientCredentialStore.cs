@@ -4,7 +4,10 @@ using System.Text.Json;
 
 namespace LocalAssistant.TerminalClient;
 
-public sealed record PrivateClientCredential(string ClientId, string Credential);
+public sealed record PrivateClientCredential(
+    string ClientId,
+    string Credential,
+    Guid? LastConversationId = null);
 
 public interface IPrivateClientCredentialStore
 {
@@ -74,7 +77,10 @@ public sealed class DpapiPrivateClientCredentialStore : IPrivateClientCredential
                 var credential = Encoding.UTF8.GetString(credentialBytes);
                 return string.IsNullOrWhiteSpace(credential)
                     ? null
-                    : new PrivateClientCredential(state.ClientId, credential);
+                    : new PrivateClientCredential(
+                        state.ClientId,
+                        credential,
+                        state.LastConversationId);
             }
             finally
             {
@@ -119,7 +125,10 @@ public sealed class DpapiPrivateClientCredentialStore : IPrivateClientCredential
 
             Directory.CreateDirectory(directory);
             temporaryPath = Path.Combine(directory, $"{Path.GetFileName(_statePath)}.{Guid.NewGuid():N}.tmp");
-            var state = new StoredCredentialState(credential.ClientId, Convert.ToBase64String(protectedBytes));
+            var state = new StoredCredentialState(
+                credential.ClientId,
+                Convert.ToBase64String(protectedBytes),
+                credential.LastConversationId);
             var stateJson = JsonSerializer.Serialize(state, JsonOptions);
             await File.WriteAllTextAsync(temporaryPath, stateJson, cancellationToken);
             File.Move(temporaryPath, _statePath, overwrite: true);
@@ -171,5 +180,8 @@ public sealed class DpapiPrivateClientCredentialStore : IPrivateClientCredential
         }
     }
 
-    private sealed record StoredCredentialState(string ClientId, string ProtectedCredential);
+    private sealed record StoredCredentialState(
+        string ClientId,
+        string ProtectedCredential,
+        Guid? LastConversationId = null);
 }

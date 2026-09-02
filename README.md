@@ -477,6 +477,14 @@ conversacionales estructurados y los fallos inciertos no se reintentan. `/admin 
 y `/admin revoke` solicitan el desafío sin eco y solo pueden afectar al `ClientId` local;
 la revocación exige escribir `REVOKE` antes de descartar la credencial local.
 
+El tercer incremento guarda opcionalmente el último `ConversationId` junto con la
+credencial DPAPI. Tras validar que sigue perteneciendo al principal autenticado, ofrece
+reanudarlo, empezar una conversación nueva o usar `/conversations`. El listado, detalle
+e historial usan bearer y `conversations.read`, se paginan con cursores opacos y solo
+exponen mensajes públicos de usuario y asistente. Si la persistencia está deshabilitada
+o la validación es incierta, el cliente inicia una conversación nueva sin borrar la
+preferencia local; un `404` concluyente sí la elimina.
+
 ### Validación local observada
 
 El 17 de agosto de 2026 se completó un smoke test real con Ollama `0.32.14`,

@@ -263,7 +263,7 @@ La fase se entrega mediante incrementos demostrables y en este orden:
    secretos. Solo se reintenta una operación si es demostrablemente segura: un `401`
    bearer permite abrir una sesión nueva antes de reintentar; una desconexión tras
    enviar un turno deja resultado incierto y no se repite automáticamente.
-3. **Conversaciones reanudables:** se conserva el último identificador local y se
+3. [x] **Conversaciones reanudables:** se conserva el último identificador local y se
    incorpora un selector de conversaciones propias cuando exista un listado HTTP
    paginado y una lectura de historial autorizada. Los contratos deberán filtrar por
    propietario y devolver el mismo resultado para una conversación inexistente o

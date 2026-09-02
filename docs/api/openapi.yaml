@@ -264,7 +264,48 @@ paths:
         "403": { description: The authenticated principal lacks the memory.personal.write scope. }
         "404": { description: The personal memory note was not found or is not owned by the caller. }
         "503": { description: Personal memory persistence is disabled. }
+  /api/conversations:
+    get:
+      operationId: listConversations
+      summary: List persisted conversations owned by the authenticated principal.
+      security:
+        - PrivateBearer: []
+      parameters:
+        - $ref: "#/components/parameters/ConversationCursor"
+        - $ref: "#/components/parameters/ConversationListLimit"
+      responses:
+        "200":
+          description: A page of public conversation metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationSummaryPage"
+        "400": { description: The cursor or limit is invalid. }
+        "401": { description: A valid private bearer token is required. }
+        "403": { description: The authenticated principal lacks the conversations.read scope. }
+        "503": { description: Conversation persistence is disabled. }
   /api/conversations/{conversationId}:
+    get:
+      operationId: getConversationDetails
+      summary: Get public metadata for one persisted conversation owned by the authenticated principal.
+      security:
+        - PrivateBearer: []
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Public conversation metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationDetails"
+        "401": { description: A valid private bearer token is required. }
+        "403": { description: The authenticated principal lacks the conversations.read scope. }
+        "404": { description: The conversation was not found or is not owned by the caller. }
+        "503": { description: Conversation persistence is disabled. }
     delete:
       operationId: deleteConversation
       summary: Delete one persisted conversation owned by the authenticated principal.
@@ -285,6 +326,31 @@ paths:
         "400":
           description: The delete confirmation header is missing, repeated, or invalid.
         "401": { description: A valid private bearer token is required. }
+        "404": { description: The conversation was not found or is not owned by the caller. }
+        "503": { description: Conversation persistence is disabled. }
+  /api/conversations/{conversationId}/history:
+    get:
+      operationId: getConversationHistory
+      summary: Get sanitized public history for one persisted conversation owned by the authenticated principal.
+      security:
+        - PrivateBearer: []
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/ConversationCursor"
+        - $ref: "#/components/parameters/ConversationHistoryLimit"
+      responses:
+        "200":
+          description: A page of public user and assistant messages only.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicConversationMessagePage"
+        "400": { description: The cursor or limit is invalid. }
+        "401": { description: A valid private bearer token is required. }
+        "403": { description: The authenticated principal lacks the conversations.read scope. }
         "404": { description: The conversation was not found or is not owned by the caller. }
         "503": { description: Conversation persistence is disabled. }
   /api/conversations/{conversationId}/completion:
@@ -418,6 +484,25 @@ components:
       description: >-
         Temporary opaque token issued after a registered private client exchanges
         its durable credential through loopback.
+  parameters:
+    ConversationCursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor returned by the preceding page.
+      schema: { type: string }
+    ConversationListLimit:
+      name: limit
+      in: query
+      required: false
+      description: Requested page size; the server caps it at 50.
+      schema: { type: integer, minimum: 1, maximum: 50, default: 50 }
+    ConversationHistoryLimit:
+      name: limit
+      in: query
+      required: false
+      description: Requested page size; the server caps it at 100.
+      schema: { type: integer, minimum: 1, maximum: 100, default: 100 }
   schemas:
     CreatePrivateSessionRequest:
       type: object
@@ -591,6 +676,41 @@ components:
           allOf:
             - $ref: "#/components/schemas/ToolConfirmationRequest"
           nullable: true
+    ConversationSummary:
+      type: object
+      required: [conversationId, title, lastActivityAtUtc]
+      properties:
+        conversationId: { type: string, format: uuid }
+        title: { type: string }
+        lastActivityAtUtc: { type: string, format: date-time }
+        indexingRequestedAtUtc: { type: string, format: date-time, nullable: true }
+    ConversationDetails:
+      allOf:
+        - $ref: "#/components/schemas/ConversationSummary"
+    ConversationSummaryPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationSummary"
+        nextCursor: { type: string, nullable: true }
+    PublicConversationMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+    PublicConversationMessagePage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublicConversationMessage"
+        nextCursor: { type: string, nullable: true }
     ToolConfirmationRequest:
       type: object
       required: [confirmationId, toolCallId, toolName, arguments, expiresAtUtc]

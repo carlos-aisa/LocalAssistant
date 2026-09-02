@@ -18,6 +18,22 @@ public sealed record PrivateClientRevocationResponse(string ClientId);
 
 public sealed record CompletionResponse;
 
+public sealed record ConversationSummaryResponse(
+    Guid ConversationId,
+    string Title,
+    DateTimeOffset LastActivityAtUtc,
+    DateTimeOffset? IndexingRequestedAtUtc);
+
+public sealed record ConversationDetailsResponse(
+    Guid ConversationId,
+    string Title,
+    DateTimeOffset LastActivityAtUtc,
+    DateTimeOffset? IndexingRequestedAtUtc);
+
+public sealed record PublicConversationMessageResponse(string Role, string Content);
+
+public sealed record ConversationPageResponse<T>(IReadOnlyList<T> Items, string? NextCursor);
+
 public sealed record SendMessageRequest(
     string Message,
     Guid? ConversationId,

@@ -43,10 +43,11 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
     private const string DocumentReadScope = "documents.read";
     private const string DocumentContentSearchScope = "documents.content.search";
     private const string ReminderWriteScope = "reminders.write";
+    private const string ConversationReadScope = "conversations.read";
     private const int LegacySchemaVersion = 1;
     private const int PersonalMemorySchemaVersion = 2;
     private const int PrivateClientSchemaVersion = 3;
-    private const int CurrentSchemaVersion = 4;
+    private const int CurrentSchemaVersion = 5;
     private readonly InstallationIdentityOptions _options;
     private readonly TimeProvider _clock;
 
@@ -157,6 +158,7 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
                 LegacySchemaVersion or
                 PersonalMemorySchemaVersion or
                 PrivateClientSchemaVersion or
+                4 or
                 CurrentSchemaVersion) ||
             !Guid.TryParseExact(state.InstallationId, "N", out _) ||
             !IsValidPrincipalId(state.OwnerPrincipalId) ||
@@ -189,6 +191,7 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
             .Append(DocumentReadScope)
             .Append(DocumentContentSearchScope)
             .Append(ReminderWriteScope)
+            .Append(ConversationReadScope)
             .Distinct(StringComparer.Ordinal)
             .ToArray(),
         };
@@ -252,6 +255,7 @@ public sealed class FileInstallationIdentityStore : IInstallationIdentityStore
         DocumentReadScope,
         DocumentContentSearchScope,
         ReminderWriteScope,
+        ConversationReadScope,
     ];
 
     private sealed record StoredInstallationIdentity(

@@ -31,3 +31,23 @@ public sealed record ConversationApiResponse(
         result.Error,
         result.Confirmation);
 }
+
+public sealed record ListConversationsRequest(string? Cursor = null, int? Limit = null);
+
+public sealed record ConversationHistoryRequest(string? Cursor = null, int? Limit = null);
+
+public sealed record ConversationSummaryResponse(
+    Guid ConversationId,
+    string Title,
+    DateTimeOffset LastActivityAtUtc,
+    DateTimeOffset? IndexingRequestedAtUtc);
+
+public sealed record ConversationDetailsResponse(
+    Guid ConversationId,
+    string Title,
+    DateTimeOffset LastActivityAtUtc,
+    DateTimeOffset? IndexingRequestedAtUtc);
+
+public sealed record PublicConversationMessageResponse(string Role, string Content);
+
+public sealed record ConversationPageResponse<T>(IReadOnlyList<T> Items, string? NextCursor);
