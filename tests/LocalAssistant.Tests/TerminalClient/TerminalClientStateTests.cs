@@ -40,7 +40,7 @@ public sealed class TerminalClientStateTests
     }
 
     [Fact]
-    public void CoordinatorAllowsObservableContextChangesWhileReady()
+    public void CoordinatorAllowsObservableProviderAndConversationChangesWhileReady()
     {
         var sink = new RecordingStateSink();
         var coordinator = new TerminalClientStateCoordinator(sink);
@@ -53,16 +53,65 @@ public sealed class TerminalClientStateTests
         Assert.True(coordinator.TryTransition(Ready("ollama") with
         {
             ConversationId = conversationId,
-            PendingConfirmation = new TerminalClientPendingConfirmation(
-                "create_reminder",
-                new DateTimeOffset(2026, 9, 2, 10, 0, 0, TimeSpan.Zero)),
         }));
 
         var current = Assert.IsType<TerminalClientStateSnapshot>(coordinator.Current);
         Assert.Equal("ollama", current.Provider);
         Assert.Equal(conversationId, current.ConversationId);
-        Assert.Equal("create_reminder", current.PendingConfirmation!.ToolName);
+        Assert.Null(current.PendingConfirmation);
         Assert.Equal(5, sink.Snapshots.Count);
+    }
+
+    [Fact]
+    public void CoordinatorRejectsInternallyIncoherentSnapshots()
+    {
+        var invalidSnapshots = new[]
+        {
+            Ready(null),
+            Ready("fake") with
+            {
+                PendingConfirmation = PendingConfirmation(),
+            },
+            Ready("fake") with
+            {
+                Activity = TerminalClientActivity.AwaitingConfirmation,
+            },
+            Ready("fake") with
+            {
+                Lifecycle = TerminalClientLifecycle.Blocked,
+            },
+            Ready("fake") with
+            {
+                Lifecycle = TerminalClientLifecycle.Blocked,
+                Error = new TerminalClientOperationError(
+                    TerminalClientErrorCategory.Recoverable,
+                    "recoverable",
+                    "A recoverable error.",
+                    "test"),
+            },
+            Connecting() with
+            {
+                ConversationId = Guid.Parse("057401ec-6ea1-4f6a-bf99-942a76f06417"),
+            },
+            Connecting() with
+            {
+                PendingConfirmation = PendingConfirmation(),
+            },
+        };
+
+        foreach (var next in invalidSnapshots)
+        {
+            var sink = new RecordingStateSink();
+            var coordinator = new TerminalClientStateCoordinator(sink);
+            coordinator.PublishInitial();
+            coordinator.TryTransition(Connecting());
+            coordinator.TryTransition(Authenticating());
+            coordinator.TryTransition(Ready("fake"));
+
+            Assert.False(coordinator.TryTransition(next));
+            Assert.Equal(Ready("fake"), coordinator.Current);
+            Assert.Equal(4, sink.Snapshots.Count);
+        }
     }
 
     [Fact]
@@ -144,11 +193,15 @@ public sealed class TerminalClientStateTests
         Lifecycle = TerminalClientLifecycle.Authenticating,
     };
 
-    private static TerminalClientStateSnapshot Ready(string provider) => TerminalClientStateSnapshot.Initial with
+    private static TerminalClientStateSnapshot Ready(string? provider) => TerminalClientStateSnapshot.Initial with
     {
         Lifecycle = TerminalClientLifecycle.Ready,
         Provider = provider,
     };
+
+    private static TerminalClientPendingConfirmation PendingConfirmation() => new(
+        "create_reminder",
+        new DateTimeOffset(2026, 9, 2, 10, 0, 0, TimeSpan.Zero));
 
     private sealed class RecordingStateSink : ITerminalClientStateSink
     {
