@@ -131,6 +131,7 @@ public sealed class TerminalClientApplication
             cancellationToken.ThrowIfCancellationRequested();
             if (!paired.IsSuccess)
             {
+                Block(paired.Error!, "pairing");
                 WriteError(paired.Error!);
                 return null;
             }
@@ -172,7 +173,7 @@ public sealed class TerminalClientApplication
             : "Provider: ollama (the server configures the model)");
         _console.WriteLine("Type /help for commands.");
 
-        var resumed = await ResumeAsync(credential, accessToken, cancellationToken);
+        var resumed = await ResumeAsync(credential, accessToken, provider, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         credential = resumed.Credential;
         accessToken = resumed.AccessToken;
@@ -328,12 +329,13 @@ public sealed class TerminalClientApplication
     private async Task<(PrivateClientCredential Credential, string AccessToken, Guid? ConversationId)> ResumeAsync(
         PrivateClientCredential credential,
         string accessToken,
+        string provider,
         CancellationToken cancellationToken)
     {
         BeginActivity(TerminalClientActivity.ResumingConversation);
         if (!credential.LastConversationId.HasValue)
         {
-            Ready(_options.Provider, conversationId: null, pendingConfirmation: null, clearError: true);
+            Ready(provider, conversationId: null, pendingConfirmation: null, clearError: true);
             return (credential, accessToken, null);
         }
 
@@ -351,7 +353,7 @@ public sealed class TerminalClientApplication
             if (details.Response.Error?.Code == "not_found")
             {
                 credential = await UpdateLastConversationAsync(credential, null, cancellationToken);
-                Ready(_options.Provider, conversationId: null, pendingConfirmation: null, clearError: true);
+                Ready(provider, conversationId: null, pendingConfirmation: null, clearError: true);
             }
             else
             {
@@ -377,7 +379,7 @@ public sealed class TerminalClientApplication
             if (history.Loaded)
             {
                 Ready(
-                    _options.Provider,
+                    provider,
                     conversation.ConversationId,
                     pendingConfirmation: null,
                     clearError: true);
@@ -387,7 +389,7 @@ public sealed class TerminalClientApplication
             if (history.Error?.Code == "not_found")
             {
                 credential = await UpdateLastConversationAsync(credential, null, cancellationToken);
-                Ready(_options.Provider, conversationId: null, pendingConfirmation: null, clearError: true);
+                Ready(provider, conversationId: null, pendingConfirmation: null, clearError: true);
             }
             else if (history.Error is not null)
             {
@@ -400,17 +402,18 @@ public sealed class TerminalClientApplication
         if (string.Equals(selection, "l", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(selection, "list", StringComparison.OrdinalIgnoreCase))
         {
-            Ready(_options.Provider, conversationId: null, pendingConfirmation: null, clearError: true);
+            Ready(provider, conversationId: null, pendingConfirmation: null, clearError: true);
             var listed = await SelectConversationAsync(
                 credential,
                 accessToken,
                 null,
+                provider,
                 cancellationToken);
             return (listed.Credential, listed.AccessToken, listed.ConversationId);
         }
 
         credential = await UpdateLastConversationAsync(credential, null, cancellationToken);
-        Ready(_options.Provider, conversationId: null, pendingConfirmation: null, clearError: true);
+        Ready(provider, conversationId: null, pendingConfirmation: null, clearError: true);
         return (credential, accessToken, null);
     }
 
@@ -428,6 +431,10 @@ public sealed class TerminalClientApplication
         if (!await _credentialStore.SaveAsync(updated, cancellationToken))
         {
             _console.WriteLine("The latest conversation could not be saved locally.");
+            RecordError(
+                new ClientError("last_conversation_not_saved", "The latest conversation could not be saved locally."),
+                "conversation_preference",
+                canBeUncertain: false);
             return credential;
         }
 
@@ -526,6 +533,7 @@ public sealed class TerminalClientApplication
                 credential,
                 accessToken,
                 conversationId,
+                provider,
                 cancellationToken);
             return new(true, 0, selection.AccessToken, provider, selection.ConversationId)
             {
@@ -592,6 +600,7 @@ public sealed class TerminalClientApplication
         PrivateClientCredential credential,
         string accessToken,
         Guid? currentConversationId,
+        string provider,
         CancellationToken cancellationToken)
     {
         BeginActivity(TerminalClientActivity.SelectingConversation);
@@ -638,7 +647,7 @@ public sealed class TerminalClientApplication
             if (!int.TryParse(selection, out var selectedIndex) ||
                 selectedIndex < 1 || selectedIndex > page.Items.Count)
             {
-                Ready(_options.Provider, currentConversationId, pendingConfirmation: null, clearError: true);
+                Ready(provider, currentConversationId, pendingConfirmation: null, clearError: true);
                 return (credential, accessToken, currentConversationId);
             }
 
@@ -693,7 +702,7 @@ public sealed class TerminalClientApplication
                 details.Response.Value!.ConversationId,
                 cancellationToken);
             Ready(
-                _options.Provider,
+                provider,
                 details.Response.Value.ConversationId,
                 pendingConfirmation: null,
                 clearError: true);
@@ -762,7 +771,9 @@ public sealed class TerminalClientApplication
             var rotation = await _apiClient.RotateCredentialAsync(challenge, credential.ClientId, cancellationToken);
             if (!rotation.IsSuccess || !string.Equals(rotation.Value!.ClientId, credential.ClientId, StringComparison.Ordinal))
             {
-                WriteError(rotation.Error ?? new ClientError("invalid_response", "Credential rotation was rejected."));
+                var error = rotation.Error ?? new ClientError("invalid_response", "Credential rotation was rejected.");
+                RecordError(error, "credential_rotation", canBeUncertain: false);
+                WriteError(error);
                 return new(true, 0, accessToken, provider, conversationId);
             }
 
@@ -773,6 +784,7 @@ public sealed class TerminalClientApplication
             var session = await _apiClient.CreateSessionAsync(replacement.ClientId, replacement.Credential, cancellationToken);
             if (!session.IsSuccess)
             {
+                RecordError(session.Error!, "credential_rotation", canBeUncertain: false);
                 WriteError(session.Error!);
                 return new(true, 0, accessToken, provider, conversationId);
             }
@@ -780,6 +792,10 @@ public sealed class TerminalClientApplication
             if (!await _credentialStore.SaveAsync(replacement, cancellationToken))
             {
                 _console.WriteLine("The credential was rotated but could not be stored. Pair again after this session ends.");
+                RecordError(
+                    new ClientError("rotated_credential_not_saved", "The rotated credential could not be stored securely."),
+                    "credential_rotation",
+                    canBeUncertain: false);
             }
 
             return new(true, 0, session.Value!.AccessToken, provider, conversationId)
@@ -801,13 +817,19 @@ public sealed class TerminalClientApplication
             var revoked = await _apiClient.RevokeClientAsync(challenge, credential.ClientId, cancellationToken);
             if (!revoked.IsSuccess || !string.Equals(revoked.Value!.ClientId, credential.ClientId, StringComparison.Ordinal))
             {
-                WriteError(revoked.Error ?? new ClientError("invalid_response", "Client revocation was rejected."));
+                var error = revoked.Error ?? new ClientError("invalid_response", "Client revocation was rejected.");
+                RecordError(error, "credential_revocation", canBeUncertain: false);
+                WriteError(error);
                 return new(true, 0, accessToken, provider, conversationId);
             }
 
             if (!await _credentialStore.DeleteAsync(cancellationToken))
             {
                 _console.WriteLine("The client was revoked, but its local credential state could not be removed.");
+                RecordError(
+                    new ClientError("revoked_credential_not_deleted", "The revoked credential could not be removed locally."),
+                    "credential_revocation",
+                    canBeUncertain: false);
             }
 
             return new(false, 0, string.Empty, provider, null);
@@ -875,13 +897,16 @@ public sealed class TerminalClientApplication
     private void BeginActivity(TerminalClientActivity activity)
     {
         var current = _stateCoordinator.Current;
+        var pendingConfirmation = activity == TerminalClientActivity.AwaitingConfirmation
+            ? current.PendingConfirmation
+            : null;
         MoveTo(
             TerminalClientLifecycle.Ready,
             activity,
             current.Error,
             current.Provider,
             current.ConversationId,
-            current.PendingConfirmation);
+            pendingConfirmation);
     }
 
     private void Ready(
@@ -953,13 +978,24 @@ public sealed class TerminalClientApplication
     private void HandleCancellation()
     {
         var current = _stateCoordinator.Current;
-        if (current.Lifecycle is TerminalClientLifecycle.Connecting or TerminalClientLifecycle.Authenticating)
+        if (current.Lifecycle == TerminalClientLifecycle.Connecting)
+        {
+            Block(new ClientError("operation_cancelled", "The operation was cancelled."), "health");
+            return;
+        }
+
+        if (current.Lifecycle == TerminalClientLifecycle.Authenticating)
         {
             Block(new ClientError("operation_cancelled", "The operation was cancelled."), "authentication");
             return;
         }
 
         if (current.Lifecycle != TerminalClientLifecycle.Ready)
+        {
+            return;
+        }
+
+        if (current.Error?.Category == TerminalClientErrorCategory.Uncertain)
         {
             return;
         }

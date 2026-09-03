@@ -99,7 +99,7 @@ internal sealed class TerminalClientStateCoordinator
     public bool TryTransition(TerminalClientStateSnapshot next)
     {
         ArgumentNullException.ThrowIfNull(next);
-        if (!IsTransitionAllowed(_current, next))
+        if (!IsSnapshotValid(next) || !IsTransitionAllowed(_current, next))
         {
             return false;
         }
@@ -111,6 +111,49 @@ internal sealed class TerminalClientStateCoordinator
 
         _current = next;
         Notify(next);
+        return true;
+    }
+
+    private static bool IsSnapshotValid(TerminalClientStateSnapshot snapshot)
+    {
+        if (snapshot.Lifecycle == TerminalClientLifecycle.Ready &&
+            string.IsNullOrWhiteSpace(snapshot.Provider))
+        {
+            return false;
+        }
+
+        if (snapshot.Activity == TerminalClientActivity.AwaitingConfirmation)
+        {
+            if (snapshot.PendingConfirmation is null)
+            {
+                return false;
+            }
+        }
+        else if (snapshot.PendingConfirmation is not null)
+        {
+            return false;
+        }
+
+        if (snapshot.Lifecycle == TerminalClientLifecycle.Blocked)
+        {
+            if (snapshot.Error?.Category != TerminalClientErrorCategory.Blocking)
+            {
+                return false;
+            }
+        }
+        else if (snapshot.Lifecycle is not TerminalClientLifecycle.Closing and
+                 not TerminalClientLifecycle.Closed &&
+                 snapshot.Error?.Category == TerminalClientErrorCategory.Blocking)
+        {
+            return false;
+        }
+
+        if (snapshot.Lifecycle is TerminalClientLifecycle.Connecting or
+            TerminalClientLifecycle.Authenticating)
+        {
+            return snapshot.ConversationId is null && snapshot.PendingConfirmation is null;
+        }
+
         return true;
     }
 
@@ -193,6 +236,7 @@ internal sealed class TerminalClientStateCoordinator
                 TerminalClientActivity.ResumingConversation or
                 TerminalClientActivity.SelectingConversation or
                 TerminalClientActivity.SendingTurn or
+                TerminalClientActivity.AwaitingConfirmation or
                 TerminalClientActivity.CompletingConversation,
             TerminalClientActivity.ResumingConversation => next.Activity == TerminalClientActivity.None,
             TerminalClientActivity.SelectingConversation => next.Activity is
