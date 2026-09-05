@@ -61,7 +61,7 @@ public sealed class PrivateApiClient
             new CompletePrivateClientPairingRequest(challenge, displayName));
         return await SendAsync(
             request,
-            static root => root.Deserialize<PrivateClientCredentialResponse>(JsonOptions),
+            ValidatePairingCredential,
             "Pairing could not be completed.",
             canBeUncertainAfterDispatch: true,
             cancellationToken);
@@ -77,7 +77,7 @@ public sealed class PrivateApiClient
             new ConsumeAdministrativeChallengeRequest(challenge, clientId));
         return await SendAsync(
             request,
-            static root => root.Deserialize<PrivateClientCredentialResponse>(JsonOptions),
+            root => ValidateRotatedCredential(root, clientId),
             "Credential rotation could not be completed.",
             canBeUncertainAfterDispatch: true,
             cancellationToken);
@@ -93,7 +93,7 @@ public sealed class PrivateApiClient
             new ConsumeAdministrativeChallengeRequest(challenge, clientId));
         return await SendAsync(
             request,
-            static root => root.Deserialize<PrivateClientRevocationResponse>(JsonOptions),
+            root => ValidateRevocation(root, clientId),
             "Client revocation could not be completed.",
             canBeUncertainAfterDispatch: true,
             cancellationToken);
@@ -304,7 +304,10 @@ public sealed class PrivateApiClient
             using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
             var value = deserialize(document.RootElement);
             return value is null
-                ? ClientResults.Failure<T>("invalid_response", "The API returned an invalid response.")
+                ? ClientResults.Failure<T>(
+                    "invalid_response",
+                    "The API returned an invalid response.",
+                    isUncertain: canBeUncertainAfterDispatch)
                 : ClientResults.Success(value);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -330,7 +333,10 @@ public sealed class PrivateApiClient
         }
         catch (JsonException)
         {
-            return ClientResults.Failure<T>("invalid_response", "The API returned an invalid response.");
+            return ClientResults.Failure<T>(
+                "invalid_response",
+                "The API returned an invalid response.",
+                isUncertain: canBeUncertainAfterDispatch);
         }
     }
 
@@ -380,6 +386,40 @@ public sealed class PrivateApiClient
     {
         var response = root.Deserialize<PrivateSessionResponse>(JsonOptions);
         return response is null || string.IsNullOrWhiteSpace(response.AccessToken)
+            ? null
+            : response;
+    }
+
+    private static PrivateClientCredentialResponse? ValidatePairingCredential(JsonElement root) =>
+        ValidateCredential(root, expectedClientId: null);
+
+    private static PrivateClientCredentialResponse? ValidateRotatedCredential(
+        JsonElement root,
+        string expectedClientId) =>
+        ValidateCredential(root, expectedClientId);
+
+    private static PrivateClientCredentialResponse? ValidateCredential(
+        JsonElement root,
+        string? expectedClientId)
+    {
+        var response = root.Deserialize<PrivateClientCredentialResponse>(JsonOptions);
+        return response is null ||
+            string.IsNullOrWhiteSpace(response.ClientId) ||
+            string.IsNullOrWhiteSpace(response.Credential) ||
+            (expectedClientId is not null &&
+                !string.Equals(response.ClientId, expectedClientId, StringComparison.Ordinal))
+            ? null
+            : response;
+    }
+
+    private static PrivateClientRevocationResponse? ValidateRevocation(
+        JsonElement root,
+        string expectedClientId)
+    {
+        var response = root.Deserialize<PrivateClientRevocationResponse>(JsonOptions);
+        return response is null ||
+            string.IsNullOrWhiteSpace(response.ClientId) ||
+            !string.Equals(response.ClientId, expectedClientId, StringComparison.Ordinal)
             ? null
             : response;
     }

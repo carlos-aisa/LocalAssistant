@@ -466,9 +466,7 @@ resumen de herramientas. Si el servidor devuelve un resultado conversacional
 estructurado con un estado HTTP de error, el cliente conserva igualmente ese
 identificador y muestra el error del orquestador. Un fallo de transporte, un `5xx` sin
 contrato conversacional válido o un `2xx` inválido se informa como incierto y no se
-reintenta; un `4xx` sin contrato es un rechazo concluyente. Aún no incorpora pairing,
-DPAPI, completion, comandos, confirmaciones resolubles, reanudación entre ejecuciones,
-TUI ni salida de voz.
+reintenta; un `4xx` sin contrato es un rechazo concluyente.
 
 El segundo incremento incorpora pairing de arranque al dejar vacío el ID, y protege la
 credencial duradera con DPAPI de usuario actual después de abrir una sesión válida. El
@@ -476,7 +474,10 @@ bearer y los desafíos administrativos nunca se persisten ni se admiten como arg
 Un `401` bearer no estructurado renueva la sesión y reintenta una vez; los resultados
 conversacionales estructurados y los fallos inciertos no se reintentan. `/admin rotate`
 y `/admin revoke` solicitan el desafío sin eco y solo pueden afectar al `ClientId` local;
-la revocación exige escribir `REVOKE` antes de descartar la credencial local.
+la revocación exige escribir `REVOKE` antes de descartar la credencial local. Pairing,
+rotación y revocación también se consideran inciertos si, después de enviarse, se pierde
+la respuesta o su contrato `2xx` no puede validarse. En ese caso no se reintentan ni se
+modifica el estado local de credenciales.
 
 El tercer incremento guarda opcionalmente el último `ConversationId` junto con la
 credencial DPAPI. Tras validar que sigue perteneciendo al principal autenticado, ofrece
@@ -491,10 +492,10 @@ ciclo de vida, actividad, error seguro, proveedor, conversación y confirmación
 La consola conserva su salida textual y solo anuncia conexión o autenticación cuando es
 útil; no vuelca el snapshot, historial ni contenido conversacional. Los snapshots no
 incluyen bearer, credenciales, desafíos, mensajes ni argumentos de herramientas. Un
-timeout, desconexión o cancelación de un turno, una decisión o completion ya enviados se
-presenta como incierto y no se reintenta; las lecturas y los rechazos concluyentes son
-errores recuperables. `Ctrl+C` solicita el cierre local, pero no promete cancelar un
-turno HTTP que ya haya llegado al servidor.
+timeout, desconexión o cancelación de un turno, una decisión, completion, pairing,
+rotación o revocación ya enviados se presenta como incierto y no se reintenta; las
+lecturas y los rechazos concluyentes son errores recuperables. `Ctrl+C` solicita el
+cierre local, pero no promete cancelar una operación HTTP que ya haya llegado al servidor.
 
 ### Validación local observada
 

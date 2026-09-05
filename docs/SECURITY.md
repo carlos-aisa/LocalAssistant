@@ -58,8 +58,10 @@ proveedor, conversación y confirmación pendiente; no contienen bearer, credenc
 desafíos, mensajes, prompts, historial, argumentos ni resultados de herramientas. Los
 observadores no pueden iniciar transiciones y sus fallos se ignoran sin interrumpir la
 autenticación, la conversación ni el cierre. Un resultado incierto solo expresa que un
-turno, una decisión o completion pudo alcanzar el servidor; no afirma cancelación HTTP
-fiable ni autoriza un reintento automático.
+turno, una decisión, completion, pairing, rotación o revocación pudo alcanzar el servidor;
+también cubre una respuesta `2xx` mutable cuyo contrato no puede validarse. No afirma
+cancelación HTTP fiable ni autoriza un reintento automático; ante incertidumbre
+administrativa el cliente conserva sus credenciales locales y se bloquea.
 
 La síntesis y reproducción de fase 5 son locales por defecto y no añaden audio a la
 API ni al orquestador. Los buffers o archivos temporales se limitarán a la sesión,

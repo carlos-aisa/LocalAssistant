@@ -57,7 +57,6 @@ public sealed class TerminalClientApplication
                 ? await GetCredentialAsync(cancellationToken)
                 : CredentialAcquisitionResult.Obtained(storedCredential);
             var credential = acquisition.Credential;
-            cancellationToken.ThrowIfCancellationRequested();
             if (credential is null)
             {
                 if (acquisition.Error is not null)
@@ -146,7 +145,6 @@ public sealed class TerminalClientApplication
             }
 
             var paired = await _apiClient.CompletePairingAsync(challenge, displayName, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
             if (!paired.IsSuccess)
             {
                 return CredentialAcquisitionResult.Failed(paired.Error!);

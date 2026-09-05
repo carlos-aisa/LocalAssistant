@@ -181,6 +181,106 @@ public sealed class PrivateApiClientTests
         Assert.Single(handler.Requests);
     }
 
+    [Theory]
+    [InlineData("pairing")]
+    [InlineData("rotation")]
+    [InlineData("revocation")]
+    public async Task ConnectionFailureForAMutableAdministrativeOperationIsReportedAsUncertain(
+        string operation)
+    {
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => throw new HttpRequestException(),
+        ]);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:5100/"),
+        };
+        var client = new PrivateApiClient(httpClient);
+
+        var error = await InvokeAdministrativeOperationAsync(client, operation, CancellationToken.None);
+
+        Assert.NotNull(error);
+        Assert.Equal("connection_error", error.Code);
+        Assert.True(error.IsUncertain);
+        Assert.Single(handler.Requests);
+    }
+
+    [Theory]
+    [InlineData("pairing")]
+    [InlineData("rotation")]
+    [InlineData("revocation")]
+    public async Task MalformedSuccessfulResponseForAMutableAdministrativeOperationIsReportedAsUncertain(
+        string operation)
+    {
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, "{"),
+        ]);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:5100/"),
+        };
+        var client = new PrivateApiClient(httpClient);
+
+        var error = await InvokeAdministrativeOperationAsync(client, operation, CancellationToken.None);
+
+        Assert.NotNull(error);
+        Assert.Equal("invalid_response", error.Code);
+        Assert.True(error.IsUncertain);
+        Assert.Single(handler.Requests);
+    }
+
+    [Theory]
+    [InlineData("pairing")]
+    [InlineData("rotation")]
+    [InlineData("revocation")]
+    public async Task IncompleteSuccessfulResponseForAMutableAdministrativeOperationIsReportedAsUncertain(
+        string operation)
+    {
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, "{}"),
+        ]);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:5100/"),
+        };
+        var client = new PrivateApiClient(httpClient);
+
+        var error = await InvokeAdministrativeOperationAsync(client, operation, CancellationToken.None);
+
+        Assert.NotNull(error);
+        Assert.Equal("invalid_response", error.Code);
+        Assert.True(error.IsUncertain);
+        Assert.Single(handler.Requests);
+    }
+
+    [Theory]
+    [InlineData("rotation", "{ \"clientId\": \"other-client\", \"credential\": \"replacement\" }")]
+    [InlineData("revocation", "{ \"clientId\": \"other-client\" }")]
+    public async Task DifferentTargetClientInSuccessfulAdministrativeResponseIsReportedAsUncertain(
+        string operation,
+        string responseContent)
+    {
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, responseContent),
+        ]);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:5100/"),
+        };
+        var client = new PrivateApiClient(httpClient);
+
+        var error = await InvokeAdministrativeOperationAsync(client, operation, CancellationToken.None);
+
+        Assert.NotNull(error);
+        Assert.Equal("invalid_response", error.Code);
+        Assert.True(error.IsUncertain);
+        Assert.Single(handler.Requests);
+    }
+
     [Fact]
     public async Task EmptyUnauthorizedResponseIsNotUncertain()
     {
@@ -495,6 +595,26 @@ public sealed class PrivateApiClientTests
     {
         Content = new StringContent(content, Encoding.UTF8, "application/json"),
     };
+
+    private static async Task<ClientError?> InvokeAdministrativeOperationAsync(
+        PrivateApiClient client,
+        string operation,
+        CancellationToken cancellationToken) => operation switch
+        {
+            "pairing" => (await client.CompletePairingAsync(
+                "pairing-challenge",
+                "Desktop",
+                cancellationToken)).Error,
+            "rotation" => (await client.RotateCredentialAsync(
+                "rotation-challenge",
+                "client-a",
+                cancellationToken)).Error,
+            "revocation" => (await client.RevokeClientAsync(
+                "revocation-challenge",
+                "client-a",
+                cancellationToken)).Error,
+            _ => throw new InvalidOperationException("Unsupported operation."),
+        };
 
     private static string ConversationResponseJson(Guid conversationId) => $$"""
         {
