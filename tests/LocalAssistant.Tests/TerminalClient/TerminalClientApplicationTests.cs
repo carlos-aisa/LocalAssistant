@@ -1,4 +1,5 @@
 using System.Net;
+using System.Reflection;
 using System.Text;
 using LocalAssistant.TerminalClient;
 
@@ -863,12 +864,13 @@ public sealed class TerminalClientApplicationTests
 
         var exitCode = await application.RunAsync(CancellationToken.None);
 
-        Assert.Equal(0, exitCode);
+        Assert.Equal(1, exitCode);
         Assert.Equal(new PrivateClientCredential("client-a", "credential-a"), store.SavedCredential);
-        Assert.Contains("Credential rotation was rejected", console.Output, StringComparison.Ordinal);
         Assert.Contains(sink.Snapshots, snapshot =>
+            snapshot.Lifecycle == TerminalClientLifecycle.Blocked &&
             snapshot.Error?.Operation == "credential_rotation" &&
-            snapshot.Error.Code == "invalid_response");
+            snapshot.Error.Code == "invalid_response" &&
+            snapshot.Error.IsUncertain);
     }
 
     [Fact]
@@ -977,12 +979,13 @@ public sealed class TerminalClientApplicationTests
 
         var exitCode = await application.RunAsync(CancellationToken.None);
 
-        Assert.Equal(0, exitCode);
+        Assert.Equal(1, exitCode);
         Assert.False(store.Deleted);
-        Assert.Contains("Client revocation was rejected", console.Output, StringComparison.Ordinal);
         Assert.Contains(sink.Snapshots, snapshot =>
+            snapshot.Lifecycle == TerminalClientLifecycle.Blocked &&
             snapshot.Error?.Operation == "credential_revocation" &&
-            snapshot.Error.Code == "invalid_response");
+            snapshot.Error.Code == "invalid_response" &&
+            snapshot.Error.IsUncertain);
     }
 
     [Fact]
@@ -1322,6 +1325,61 @@ public sealed class TerminalClientApplicationTests
             snapshot.Lifecycle == TerminalClientLifecycle.Blocked &&
             snapshot.Error?.Operation == "pairing");
         Assert.Equal(TerminalClientErrorSeverity.Blocking, pairingError.Error!.Severity);
+    }
+
+    [Fact]
+    public async Task CancellationDuringPairingPreservesTheUncertainPairingError()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ =>
+            {
+                cancellationSource.Cancel();
+                throw new OperationCanceledException(cancellationSource.Token);
+            },
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole([string.Empty, "Desktop"], "pairing-challenge");
+        var application = CreateApplication(httpClient, console, stateSink: sink);
+
+        var exitCode = await application.RunAsync(cancellationSource.Token);
+
+        Assert.Equal(1, exitCode);
+        var pairingError = Assert.Single(sink.Snapshots, snapshot =>
+            snapshot.Lifecycle == TerminalClientLifecycle.Blocked &&
+            snapshot.Error?.Operation == "pairing");
+        Assert.Equal(TerminalClientErrorSeverity.Blocking, pairingError.Error!.Severity);
+        Assert.True(pairingError.Error.IsUncertain);
+        Assert.Equal("request_cancelled", pairingError.Error.Code);
+    }
+
+    [Fact]
+    public void ApplicationThrowsWhenItRequestsAnInvalidStateTransition()
+    {
+        using var httpClient = CreateHttpClient(new RecordingHttpMessageHandler([]));
+        using var console = new ScriptedTerminalConsole([]);
+        var application = CreateApplication(httpClient, console);
+        var moveTo = typeof(TerminalClientApplication).GetMethod(
+            "MoveTo",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        var exception = Assert.Throws<TargetInvocationException>(() =>
+            moveTo!.Invoke(
+                application,
+                [
+                    TerminalClientLifecycle.Ready,
+                    TerminalClientActivity.None,
+                    null,
+                    null,
+                    null,
+                    null,
+                    false,
+                ]));
+
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
     }
 
     [Fact]

@@ -11,9 +11,9 @@ de credenciales. No incorpora TUI, endpoints, reintentos ni cambios de servidor.
 - `TerminalClientOperationError` separa `Severity` (`Recoverable` o `Blocking`) de
   `IsUncertain`. Un resultado puede ser bloqueante e incierto a la vez.
 - Pairing, rotación y revocación son operaciones HTTP con efecto lateral. Timeout,
-  desconexión y cancelación posterior al envío se publican como inciertos. Una
-  incertidumbre administrativa bloquea el cliente: continuar podría usar una
-  credencial revocada o ya sustituida.
+  desconexión, cancelación posterior al envío y una respuesta `2xx` cuyo contrato no
+  pueda validarse se publican como inciertos. Una incertidumbre administrativa bloquea
+  el cliente: continuar podría usar una credencial revocada o ya sustituida.
 - `UpdateLastConversationAsync` devuelve el resultado de persistencia junto a la
   credencial. No muta el snapshot por sí misma. El flujo que la invoca conserva el
   error cuando la actualización local falla y solo lo limpia tras una operación
