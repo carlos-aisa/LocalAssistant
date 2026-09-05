@@ -236,7 +236,6 @@ internal sealed class TerminalClientStateCoordinator
                 TerminalClientActivity.ResumingConversation or
                 TerminalClientActivity.SelectingConversation or
                 TerminalClientActivity.SendingTurn or
-                TerminalClientActivity.AwaitingConfirmation or
                 TerminalClientActivity.CompletingConversation,
             TerminalClientActivity.ResumingConversation => next.Activity == TerminalClientActivity.None,
             TerminalClientActivity.SelectingConversation => next.Activity is
