@@ -27,7 +27,7 @@ public sealed class PrivateApiClient
             request,
             static _ => new HealthResponse(),
             "The LocalAssistant API is unavailable.",
-            isTurnRequest: false,
+            canBeUncertainAfterDispatch: false,
             cancellationToken);
     }
 
@@ -47,7 +47,7 @@ public sealed class PrivateApiClient
             request,
             ValidateSession,
             "The private-client session could not be opened.",
-            isTurnRequest: false,
+            canBeUncertainAfterDispatch: false,
             cancellationToken);
     }
 
@@ -63,7 +63,7 @@ public sealed class PrivateApiClient
             request,
             static root => root.Deserialize<PrivateClientCredentialResponse>(JsonOptions),
             "Pairing could not be completed.",
-            isTurnRequest: false,
+            canBeUncertainAfterDispatch: true,
             cancellationToken);
     }
 
@@ -79,7 +79,7 @@ public sealed class PrivateApiClient
             request,
             static root => root.Deserialize<PrivateClientCredentialResponse>(JsonOptions),
             "Credential rotation could not be completed.",
-            isTurnRequest: false,
+            canBeUncertainAfterDispatch: true,
             cancellationToken);
     }
 
@@ -95,7 +95,7 @@ public sealed class PrivateApiClient
             request,
             static root => root.Deserialize<PrivateClientRevocationResponse>(JsonOptions),
             "Client revocation could not be completed.",
-            isTurnRequest: false,
+            canBeUncertainAfterDispatch: true,
             cancellationToken);
     }
 
@@ -146,7 +146,7 @@ public sealed class PrivateApiClient
             request,
             ValidateConversationSummaryPage,
             "The conversation list could not be retrieved.",
-            isTurnRequest: false,
+            canBeUncertainAfterDispatch: false,
             cancellationToken,
             canRenewSession: true);
     }
@@ -162,7 +162,7 @@ public sealed class PrivateApiClient
             request,
             root => ValidateConversationDetails(root, conversationId),
             "The conversation details could not be retrieved.",
-            isTurnRequest: false,
+            canBeUncertainAfterDispatch: false,
             cancellationToken,
             canRenewSession: true);
     }
@@ -186,7 +186,7 @@ public sealed class PrivateApiClient
             request,
             ValidateConversationHistoryPage,
             "The conversation history could not be retrieved.",
-            isTurnRequest: false,
+            canBeUncertainAfterDispatch: false,
             cancellationToken,
             canRenewSession: true);
     }
@@ -283,7 +283,7 @@ public sealed class PrivateApiClient
         HttpRequestMessage request,
         Func<JsonElement, T?> deserialize,
         string connectionErrorMessage,
-        bool isTurnRequest,
+        bool canBeUncertainAfterDispatch,
         CancellationToken cancellationToken,
         bool canRenewSession = false)
         where T : class
@@ -296,7 +296,7 @@ public sealed class PrivateApiClient
                 return ClientResults.Failure<T>(
                     GetErrorCode(response.StatusCode),
                     GetErrorMessage(response.StatusCode),
-                    isTurnRequest && IsUncertainStatus(response.StatusCode),
+                    canBeUncertainAfterDispatch && IsUncertainStatus(response.StatusCode),
                     canRenewSession && response.StatusCode == HttpStatusCode.Unauthorized);
             }
 
@@ -312,21 +312,21 @@ public sealed class PrivateApiClient
             return ClientResults.Failure<T>(
                 "request_cancelled",
                 "The request was cancelled.",
-                isTurnRequest);
+                canBeUncertainAfterDispatch);
         }
         catch (OperationCanceledException)
         {
             return ClientResults.Failure<T>(
                 "request_timeout",
                 "The request timed out.",
-                isTurnRequest);
+                canBeUncertainAfterDispatch);
         }
         catch (HttpRequestException)
         {
             return ClientResults.Failure<T>(
                 "connection_error",
                 connectionErrorMessage,
-                isTurnRequest);
+                canBeUncertainAfterDispatch);
         }
         catch (JsonException)
         {
