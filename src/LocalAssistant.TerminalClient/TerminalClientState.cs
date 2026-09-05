@@ -23,15 +23,15 @@ internal enum TerminalClientActivity
     PlayingVoice,
 }
 
-internal enum TerminalClientErrorCategory
+internal enum TerminalClientErrorSeverity
 {
     Recoverable,
-    Uncertain,
     Blocking,
 }
 
 internal sealed record TerminalClientOperationError(
-    TerminalClientErrorCategory Category,
+    TerminalClientErrorSeverity Severity,
+    bool IsUncertain,
     string Code,
     string SafeMessage,
     string Operation);
@@ -136,14 +136,14 @@ internal sealed class TerminalClientStateCoordinator
 
         if (snapshot.Lifecycle == TerminalClientLifecycle.Blocked)
         {
-            if (snapshot.Error?.Category != TerminalClientErrorCategory.Blocking)
+            if (snapshot.Error?.Severity != TerminalClientErrorSeverity.Blocking)
             {
                 return false;
             }
         }
         else if (snapshot.Lifecycle is not TerminalClientLifecycle.Closing and
                  not TerminalClientLifecycle.Closed &&
-                 snapshot.Error?.Category == TerminalClientErrorCategory.Blocking)
+                 snapshot.Error?.Severity == TerminalClientErrorSeverity.Blocking)
         {
             return false;
         }
@@ -236,7 +236,6 @@ internal sealed class TerminalClientStateCoordinator
                 TerminalClientActivity.ResumingConversation or
                 TerminalClientActivity.SelectingConversation or
                 TerminalClientActivity.SendingTurn or
-                TerminalClientActivity.AwaitingConfirmation or
                 TerminalClientActivity.CompletingConversation,
             TerminalClientActivity.ResumingConversation => next.Activity == TerminalClientActivity.None,
             TerminalClientActivity.SelectingConversation => next.Activity is

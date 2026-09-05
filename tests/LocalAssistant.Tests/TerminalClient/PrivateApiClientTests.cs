@@ -141,6 +141,46 @@ public sealed class PrivateApiClientTests
         Assert.Single(handler.Requests);
     }
 
+    [Theory]
+    [InlineData("pairing")]
+    [InlineData("rotation")]
+    [InlineData("revocation")]
+    public async Task TransportTimeoutForAMutableAdministrativeOperationIsReportedAsUncertain(
+        string operation)
+    {
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => throw new TaskCanceledException(),
+        ]);
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost:5100/"),
+        };
+        var client = new PrivateApiClient(httpClient);
+
+        var error = operation switch
+        {
+            "pairing" => (await client.CompletePairingAsync(
+                "pairing-challenge",
+                "Desktop",
+                CancellationToken.None)).Error,
+            "rotation" => (await client.RotateCredentialAsync(
+                "rotation-challenge",
+                "client-a",
+                CancellationToken.None)).Error,
+            "revocation" => (await client.RevokeClientAsync(
+                "revocation-challenge",
+                "client-a",
+                CancellationToken.None)).Error,
+            _ => throw new InvalidOperationException("Unsupported operation."),
+        };
+
+        Assert.NotNull(error);
+        Assert.Equal("request_timeout", error.Code);
+        Assert.True(error.IsUncertain);
+        Assert.Single(handler.Requests);
+    }
+
     [Fact]
     public async Task EmptyUnauthorizedResponseIsNotUncertain()
     {

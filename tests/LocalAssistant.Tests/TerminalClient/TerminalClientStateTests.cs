@@ -84,7 +84,8 @@ public sealed class TerminalClientStateTests
             {
                 Lifecycle = TerminalClientLifecycle.Blocked,
                 Error = new TerminalClientOperationError(
-                    TerminalClientErrorCategory.Recoverable,
+                    TerminalClientErrorSeverity.Recoverable,
+                    false,
                     "recoverable",
                     "A recoverable error.",
                     "test"),
@@ -130,6 +131,31 @@ public sealed class TerminalClientStateTests
 
         Assert.False(coordinator.TryTransition(next));
         Assert.Equal(TerminalClientActivity.None, coordinator.Current.Activity);
+    }
+
+    [Fact]
+    public void CoordinatorRequiresSendingATurnBeforeAwaitingConfirmation()
+    {
+        var coordinator = new TerminalClientStateCoordinator(NullTerminalClientStateSink.Instance);
+        coordinator.PublishInitial();
+        coordinator.TryTransition(Connecting());
+        coordinator.TryTransition(Authenticating());
+        coordinator.TryTransition(Ready("fake"));
+
+        var awaitingConfirmation = Ready("fake") with
+        {
+            Activity = TerminalClientActivity.AwaitingConfirmation,
+            PendingConfirmation = PendingConfirmation(),
+        };
+
+        Assert.False(coordinator.TryTransition(awaitingConfirmation));
+
+        var sendingTurn = Ready("fake") with
+        {
+            Activity = TerminalClientActivity.SendingTurn,
+        };
+        Assert.True(coordinator.TryTransition(sendingTurn));
+        Assert.True(coordinator.TryTransition(awaitingConfirmation));
     }
 
     [Fact]

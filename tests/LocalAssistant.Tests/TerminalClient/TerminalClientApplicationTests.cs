@@ -72,7 +72,7 @@ public sealed class TerminalClientApplicationTests
             new PrivateApiClient(httpClient),
             console,
             TerminalClientOptions.Parse(["--provider=fake", "--scenario=direct"]),
-            new ManualPrivateClientCredentialStore(),
+            new TestCredentialStore(),
             sink);
 
         var exitCode = await application.RunAsync(CancellationToken.None);
@@ -87,7 +87,7 @@ public sealed class TerminalClientApplicationTests
         Assert.Contains("Assistant: Second response", console.Output, StringComparison.Ordinal);
         Assert.Contains(sink.Snapshots, snapshot =>
             snapshot.Lifecycle == TerminalClientLifecycle.Ready &&
-            snapshot.Error?.Category == TerminalClientErrorCategory.Recoverable &&
+            snapshot.Error?.Severity == TerminalClientErrorSeverity.Recoverable &&
             snapshot.Error.Code == "provider_timeout" &&
             snapshot.ConversationId == conversationId);
     }
@@ -897,11 +897,39 @@ public sealed class TerminalClientApplicationTests
 
         var exitCode = await application.RunAsync(CancellationToken.None);
 
-        Assert.Equal(0, exitCode);
+        Assert.Equal(1, exitCode);
         Assert.Contains("The credential was rotated but could not be stored", console.Output, StringComparison.Ordinal);
         Assert.Contains(sink.Snapshots, snapshot =>
             snapshot.Error?.Code == "rotated_credential_not_saved" &&
-            snapshot.Error.Operation == "credential_rotation");
+            snapshot.Error.Operation == "credential_rotation" &&
+            snapshot.Error.Severity == TerminalClientErrorSeverity.Blocking);
+    }
+
+    [Fact]
+    public async Task UncertainCredentialRotationFailureBlocksTheClient()
+    {
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("old-token"),
+            _ => JsonResponse(HttpStatusCode.InternalServerError, string.Empty),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "/admin rotate"],
+            "credential-a",
+            "rotation-challenge");
+        var application = CreateApplication(httpClient, console, stateSink: sink);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains(sink.Snapshots, snapshot =>
+            snapshot.Lifecycle == TerminalClientLifecycle.Blocked &&
+            snapshot.Error?.Operation == "credential_rotation" &&
+            snapshot.Error.Severity == TerminalClientErrorSeverity.Blocking &&
+            snapshot.Error.IsUncertain);
     }
 
     [Fact]
@@ -980,10 +1008,11 @@ public sealed class TerminalClientApplicationTests
 
         var exitCode = await application.RunAsync(CancellationToken.None);
 
-        Assert.Equal(0, exitCode);
+        Assert.Equal(1, exitCode);
         Assert.Contains(sink.Snapshots, snapshot =>
             snapshot.Error?.Code == "revoked_credential_not_deleted" &&
-            snapshot.Error.Operation == "credential_revocation");
+            snapshot.Error.Operation == "credential_revocation" &&
+            snapshot.Error.Severity == TerminalClientErrorSeverity.Blocking);
     }
 
     [Fact]
@@ -1011,7 +1040,36 @@ public sealed class TerminalClientApplicationTests
         Assert.Contains(sink.Snapshots, snapshot =>
             snapshot.Error?.Code == "last_conversation_not_saved" &&
             snapshot.Error.Operation == "conversation_preference" &&
-            snapshot.Error.Category == TerminalClientErrorCategory.Recoverable);
+            snapshot.Error.Severity == TerminalClientErrorSeverity.Recoverable);
+        Assert.Equal("last_conversation_not_saved", sink.Snapshots[^1].Error?.Code);
+    }
+
+    [Fact]
+    public async Task FailedConversationPreferencePersistenceIsNotOverwrittenByATurnError()
+    {
+        var conversationId = Guid.Parse("6aef2778-c618-4afd-a1c2-8d0dd7ae5b3a");
+        var store = new TestCredentialStore
+        {
+            FailAfterFirstSave = true,
+        };
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(
+                HttpStatusCode.GatewayTimeout,
+                FailedConversationResponseJson(conversationId, "provider_timeout")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["client-a", "Message", null], "credential-a");
+        var application = CreateApplication(httpClient, console, store, sink);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("last_conversation_not_saved", sink.Snapshots[^1].Error?.Code);
+        Assert.Contains("Conversation error: provider_timeout", console.Output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1059,7 +1117,7 @@ public sealed class TerminalClientApplicationTests
         ]);
         using var httpClient = CreateHttpClient(handler);
         using var console = new ScriptedTerminalConsole(["client-a", "Message", "/exit"], "credential-a");
-        var application = CreateApplication(httpClient, console, stateSink: sink);
+        var application = CreateApplication(httpClient, console, new TestCredentialStore(), sink);
 
         var exitCode = await application.RunAsync(CancellationToken.None);
 
@@ -1093,7 +1151,7 @@ public sealed class TerminalClientApplicationTests
         var uncertain = Assert.Single(
             sink.Snapshots,
             snapshot => snapshot.Lifecycle == TerminalClientLifecycle.Ready &&
-                snapshot.Error?.Category == TerminalClientErrorCategory.Uncertain);
+                snapshot.Error?.IsUncertain == true);
         Assert.Equal("turn", uncertain.Error!.Operation);
         Assert.Equal(TerminalClientLifecycle.Ready, uncertain.Lifecycle);
         Assert.Equal(TerminalClientActivity.None, uncertain.Activity);
@@ -1115,13 +1173,13 @@ public sealed class TerminalClientApplicationTests
         using var console = new ScriptedTerminalConsole(
             ["client-a", "First message", "Second message", null],
             "credential-a");
-        var application = CreateApplication(httpClient, console, stateSink: sink);
+        var application = CreateApplication(httpClient, console, new TestCredentialStore(), sink);
 
         var exitCode = await application.RunAsync(CancellationToken.None);
 
         Assert.Equal(0, exitCode);
         var errorIndex = sink.Snapshots.FindIndex(snapshot =>
-            snapshot.Error?.Category == TerminalClientErrorCategory.Recoverable &&
+            snapshot.Error?.Severity == TerminalClientErrorSeverity.Recoverable &&
             snapshot.Error.Operation == "turn");
         Assert.True(errorIndex >= 0);
         Assert.Contains(
@@ -1156,7 +1214,7 @@ public sealed class TerminalClientApplicationTests
             sink.Snapshots,
             snapshot => snapshot.Lifecycle == TerminalClientLifecycle.Ready &&
                 snapshot.Error?.Operation == "resume");
-        Assert.Equal(TerminalClientErrorCategory.Recoverable, error.Error!.Category);
+        Assert.Equal(TerminalClientErrorSeverity.Recoverable, error.Error!.Severity);
     }
 
     [Fact]
@@ -1176,7 +1234,7 @@ public sealed class TerminalClientApplicationTests
         Assert.Equal(1, exitCode);
         var blocked = Assert.Single(sink.Snapshots, snapshot =>
             snapshot.Lifecycle == TerminalClientLifecycle.Blocked);
-        Assert.Equal(TerminalClientErrorCategory.Blocking, blocked.Error!.Category);
+        Assert.Equal(TerminalClientErrorSeverity.Blocking, blocked.Error!.Severity);
         Assert.Equal(TerminalClientLifecycle.Closing, sink.Snapshots[^2].Lifecycle);
         Assert.Equal(TerminalClientLifecycle.Closed, sink.Snapshots[^1].Lifecycle);
     }
@@ -1206,7 +1264,7 @@ public sealed class TerminalClientApplicationTests
             sink.Snapshots,
             snapshot => snapshot.Lifecycle == TerminalClientLifecycle.Ready &&
                 snapshot.Error?.Operation == "completion");
-        Assert.Equal(TerminalClientErrorCategory.Uncertain, error.Error!.Category);
+        Assert.True(error.Error!.IsUncertain);
         Assert.Equal(TerminalClientActivity.None, error.Activity);
     }
 
@@ -1237,10 +1295,10 @@ public sealed class TerminalClientApplicationTests
 
         Assert.Equal(2, exitCode);
         Assert.Contains(sink.Snapshots, snapshot =>
-            snapshot.Error?.Category == TerminalClientErrorCategory.Uncertain &&
+            snapshot.Error?.IsUncertain == true &&
             snapshot.Error!.Operation == "completion");
         var finalError = Assert.IsType<TerminalClientOperationError>(sink.Snapshots[^1].Error);
-        Assert.Equal(TerminalClientErrorCategory.Uncertain, finalError.Category);
+        Assert.True(finalError.IsUncertain);
         Assert.Equal("completion", finalError.Operation);
     }
 
@@ -1259,11 +1317,11 @@ public sealed class TerminalClientApplicationTests
 
         var exitCode = await application.RunAsync(CancellationToken.None);
 
-        Assert.Equal(2, exitCode);
+        Assert.Equal(1, exitCode);
         var pairingError = Assert.Single(sink.Snapshots, snapshot =>
             snapshot.Lifecycle == TerminalClientLifecycle.Blocked &&
             snapshot.Error?.Operation == "pairing");
-        Assert.Equal(TerminalClientErrorCategory.Blocking, pairingError.Error!.Category);
+        Assert.Equal(TerminalClientErrorSeverity.Blocking, pairingError.Error!.Severity);
     }
 
     [Fact]
