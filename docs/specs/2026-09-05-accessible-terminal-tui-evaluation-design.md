@@ -43,7 +43,7 @@ The evaluation compares no more than these three approaches:
    with interactive input. Spectre.Console's live display documentation explicitly
    says it is not thread-safe and does not support use with other interactive
    components, making this a likely rejection for this client shape.
-2. **Terminal.Gui.** Prototype a conventional event-loop UI with a status region,
+2. **Terminal.Gui v2.** Prototype a conventional event-loop UI with a status region,
    confirmation panel, history area, and one-line input. It must demonstrate resize
    handling, event-loop-safe snapshot delivery, `Ctrl+C` shutdown, and deterministic
    rendering through a fake driver or equivalent test seam.
@@ -79,11 +79,16 @@ implement the minimal custom renderer only if it passes the same criteria; other
 the increment stops with a documented technical blocker rather than shipping a TUI
 that cannot be used safely.
 
-The expected preference is Terminal.Gui, subject to prototype evidence. Spectre.Console
+The expected preference is Terminal.Gui v2, subject to prototype evidence. Spectre.Console
 is retained for evaluation because it has an active MIT-licensed package and terminal
 capability detection, but its documented live-display interaction restriction is a
-direct risk. Terminal.Gui is MIT-licensed and offers a terminal UI event loop, but its
-stable/next-major maintenance position must be verified at the time of the decision.
+direct risk. Terminal.Gui v2 is MIT-licensed and offers the required event loop. The
+evaluation must record one concrete stable version and its target-framework requirements.
+At the time of this design, the latest stable package is 2.4.17, targets .NET 10, and
+therefore is not directly compatible with this client's current `net8.0` target. The
+increment must not silently upgrade the client framework: it must either select a
+maintained stable v2 package compatible with `net8.0`, or obtain explicit approval for
+the framework change. An unlisted historical package is not an acceptable workaround.
 
 ## Startup and fallback policy
 
@@ -97,8 +102,10 @@ The composition root chooses the presenter before `TerminalClientApplication` st
 4. All other environments select the existing textual console and use no ANSI control
    sequences.
 
-This is capability selection, not error recovery. The application must not start a
-TUI, fail, and then try to switch renderers after stateful interaction has begun.
+This is capability selection, not error recovery. If TUI initialization fails before
+`TerminalClientApplication` starts, the composition root may select the textual
+presenter. The application must not start a TUI, fail, and then switch renderers after
+stateful interaction has begun.
 
 ## Architecture
 
@@ -111,14 +118,50 @@ an adapter composed from three bounded concerns:
   their rendering on the TUI event loop, and maps only safe snapshot fields to visible
   text. It never receives credentials, tokens, challenges, complete messages, prompts,
   or tool arguments.
-- **Line-input console adapter:** obtains a line from the TUI input control and passes
-  it through the existing `ITerminalConsole`/application command path. It does not
-  parse or execute commands itself.
+- **Terminal console adapter:** obtains normal and secret input from the TUI controls
+  and passes them through the existing `ITerminalConsole`/application command path. It
+  does not parse or execute commands itself.
+- **Structured terminal-output contract:** distinguishes public conversation entries,
+  safe operational messages, prompts, and safe errors before either presentation
+  formats them. The textual presenter preserves today's rendering of those elements;
+  the TUI maps them to its own regions. The TUI must never infer their type by parsing
+  strings passed to `Write` or `WriteLine`.
 
-Public history is supplied through the existing terminal-client conversation flow. The
-TUI owns only the in-memory visual transcript needed for this session. It must never
-display hidden system prompts, internal context, administrative challenges, tokens, or
-sensitive tool arguments/results.
+### Threading and dispatch model
+
+The Terminal.Gui event loop is the sole owner of all Terminal.Gui controls. The
+composition root runs `TerminalClientApplication` outside that UI thread. A blocking
+`ITerminalConsole.ReadLine()` or `ReadSecret()` may block the application worker, but
+never the event loop.
+
+The console adapter uses request/response queues or an equivalent synchronization
+mechanism: the worker publishes an input request and blocks waiting for its completion;
+the UI thread renders the appropriate input mode and completes that request only when
+the user submits, cancels, or reaches EOF. State-sink `OnStateChanged()` never touches
+controls. It atomically records the snapshot, schedules a UI-loop callback, and returns
+immediately.
+
+Ordinary accumulated snapshots are coalesced to the newest complete snapshot. A
+snapshot that introduces or changes a pending confirmation or safe error is preserved
+until the UI loop has applied it, then the loop applies the newest current snapshot.
+This bounds the queue without hiding consent or error transitions. The renderer never
+creates a state transition; it always renders the latest snapshot supplied by
+`TerminalClientApplication`.
+
+### Secret input
+
+`ReadSecret()` is a first-class console-adapter mode for manual credentials,
+administrative pairing challenges, credential rotation, and revocation. The UI marks
+the request as secret, displays no value in the transcript, uses masked or blank input,
+and clears both the control and its backing buffer immediately after submission or
+cancellation. The value is returned only to the blocked application request; it is not
+published to a state sink, structured output, diagnostics, or presentation history.
+Cancellation and EOF complete the request with the same empty/cancel semantics the
+current textual application already handles.
+
+The TUI owns only the in-memory visual transcript needed for this session. It must
+never display hidden system prompts, internal context, administrative challenges,
+tokens, or sensitive tool arguments/results.
 
 Future non-sensitive keyboard navigation can be added behind a separate input-routing
 boundary. This increment does not register global shortcuts.
@@ -144,6 +187,11 @@ than color or movement alone.
 the terminal in a `finally` path even when a captured cancellation or application error
 occurs.
 
+The current confirmation contract offers the tool name and expiry, but not a safe
+human-readable effect summary. It is therefore not claimed to provide fully informed
+consent for every tool action. A future authorization increment must define a reviewed,
+safe effect-summary contract; raw tool arguments remain out of scope for this TUI.
+
 ## Tests and acceptance evidence
 
 Tests will cover:
@@ -157,7 +205,15 @@ Tests will cover:
 - Explicit approval/rejection only, including a proof that non-sensitive future input
   routing cannot resolve a confirmation in this increment.
 - Resize and asynchronous snapshot dispatch through a fake terminal/TUI driver.
+- A worker blocked in normal or secret input while the UI loop continues to process
+  resize and asynchronous snapshots; snapshot coalescing that preserves confirmation
+  and error transitions.
+- Structured-output routing proving that the TUI does not parse text produced by
+  `Write` or `WriteLine`, and that secret input never reaches the transcript or state
+  sink.
 - `Ctrl+C`, EOF, and `/exit` terminal restoration and clean shutdown.
+- A documented manual Windows Terminal + PowerShell run covering resize, `Ctrl+C`,
+  pasted input, Spanish characters, and cursor restoration.
 - The chosen prototype's dependency/version/license evidence and the rejected
   alternatives' concrete failure against the criteria.
 
