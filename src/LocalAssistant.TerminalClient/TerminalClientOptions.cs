@@ -1,6 +1,6 @@
 namespace LocalAssistant.TerminalClient;
 
-public sealed record TerminalClientOptions(Uri BaseUri, string Provider, string Scenario)
+public sealed record TerminalClientOptions(Uri BaseUri, string Provider, string Scenario, bool ForcePlain = false)
 {
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(4);
 
@@ -11,6 +11,7 @@ public sealed record TerminalClientOptions(Uri BaseUri, string Provider, string 
         var baseUrl = "http://localhost:5100";
         var provider = "ollama";
         var scenario = "direct";
+        var forcePlain = false;
 
         foreach (var argument in args)
         {
@@ -29,6 +30,12 @@ public sealed record TerminalClientOptions(Uri BaseUri, string Provider, string 
             if (argument.StartsWith("--scenario=", StringComparison.Ordinal))
             {
                 scenario = argument["--scenario=".Length..];
+                continue;
+            }
+
+            if (argument.Equals("--plain", StringComparison.Ordinal))
+            {
+                forcePlain = true;
                 continue;
             }
 
@@ -57,6 +64,7 @@ public sealed record TerminalClientOptions(Uri BaseUri, string Provider, string 
         return new(
             new Uri(baseUri.AbsoluteUri.TrimEnd('/') + "/", UriKind.Absolute),
             normalizedProvider,
-            scenario.Trim());
+            scenario.Trim(),
+            forcePlain);
     }
 }

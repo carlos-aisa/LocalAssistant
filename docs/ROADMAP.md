@@ -273,11 +273,13 @@ La fase se entrega mediante incrementos demostrables y en este orden:
    bloqueantes. Las transiciones, cierre y recuperación se harán explícitos. Detener
    la reproducción es local; cancelar un turno HTTP no se presentará como cancelación
    fiable mientras falten identidad de operación e idempotencia de turno.
-5. **TUI accesible:** historial visual, entrada, estado de servidor, proveedor y
+5. [x] **TUI accesible:** historial visual, entrada, estado de servidor, proveedor y
    conversación, confirmación de herramientas y estado del reproductor. La animación
    representará estados reales, respetará movimiento reducido y degradará a texto
    plano en terminal no interactivo, redireccionado o redimensionado. Spectre.Console
-   es solo un candidato por evaluar; no habrá ondas de audio simuladas.
+   fue descartado tras evaluación; se adopta un renderizador mínimo propio sin ondas
+   de audio simuladas. `PlayingVoice` sigue inactivo hasta el incremento de salida
+   hablada.
 6. **Salida hablada intercambiable simulada:** contratos de síntesis, reproducción y
    coordinación de salida, preferencias y pruebas deterministas sin un motor real.
 7. **TTS real tras una evaluación acotada:** voz, velocidad y volumen, con comandos

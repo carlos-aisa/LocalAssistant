@@ -79,16 +79,12 @@ implement the minimal custom renderer only if it passes the same criteria; other
 the increment stops with a documented technical blocker rather than shipping a TUI
 that cannot be used safely.
 
-The expected preference is Terminal.Gui v2, subject to prototype evidence. Spectre.Console
-is retained for evaluation because it has an active MIT-licensed package and terminal
-capability detection, but its documented live-display interaction restriction is a
-direct risk. Terminal.Gui v2 is MIT-licensed and offers the required event loop. The
-evaluation must record one concrete stable version and its target-framework requirements.
-At the time of this design, the latest stable package is 2.4.17, targets .NET 10, and
-therefore is not directly compatible with this client's current `net8.0` target. The
-increment must not silently upgrade the client framework: it must either select a
-maintained stable v2 package compatible with `net8.0`, or obtain explicit approval for
-the framework change. An unlisted historical package is not an acceptable workaround.
+The evaluation selected the minimal owned renderer. Spectre.Console was rejected because
+its documented live-display interaction restriction is a direct risk. Terminal.Gui v2
+was rejected because the available stable packages tested require .NET 10 while this
+client remains on `net8.0`. The increment does not silently upgrade the framework or
+adopt an unlisted historical package. The exact evidence and trade-offs are recorded in
+`docs/evaluations/2026-09-05-terminal-tui-evaluation.md`.
 
 ## Startup and fallback policy
 
