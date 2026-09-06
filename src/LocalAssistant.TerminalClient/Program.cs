@@ -21,7 +21,12 @@ internal static class TerminalClientProgram
             };
             try
             {
-                if (TerminalPresentationSelector.UseTui(options, new SystemTerminalPresentationCapabilities()))
+                var driver = new SystemTerminalDriver();
+                var presentation = TerminalPresentationSelector.Select(
+                    options,
+                    new SystemTerminalPresentationCapabilities(),
+                    driver);
+                if (presentation.UsesTui)
                 {
                     var console = new TerminalClientTuiConsoleAdapter();
                     var stateSink = new TerminalClientTuiStateSink();
@@ -31,7 +36,7 @@ internal static class TerminalClientProgram
                         options,
                         new DpapiPrivateClientCredentialStore(),
                         stateSink);
-                    return await new TerminalClientTuiHost(console, stateSink, new SystemTerminalDriver())
+                    return await new TerminalClientTuiHost(console, stateSink, driver)
                         .RunAsync(tuiApplication, cancellationSource.Token);
                 }
 

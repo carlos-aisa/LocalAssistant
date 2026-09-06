@@ -22,20 +22,22 @@ dependencia cuando el framework del cliente cambie con una decisión explícita.
 
 ## Comprobación manual pendiente de cierre
 
-Las pruebas automáticas del driver falso cubren cancelación, EOF, resize, viewport,
-scroll, frames prioritarios y normalización. Sigue pendiente la comprobación manual en
-Windows Terminal + PowerShell, con una API local configurada y una credencial de
-prueba:
+Las pruebas automáticas del driver falso cubren cierre persistente del canal de entrada,
+EOF, `Ctrl+D`, `Ctrl+Z`, resize, viewport, scroll, frames prioritarios, normalización y
+límites del transcript. Sigue pendiente la comprobación manual en Windows Terminal +
+PowerShell, con una API local configurada y una credencial de prueba:
 
-1. Ejecutar el cliente sin `--plain`, reducir y ampliar la ventana, y comprobar que el
-   estado, transcript e input siguen siendo utilizables.
+1. Ejecutar el cliente sin `--plain`, reducir la ventana por debajo de 40×8 y ampliarla,
+   y comprobar que la vista compacta conserva input y condición operativa, y que el
+   estado, transcript e input vuelven a ser utilizables al recuperar tamaño.
 2. Pegar una frase con `ñ`, tildes y signos de apertura; verificar que llega como una
    línea completa y que el transcript conserva los caracteres.
 3. Solicitar una tool que requiera confirmación y comprobar que solo `approve` o
    `reject` escritos la resuelven.
 4. Abrir pairing, rotación o revocación y comprobar que el valor secreto aparece
    enmascarado y no queda en el transcript tras enviar o cancelar.
-5. Pulsar `Ctrl+C`, y en otra ejecución usar `/exit`; comprobar que se restaura el
-   cursor y la consola acepta el siguiente comando de PowerShell.
+5. Pulsar `Ctrl+C`, `Ctrl+Z` con la entrada vacía y, en otra ejecución, usar `/exit`;
+   comprobar que se restaura el cursor y la consola acepta el siguiente comando de
+   PowerShell.
 6. Ejecutar con `--plain` y con salida redirigida; comprobar que se conserva el flujo
    textual y que el archivo resultante no contiene secuencias ANSI.

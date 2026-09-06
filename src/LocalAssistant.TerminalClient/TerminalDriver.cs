@@ -9,6 +9,8 @@ internal sealed record TerminalInputEvent(ConsoleKeyInfo? Key, bool IsEndOfInput
 
 internal interface ITerminalDriver
 {
+    bool TryInitialize();
+
     TerminalSize GetSize();
 
     TerminalInputEvent? TryReadInput();
@@ -20,6 +22,34 @@ internal interface ITerminalDriver
 
 internal sealed class SystemTerminalDriver : ITerminalDriver
 {
+    public bool TryInitialize()
+    {
+        try
+        {
+            _ = Console.WindowWidth;
+            _ = Console.WindowHeight;
+            _ = Console.KeyAvailable;
+            if (OperatingSystem.IsWindows())
+            {
+                var cursorVisible = Console.CursorVisible;
+                Console.CursorVisible = cursorVisible;
+            }
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+        catch (PlatformNotSupportedException)
+        {
+            return false;
+        }
+    }
+
     public TerminalSize GetSize()
     {
         try
