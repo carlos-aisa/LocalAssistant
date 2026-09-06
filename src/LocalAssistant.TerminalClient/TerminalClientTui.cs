@@ -163,6 +163,7 @@ internal sealed class TerminalClientTuiHost
     private readonly StringBuilder _input = new();
     private TerminalClientStateSnapshot _snapshot = TerminalClientStateSnapshot.Initial;
     private TerminalSize? _lastSize;
+    private TerminalInputRequest? _renderedInputRequest;
     private int _scrollOffset;
     private int _clearInputRequested;
     private bool _dirty = true;
@@ -198,6 +199,7 @@ internal sealed class TerminalClientTuiHost
                 DrainUpdates();
                 ProcessAvailableInput();
                 DetectResize();
+                DetectInputRequestChange();
                 if (_dirty)
                 {
                     Render();
@@ -208,6 +210,7 @@ internal sealed class TerminalClientTuiHost
 
             DrainUpdates();
             DetectResize();
+            DetectInputRequestChange();
             if (_dirty)
             {
                 Render();
@@ -354,6 +357,20 @@ internal sealed class TerminalClientTuiHost
             _lastSize = size;
             _dirty = true;
         }
+    }
+
+    private void DetectInputRequestChange()
+    {
+        // A new pending prompt must be painted even when nothing else changed (consecutive
+        // reads such as client id then credential). Clearing a prompt does not force a frame:
+        // the application either publishes the next prompt or a state transition follows.
+        _console.TryGetInputRequest(out var request);
+        if (request is not null && !ReferenceEquals(request, _renderedInputRequest))
+        {
+            _dirty = true;
+        }
+
+        _renderedInputRequest = request;
     }
 
     private void Render()

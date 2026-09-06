@@ -151,6 +151,31 @@ public sealed class TerminalClientApplicationTests
     }
 
     [Fact]
+    public async Task CancelResolvesThePendingConfirmationAsARejection()
+    {
+        var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.Accepted, ConfirmationResponseJson(conversationId)),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Reminder rejected")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "Create a reminder", "cancel", null],
+            "credential-a");
+        var application = CreateApplication(httpClient, console);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(4, handler.Requests.Count);
+        Assert.Contains("tool-confirmations", handler.Requests[3].Path, StringComparison.Ordinal);
+        Assert.False(handler.Requests[3].Body.RootElement.GetProperty("approved").GetBoolean());
+    }
+
+    [Fact]
     public async Task StoredCredentialRejectedByTheServerOffersRecoveryAndPersistsTheReplacement()
     {
         var store = new TestCredentialStore(new PrivateClientCredential("stored-client", "stored-credential"));

@@ -282,6 +282,36 @@ public sealed class TerminalClientTuiTests
     }
 
     [Fact]
+    public async Task ConsecutiveInputPromptsRenderWithoutRequiringAKeystroke()
+    {
+        var console = new TerminalClientTuiConsoleAdapter();
+        var driver = new FakeTerminalDriver(new TerminalSize(80, 20));
+        var host = new TerminalClientTuiHost(console, new TerminalClientTuiStateSink(), driver);
+
+        var runTask = host.RunAsync(async _ =>
+        {
+            await Task.Run(() => console.ReadLine(new TerminalInputRequest(
+                TerminalInputKind.Line,
+                "Private client ID (leave empty to pair): ")));
+            await Task.Run(() => console.ReadSecret(new TerminalInputRequest(
+                TerminalInputKind.Secret,
+                "Private client credential: ")));
+            return 0;
+        }, CancellationToken.None);
+
+        await WaitForFrameContainingAsync(driver, "Private client ID (leave empty to pair):");
+
+        // Advance to the next prompt without a keystroke, state snapshot, or transcript write:
+        // only the pending input request changes.
+        console.CompleteInput("client-123");
+
+        await WaitForFrameContainingAsync(driver, "Private client credential:");
+
+        console.CompleteInput("secret-value");
+        Assert.Equal(0, await runTask.WaitAsync(TimeSpan.FromSeconds(2)));
+    }
+
+    [Fact]
     public async Task HostRestoresTheTerminalExactlyOnceWhenTheOperationThrows()
     {
         var console = new TerminalClientTuiConsoleAdapter();
@@ -494,6 +524,21 @@ public sealed class TerminalClientTuiTests
         }
 
         throw new TimeoutException("The expected TUI frames were not rendered.");
+    }
+
+    private static async Task WaitForFrameContainingAsync(FakeTerminalDriver driver, string fragment)
+    {
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            if (driver.Frames.Any(frame => frame.Any(line => line.Contains(fragment, StringComparison.Ordinal))))
+            {
+                return;
+            }
+
+            await Task.Delay(10);
+        }
+
+        throw new TimeoutException($"No rendered TUI frame contained '{fragment}'.");
     }
 
     private static async Task WaitForInputRequestAsync(

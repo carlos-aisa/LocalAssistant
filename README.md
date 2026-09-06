@@ -555,7 +555,8 @@ La TUI mínima se activa solo con entrada y salida interactivas, un terminal com
 de al menos 40×8 y una comprobación previa de teclado y consola. `--plain`, redirección,
 un terminal no compatible o demasiado pequeño conservan el cliente textual sin
 secuencias ANSI. Una vez iniciado el cliente no cambia de renderer. La TUI usa los
-mismos comandos escritos; una confirmación requiere escribir `approve` o `reject`.
+mismos comandos escritos; una confirmación requiere escribir `approve` o `reject`
+(`cancel` se resuelve como un rechazo para no dejar la conversación bloqueada).
 
 La entrada de credenciales y desafíos administrativos se enmascara y no se añade al
 transcript, snapshots operacionales ni logs. La confirmación aún no incluye un resumen

@@ -11,6 +11,16 @@ La implementación conserva `TerminalClientApplication` como única autoridad de
 comandos y estado, mantiene el cliente en `net8.0` y no cambia contratos HTTP,
 autenticación, autorización ni OpenAPI.
 
+## Estado
+
+- Incremento 1 — **finalizado**.
+- Incremento 2 — **finalizado** (2026-09-07). Diseño y plan de detalle en
+  `docs/specs/2026-09-06-terminal-tui-compatibility-preflight-design.md` y
+  `docs/plans/2026-09-06-terminal-tui-compatibility-preflight-implementation-plan.md`.
+  Verificación manual registrada en
+  `docs/evaluations/2026-09-05-terminal-tui-evaluation.md`.
+- Incrementos 3, 4 y 5 — pendientes. El punto 5 de `ROADMAP.md` permanece desmarcado.
+
 ## Supuestos de implementación
 
 - El canal de entrada distingue entre completar la solicitud actual y cerrarse de
