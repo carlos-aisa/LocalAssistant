@@ -22,7 +22,9 @@ dependencia cuando el framework del cliente cambie con una decisión explícita.
 
 ## Comprobación manual pendiente de cierre
 
-En Windows Terminal + PowerShell, con una API local configurada y una credencial de
+Las pruebas automáticas del driver falso cubren cancelación, EOF, resize, viewport,
+scroll, frames prioritarios y normalización. Sigue pendiente la comprobación manual en
+Windows Terminal + PowerShell, con una API local configurada y una credencial de
 prueba:
 
 1. Ejecutar el cliente sin `--plain`, reducir y ampliar la ventana, y comprobar que el

@@ -85,9 +85,9 @@ public sealed class SystemTerminalConsole : IStructuredTerminalConsole
         return ReadSecret();
     }
 
-    public void Write(string value) => Console.Write(value);
+    public void Write(string value) => Console.Write(TerminalTextSanitizer.Normalize(value));
 
-    public void WriteLine(string value) => Console.WriteLine(value);
+    public void WriteLine(string value) => Console.WriteLine(TerminalTextSanitizer.Normalize(value));
 
     void IStructuredTerminalConsole.WriteConversationMessage(string role, string content) =>
         WriteLine($"{role}: {content}");

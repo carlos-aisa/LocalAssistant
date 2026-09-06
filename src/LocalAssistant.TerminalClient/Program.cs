@@ -31,7 +31,7 @@ internal static class TerminalClientProgram
                         options,
                         new DpapiPrivateClientCredentialStore(),
                         stateSink);
-                    return await new TerminalClientTuiHost(console, stateSink)
+                    return await new TerminalClientTuiHost(console, stateSink, new SystemTerminalDriver())
                         .RunAsync(tuiApplication, cancellationSource.Token);
                 }
 
