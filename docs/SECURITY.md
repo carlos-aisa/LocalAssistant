@@ -817,6 +817,13 @@ ni diagnósticos. Las confirmaciones requieren `approve` o `reject` escritos; el
 no afirma todavía que el nombre de herramienta y la caducidad sean un resumen completo
 del efecto autorizado.
 
+Al cerrar la TUI por cancelación, EOF, `Ctrl+D`, `Ctrl+Z` o salida controlada, el buffer
+visual de entrada se descarta antes de restaurar el terminal. Esta limpieza es de mejor
+esfuerzo en memoria administrada: reduce la retención del buffer del renderer, pero no
+promete borrar físicamente copias de `string` necesarias para procesar una credencial o
+desafío. El transcript visual está acotado y solo conserva contenido público reciente;
+no recibe secretos ni modifica el historial persistido.
+
 ## Antes de exponer la API
 
 Será necesario añadir una identidad y autorización aptas para el despliegue, HTTPS,

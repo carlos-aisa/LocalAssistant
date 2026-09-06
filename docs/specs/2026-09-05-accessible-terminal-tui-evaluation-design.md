@@ -216,3 +216,10 @@ Tests will cover:
 The decision record, implemented selection, source references, and exact prototype
 results are added to the accompanying implementation plan and a concise ADR only if
 the adopted UI dependency constitutes a durable architecture decision.
+
+## Corrección posterior
+
+La revisión posterior a las PR 67 y 68 identificó casos límite adicionales de
+cancelación, limpieza de secretos, viewport, compatibilidad y volumen del transcript.
+La decisión correctiva vigente se define en
+[`2026-09-06-terminal-tui-gap-corrections-design.md`](2026-09-06-terminal-tui-gap-corrections-design.md).

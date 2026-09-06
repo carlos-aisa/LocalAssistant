@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Text;
 
 namespace LocalAssistant.TerminalClient;
@@ -36,6 +37,7 @@ internal sealed class TerminalClientTuiConsoleAdapter : IStructuredTerminalConso
     private TaskCompletionSource<bool> _inputPublished = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private TaskCompletionSource<string?>? _inputCompletion;
     private TerminalInputRequest? _inputRequest;
+    private bool _inputClosed;
 
     public string? ReadLine() => RequestInput(new TerminalInputRequest(TerminalInputKind.Line, string.Empty));
 
@@ -90,6 +92,26 @@ internal sealed class TerminalClientTuiConsoleAdapter : IStructuredTerminalConso
 
     public void CancelInput() => CompleteInput(null);
 
+    public void CloseInput()
+    {
+        TaskCompletionSource<string?>? completion;
+        lock (_inputLock)
+        {
+            if (_inputClosed)
+            {
+                return;
+            }
+
+            _inputClosed = true;
+            completion = _inputCompletion;
+            _inputCompletion = null;
+            _inputRequest = null;
+            _inputPublished.TrySetResult(true);
+        }
+
+        completion?.TrySetResult(null);
+    }
+
     public IReadOnlyList<string> DrainTranscript()
     {
         var entries = new List<string>();
@@ -107,6 +129,11 @@ internal sealed class TerminalClientTuiConsoleAdapter : IStructuredTerminalConso
         var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_inputLock)
         {
+            if (_inputClosed)
+            {
+                return null;
+            }
+
             _inputRequest = request;
             _inputCompletion = completion;
             _inputPublished.TrySetResult(true);
@@ -126,15 +153,19 @@ internal sealed class TerminalClientTuiConsoleAdapter : IStructuredTerminalConso
 
 internal sealed class TerminalClientTuiHost
 {
-    private const int MaximumTranscriptEntries = 100;
+    internal const int MinimumWidth = 40;
+    internal const int MinimumHeight = 8;
+
     private readonly TerminalClientTuiConsoleAdapter _console;
     private readonly TerminalClientTuiStateSink _stateSink;
     private readonly ITerminalDriver _driver;
-    private readonly List<string> _transcript = [];
+    private readonly TerminalClientTuiTranscript _transcript = new();
     private readonly StringBuilder _input = new();
     private TerminalClientStateSnapshot _snapshot = TerminalClientStateSnapshot.Initial;
     private TerminalSize? _lastSize;
+    private TerminalInputRequest? _renderedInputRequest;
     private int _scrollOffset;
+    private int _clearInputRequested;
     private bool _dirty = true;
 
     public TerminalClientTuiHost(
@@ -158,8 +189,9 @@ internal sealed class TerminalClientTuiHost
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(operation);
-        using var cancellationRegistration = cancellationToken.Register(_console.CancelInput);
+        using var cancellationRegistration = cancellationToken.Register(RequestTerminalClose);
         var applicationTask = Task.Run(() => operation(cancellationToken), CancellationToken.None);
+
         try
         {
             while (!applicationTask.IsCompleted)
@@ -167,6 +199,7 @@ internal sealed class TerminalClientTuiHost
                 DrainUpdates();
                 ProcessAvailableInput();
                 DetectResize();
+                DetectInputRequestChange();
                 if (_dirty)
                 {
                     Render();
@@ -177,6 +210,7 @@ internal sealed class TerminalClientTuiHost
 
             DrainUpdates();
             DetectResize();
+            DetectInputRequestChange();
             if (_dirty)
             {
                 Render();
@@ -186,13 +220,26 @@ internal sealed class TerminalClientTuiHost
         }
         finally
         {
-            _console.CancelInput();
+            _console.CloseInput();
+            ClearInputBuffer();
             _driver.Restore();
         }
     }
 
+    private void RequestTerminalClose()
+    {
+        _console.CloseInput();
+        Interlocked.Exchange(ref _clearInputRequested, 1);
+        _dirty = true;
+    }
+
     private void DrainUpdates()
     {
+        if (Interlocked.Exchange(ref _clearInputRequested, 0) == 1)
+        {
+            ClearInputBuffer();
+        }
+
         foreach (var snapshot in _stateSink.DrainPriority())
         {
             _snapshot = snapshot;
@@ -209,11 +256,6 @@ internal sealed class TerminalClientTuiHost
         foreach (var entry in _console.DrainTranscript())
         {
             _transcript.Add(entry);
-            if (_transcript.Count > MaximumTranscriptEntries)
-            {
-                _transcript.RemoveAt(0);
-            }
-
             _scrollOffset = 0;
             _dirty = true;
         }
@@ -231,9 +273,7 @@ internal sealed class TerminalClientTuiHost
 
             if (input.IsEndOfInput)
             {
-                _input.Clear();
-                _console.CancelInput();
-                _dirty = true;
+                RequestTerminalClose();
                 return;
             }
 
@@ -260,17 +300,19 @@ internal sealed class TerminalClientTuiHost
             return;
         }
 
-        if ((key.Modifiers & ConsoleModifiers.Control) != 0 && key.Key == ConsoleKey.D)
+        if (IsEndOfInputKey(key))
         {
-            _input.Clear();
-            _console.CancelInput();
-            _dirty = true;
+            if (_input.Length == 0)
+            {
+                RequestTerminalClose();
+            }
+
             return;
         }
 
         if (key.Key == ConsoleKey.Escape)
         {
-            _input.Clear();
+            ClearInputBuffer();
             _console.CompleteInput(string.Empty);
             _dirty = true;
             return;
@@ -279,7 +321,7 @@ internal sealed class TerminalClientTuiHost
         if (key.Key == ConsoleKey.Enter)
         {
             var value = _input.ToString();
-            _input.Clear();
+            ClearInputBuffer();
             _console.CompleteInput(value);
             _dirty = true;
             return;
@@ -303,6 +345,10 @@ internal sealed class TerminalClientTuiHost
         }
     }
 
+    private static bool IsEndOfInputKey(ConsoleKeyInfo key) =>
+        (key.Modifiers & ConsoleModifiers.Control) != 0 &&
+        key.Key is ConsoleKey.D or ConsoleKey.Z;
+
     private void DetectResize()
     {
         var size = _driver.GetSize();
@@ -313,119 +359,151 @@ internal sealed class TerminalClientTuiHost
         }
     }
 
+    private void DetectInputRequestChange()
+    {
+        // A new pending prompt must be painted even when nothing else changed (consecutive
+        // reads such as client id then credential). Clearing a prompt does not force a frame:
+        // the application either publishes the next prompt or a state transition follows.
+        _console.TryGetInputRequest(out var request);
+        if (request is not null && !ReferenceEquals(request, _renderedInputRequest))
+        {
+            _dirty = true;
+        }
+
+        _renderedInputRequest = request;
+    }
+
     private void Render()
     {
         _dirty = false;
         var size = _lastSize ?? _driver.GetSize();
         var width = Math.Max(1, size.Width);
         var height = Math.Max(1, size.Height);
-        var statusLines = CreateStatusLines(width, height);
-        var footerLines = CreateFooterLines(width, height);
-        var transcriptHeight = Math.Max(0, height - statusLines.Count - footerLines.Count);
-        var lines = new List<string>(height);
+        var lines = width < MinimumWidth || height < MinimumHeight
+            ? CreateCompactFrame(width, height)
+            : CreateFrame(width, height);
 
-        lines.AddRange(statusLines);
-        var transcriptLines = CreateTranscriptLines(width);
-        var visibleTranscript = transcriptLines
-            .Skip(Math.Max(0, transcriptLines.Count - transcriptHeight - _scrollOffset))
-            .Take(transcriptHeight)
-            .ToList();
-        lines.AddRange(visibleTranscript);
-        lines.AddRange(footerLines);
-
-        _driver.Render(lines.Take(height).ToList());
+        _driver.Render(lines);
     }
 
-    private List<string> CreateStatusLines(int width, int height)
+    private List<string> CreateFrame(int width, int height)
+    {
+        var priorityLines = new List<string>();
+        AddInputLine(priorityLines, width);
+        AddConfirmationLine(priorityLines, width);
+        AddErrorLine(priorityLines, width);
+        priorityLines.Add(FitLine(CreateStateLine(), width));
+
+        var transcriptHeight = Math.Max(0, height - priorityLines.Count);
+        var transcript = _transcript.CreateLines(width);
+        var first = Math.Max(0, transcript.Count - transcriptHeight - _scrollOffset);
+        var visibleTranscript = transcript.Skip(first).Take(transcriptHeight);
+        return visibleTranscript.Concat(priorityLines).Take(height).ToList();
+    }
+
+    private List<string> CreateCompactFrame(int width, int height)
     {
         var lines = new List<string>();
-        if (height <= 3)
-        {
-            lines.Add(
-                $"State: {_snapshot.Lifecycle} / {_snapshot.Activity}; " +
-                $"Provider: {_snapshot.Provider ?? "unavailable"}; " +
-                $"Conversation: {_snapshot.ConversationId?.ToString("N")[..8] ?? "none"}");
-        }
-        else
-        {
-            if (height >= 10)
-            {
-                lines.Add("LocalAssistant terminal client");
-            }
-
-            lines.Add($"State: {_snapshot.Lifecycle} / {_snapshot.Activity}");
-            lines.Add(
-                $"Provider: {_snapshot.Provider ?? "unavailable"}; " +
-                $"Conversation: {_snapshot.ConversationId?.ToString("N")[..8] ?? "none"}");
-        }
-
-        return lines.Select(line => Truncate(line, width)).ToList();
+        AddInputLine(lines, width);
+        AddConfirmationLine(lines, width);
+        AddErrorLine(lines, width);
+        lines.Add(FitLine("Terminal too small. Resize to at least 40x8.", width));
+        return lines.Take(height).ToList();
     }
 
-    private List<string> CreateFooterLines(int width, int height)
+    private void AddInputLine(List<string> lines, int width)
     {
-        var lines = new List<string>();
-
-        if (_snapshot.Error is not null)
+        if (!_console.TryGetInputRequest(out var request) || request is null)
         {
-            var uncertainty = _snapshot.Error.IsUncertain
-                ? " Result uncertain: the server may have received the operation."
-                : string.Empty;
-            lines.Add($"Error: {_snapshot.Error.SafeMessage} ({_snapshot.Error.Code}).{uncertainty}");
+            return;
         }
 
-        if (_snapshot.PendingConfirmation is not null)
-        {
-            if (height < 7)
-            {
-                lines.Add(
-                    $"CONFIRMATION REQUIRED: {_snapshot.PendingConfirmation.ToolName}; " +
-                    $"expires {_snapshot.PendingConfirmation.ExpiresAtUtc:yyyy-MM-dd HH:mm} UTC");
-            }
-            else
-            {
-                lines.Add("CONFIRMATION REQUIRED");
-                lines.Add($"Tool: {_snapshot.PendingConfirmation.ToolName}");
-                lines.Add(
-                    $"Expires: {_snapshot.PendingConfirmation.ExpiresAtUtc:yyyy-MM-dd HH:mm} UTC");
-                lines.Add("Type approve or reject in the input line.");
-            }
-        }
-
-        if (_console.TryGetInputRequest(out var request) && request is not null)
-        {
-            var value = request.Kind == TerminalInputKind.Secret
-                ? new string('*', _input.Length)
-                : TerminalTextSanitizer.Normalize(_input.ToString());
-            lines.Add($"{TerminalTextSanitizer.Normalize(request.Prompt)}{value}");
-        }
-
-        return lines.Select(line => Truncate(line, width)).ToList();
+        var prompt = TerminalTextSanitizer.NormalizeSingleLine(request.Prompt);
+        var value = request.Kind == TerminalInputKind.Secret
+            ? new string('*', _input.Length)
+            : TerminalTextSanitizer.NormalizeSingleLine(_input.ToString());
+        lines.Add(FitInputLine(prompt, value, width));
     }
 
-    private List<string> CreateTranscriptLines(int width)
+    private void AddConfirmationLine(List<string> lines, int width)
     {
-        var lines = new List<string>();
-        foreach (var entry in _transcript)
+        if (_snapshot.PendingConfirmation is null)
         {
-            foreach (var line in entry.Split('\n'))
-            {
-                if (line.Length == 0)
-                {
-                    lines.Add(string.Empty);
-                    continue;
-                }
-
-                for (var offset = 0; offset < line.Length; offset += width)
-                {
-                    lines.Add(line.Substring(offset, Math.Min(width, line.Length - offset)));
-                }
-            }
+            return;
         }
 
-        return lines;
+        var expiry = _snapshot.PendingConfirmation.ExpiresAtUtc.ToUniversalTime().ToString(
+            "yyyy-MM-dd HH:mm 'UTC'",
+            CultureInfo.InvariantCulture);
+        var suffix = $"; expires {expiry}";
+        var toolWidth = Math.Max(0, width - "CONFIRM: ".Length - suffix.Length);
+        var tool = TerminalTextSanitizer.NormalizeSingleLine(_snapshot.PendingConfirmation.ToolName);
+        lines.Add(FitLine($"CONFIRM: {FitLine(tool, toolWidth)}{suffix}", width));
     }
 
-    private static string Truncate(string value, int width) =>
-        value.Length <= width ? value : value[..width];
+    private void AddErrorLine(List<string> lines, int width)
+    {
+        if (_snapshot.Error is null)
+        {
+            return;
+        }
+
+        var prefix = _snapshot.Error.IsUncertain ? "ERROR [UNCERTAIN]: " : "ERROR: ";
+        var code = TerminalTextSanitizer.NormalizeSingleLine(_snapshot.Error.Code);
+        var message = TerminalTextSanitizer.NormalizeSingleLine(_snapshot.Error.SafeMessage);
+        lines.Add(FitLine($"{prefix}{code}: {message}", width));
+    }
+
+    private string CreateStateLine()
+    {
+        var provider = TerminalTextSanitizer.NormalizeSingleLine(_snapshot.Provider ?? "unavailable");
+        var conversation = _snapshot.ConversationId?.ToString("N")[..8] ?? "none";
+        return $"State: {_snapshot.Lifecycle}/{_snapshot.Activity}; Provider: {provider}; Conversation: {conversation}";
+    }
+
+    private static string FitInputLine(string prompt, string value, int width)
+    {
+        if (width <= 0)
+        {
+            return string.Empty;
+        }
+
+        if (prompt.Length >= width)
+        {
+            return FitTail(value, width);
+        }
+
+        return FitTail(prompt + value, width);
+    }
+
+    private static string FitLine(string value, int width)
+    {
+        if (width <= 0)
+        {
+            return string.Empty;
+        }
+
+        return value.Length <= width ? value : value[..width];
+    }
+
+    private static string FitTail(string value, int width)
+    {
+        if (value.Length <= width)
+        {
+            return value;
+        }
+
+        if (width == 1)
+        {
+            return "…";
+        }
+
+        return "…" + value[^Math.Max(0, width - 1)..];
+    }
+
+    private void ClearInputBuffer()
+    {
+        _input.Clear();
+        _input.Capacity = 0;
+    }
 }

@@ -15,10 +15,15 @@ public sealed class FakeLanguageProviderFactory
         fromUnit = "celsius",
         toUnit = "fahrenheit",
     });
-    private static readonly JsonElement ReminderArguments = JsonSerializer.SerializeToElement(new
+    // Computed per turn so the demo never rots: create_reminder rejects a dueAtUtc that is
+    // not in the future, and a hard-coded date silently breaks the scenario once wall-clock
+    // time passes it (test factories freeze the clock, so only real runs are affected).
+    private static JsonElement CreateReminderArguments() => JsonSerializer.SerializeToElement(new
     {
         title = "Review the local reminder design",
-        dueAtUtc = "2026-09-01T09:00:00Z",
+        dueAtUtc = DateTimeOffset.UtcNow.AddDays(7).ToString(
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            CultureInfo.InvariantCulture),
     });
 
     public bool TryCreate(string scenario, out ILanguageProvider? provider)
@@ -77,9 +82,7 @@ public sealed class FakeLanguageProviderFactory
 
     private static LanguageProviderResponse TemperatureResponse(LanguageProviderRequest request)
     {
-        var toolMessage = request.Messages.LastOrDefault(
-            item => item.ToolResult?.ToolName == TemperatureConversionTool.ToolName);
-        var result = toolMessage?.ToolResult;
+        var result = CurrentTurnToolResult(request, TemperatureConversionTool.ToolName);
         if (result is null)
         {
             return LanguageProviderResponse.RequestTools(new ToolCall(
@@ -112,15 +115,13 @@ public sealed class FakeLanguageProviderFactory
 
     private static LanguageProviderResponse ReminderResponse(LanguageProviderRequest request)
     {
-        var toolMessage = request.Messages.LastOrDefault(
-            item => item.ToolResult?.ToolName == CreateReminderTool.ToolName);
-        var result = toolMessage?.ToolResult;
+        var result = CurrentTurnToolResult(request, CreateReminderTool.ToolName);
         if (result is null)
         {
             return LanguageProviderResponse.RequestTools(new ToolCall(
                 "fake-reminder-call-1",
                 CreateReminderTool.ToolName,
-                ReminderArguments));
+                CreateReminderArguments()));
         }
 
         if (result.IsError)
@@ -132,5 +133,32 @@ public sealed class FakeLanguageProviderFactory
         var title = document.RootElement.GetProperty("title").GetString();
         return LanguageProviderResponse.Final(
             $"Temporary reminder record created for experimental testing: {title}. No notification has been scheduled.");
+    }
+
+    // Only a tool result from the current turn (after the most recent user message) means
+    // "the tool already ran". Scanning the whole history makes a second turn in the same
+    // conversation replay the first turn's stale result instead of asking again.
+    private static ToolResultMessage? CurrentTurnToolResult(LanguageProviderRequest request, string toolName)
+    {
+        var messages = request.Messages;
+        var lastUserMessage = -1;
+        for (var index = messages.Count - 1; index >= 0; index--)
+        {
+            if (messages[index].Role == ConversationRole.User)
+            {
+                lastUserMessage = index;
+                break;
+            }
+        }
+
+        for (var index = messages.Count - 1; index > lastUserMessage; index--)
+        {
+            if (messages[index].ToolResult?.ToolName == toolName)
+            {
+                return messages[index].ToolResult;
+            }
+        }
+
+        return null;
     }
 }

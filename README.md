@@ -551,13 +551,23 @@ continuar.
 
 ## Cliente terminal y degradación
 
-La TUI mínima se activa solo con entrada y salida interactivas. `--plain`, redirección o
-un terminal no compatible conservan el cliente textual sin secuencias ANSI. La TUI usa
-los mismos comandos escritos; una confirmación requiere escribir `approve` o `reject`.
+La TUI mínima se activa solo con entrada y salida interactivas, un terminal compatible
+de al menos 40×8 y una comprobación previa de teclado y consola. `--plain`, redirección,
+un terminal no compatible o demasiado pequeño conservan el cliente textual sin
+secuencias ANSI. Una vez iniciado el cliente no cambia de renderer. La TUI usa los
+mismos comandos escritos; una confirmación requiere escribir `approve` o `reject`
+(`cancel` se resuelve como un rechazo para no dejar la conversación bloqueada).
 
 La entrada de credenciales y desafíos administrativos se enmascara y no se añade al
 transcript, snapshots operacionales ni logs. La confirmación aún no incluye un resumen
 seguro del efecto de la herramienta y no muestra argumentos crudos.
+
+En la TUI, `Ctrl+C`, EOF, `Ctrl+D` o `Ctrl+Z` con la entrada vacía cierran el canal de
+entrada y terminan el cliente limpiamente. Con texto pendiente, `Ctrl+D` y `Ctrl+Z` se
+ignoran. El transcript visual se limita a 65.536 caracteres normalizados y 2.000 líneas
+envueltas, conservando el contenido más reciente; no altera el historial ni las
+conversaciones persistidas. Si la ventana se reduce durante la sesión, la vista compacta
+prioriza entrada, confirmación, error y estado hasta que vuelva a medir al menos 40×8.
 
 ## Evolución prevista, no implementada
 

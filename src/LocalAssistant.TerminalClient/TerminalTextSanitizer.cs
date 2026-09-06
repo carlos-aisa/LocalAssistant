@@ -11,11 +11,6 @@ internal static class TerminalTextSanitizer
         var normalized = new StringBuilder(value.Length);
         foreach (var character in value)
         {
-            if (character == '\r')
-            {
-                continue;
-            }
-
             if (character == '\n')
             {
                 normalized.Append(character);
@@ -33,5 +28,11 @@ internal static class TerminalTextSanitizer
         }
 
         return normalized.ToString();
+    }
+
+    public static string NormalizeSingleLine(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return Normalize(value).Replace("\n", "\\n", StringComparison.Ordinal);
     }
 }

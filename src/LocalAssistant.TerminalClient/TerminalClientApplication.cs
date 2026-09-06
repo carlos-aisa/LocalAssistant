@@ -555,16 +555,22 @@ public sealed class TerminalClientApplication
             var decision = ReadLine(new TerminalInputRequest(
                 TerminalInputKind.Line,
                 "Type approve, reject, or cancel: "))?.Trim();
-            if (decision is null || decision.Equals("cancel", StringComparison.OrdinalIgnoreCase))
+            if (decision is null)
             {
+                // The input channel closed (EOF / Ctrl+C): the client is shutting down.
+                // Do not issue an HTTP call during teardown; the server-side confirmation
+                // is left to expire on its own.
                 return (ClientResults.Failure<ConversationResponse>(
                     "confirmation_cancelled",
                     "The pending confirmation was not resolved."), accessToken);
             }
 
             if (decision.Equals("approve", StringComparison.OrdinalIgnoreCase) ||
-                decision.Equals("reject", StringComparison.OrdinalIgnoreCase))
+                decision.Equals("reject", StringComparison.OrdinalIgnoreCase) ||
+                decision.Equals("cancel", StringComparison.OrdinalIgnoreCase))
             {
+                // 'cancel' resolves the pending confirmation as a rejection so the
+                // conversation is not left wedged on the server for the next turn.
                 var approved = decision.Equals("approve", StringComparison.OrdinalIgnoreCase);
                 BeginActivity(TerminalClientActivity.ResolvingConfirmation);
                 return await ExecuteWithRenewalAsync(
