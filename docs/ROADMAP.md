@@ -273,7 +273,7 @@ La fase se entrega mediante incrementos demostrables y en este orden:
    bloqueantes. Las transiciones, cierre y recuperación se harán explícitos. Detener
    la reproducción es local; cancelar un turno HTTP no se presentará como cancelación
    fiable mientras falten identidad de operación e idempotencia de turno.
-5. [x] **TUI accesible:** historial visual, entrada, estado de servidor, proveedor y
+5. [ ] **TUI accesible:** historial visual, entrada, estado de servidor, proveedor y
    conversación, confirmación de herramientas y estado del reproductor. La animación
    representará estados reales, respetará movimiento reducido y degradará a texto
    plano en terminal no interactivo, redireccionado o redimensionado. Spectre.Console

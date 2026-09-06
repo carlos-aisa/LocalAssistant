@@ -17,19 +17,16 @@ internal sealed class TerminalClientTuiStateSink : ITerminalClientStateSink
         }
     }
 
-    public IEnumerable<TerminalClientStateSnapshot> Drain()
+    public IEnumerable<TerminalClientStateSnapshot> DrainPriority()
     {
         while (_prioritySnapshots.TryDequeue(out var snapshot))
         {
             yield return snapshot;
         }
-
-        var latest = Interlocked.Exchange(ref _latestSnapshot, null);
-        if (latest is not null)
-        {
-            yield return latest;
-        }
     }
+
+    public TerminalClientStateSnapshot? TakeLatest() =>
+        Interlocked.Exchange(ref _latestSnapshot, null);
 }
 
 internal sealed class TerminalClientTuiConsoleAdapter : IStructuredTerminalConsole
@@ -122,38 +119,54 @@ internal sealed class TerminalClientTuiConsoleAdapter : IStructuredTerminalConso
     {
         if (!string.IsNullOrWhiteSpace(value))
         {
-            _transcript.Enqueue(value);
+            _transcript.Enqueue(TerminalTextSanitizer.Normalize(value));
         }
     }
 }
 
 internal sealed class TerminalClientTuiHost
 {
+    private const int MaximumTranscriptEntries = 100;
     private readonly TerminalClientTuiConsoleAdapter _console;
     private readonly TerminalClientTuiStateSink _stateSink;
+    private readonly ITerminalDriver _driver;
     private readonly List<string> _transcript = [];
     private readonly StringBuilder _input = new();
     private TerminalClientStateSnapshot _snapshot = TerminalClientStateSnapshot.Initial;
+    private TerminalSize? _lastSize;
+    private int _scrollOffset;
     private bool _dirty = true;
 
     public TerminalClientTuiHost(
         TerminalClientTuiConsoleAdapter console,
-        TerminalClientTuiStateSink stateSink)
+        TerminalClientTuiStateSink stateSink,
+        ITerminalDriver driver)
     {
         _console = console ?? throw new ArgumentNullException(nameof(console));
         _stateSink = stateSink ?? throw new ArgumentNullException(nameof(stateSink));
+        _driver = driver ?? throw new ArgumentNullException(nameof(driver));
     }
 
     public async Task<int> RunAsync(TerminalClientApplication application, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(application);
-        var applicationTask = Task.Run(() => application.RunAsync(cancellationToken), CancellationToken.None);
+        return await RunAsync(application.RunAsync, cancellationToken);
+    }
+
+    internal async Task<int> RunAsync(
+        Func<CancellationToken, Task<int>> operation,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        using var cancellationRegistration = cancellationToken.Register(_console.CancelInput);
+        var applicationTask = Task.Run(() => operation(cancellationToken), CancellationToken.None);
         try
         {
             while (!applicationTask.IsCompleted)
             {
                 DrainUpdates();
                 ProcessAvailableInput();
+                DetectResize();
                 if (_dirty)
                 {
                     Render();
@@ -163,61 +176,94 @@ internal sealed class TerminalClientTuiHost
             }
 
             DrainUpdates();
-            Render();
+            DetectResize();
+            if (_dirty)
+            {
+                Render();
+            }
+
             return await applicationTask;
         }
         finally
         {
             _console.CancelInput();
-            TryRestoreTerminal();
+            _driver.Restore();
         }
     }
 
     private void DrainUpdates()
     {
-        foreach (var snapshot in _stateSink.Drain())
+        foreach (var snapshot in _stateSink.DrainPriority())
         {
             _snapshot = snapshot;
+            Render();
+        }
+
+        var latest = _stateSink.TakeLatest();
+        if (latest is not null)
+        {
+            _snapshot = latest;
             _dirty = true;
         }
 
         foreach (var entry in _console.DrainTranscript())
         {
             _transcript.Add(entry);
-            if (_transcript.Count > 100)
+            if (_transcript.Count > MaximumTranscriptEntries)
             {
                 _transcript.RemoveAt(0);
             }
 
+            _scrollOffset = 0;
             _dirty = true;
         }
     }
 
     private void ProcessAvailableInput()
     {
-        try
+        while (true)
         {
-            while (Console.KeyAvailable)
+            var input = _driver.TryReadInput();
+            if (input is null)
             {
-                ProcessKey(Console.ReadKey(intercept: true));
+                return;
             }
-        }
-        catch (IOException)
-        {
-            _console.CancelInput();
-        }
-        catch (InvalidOperationException)
-        {
-            _console.CancelInput();
+
+            if (input.IsEndOfInput)
+            {
+                _input.Clear();
+                _console.CancelInput();
+                _dirty = true;
+                return;
+            }
+
+            if (input.Key.HasValue)
+            {
+                ProcessKey(input.Key.Value);
+            }
         }
     }
 
     private void ProcessKey(ConsoleKeyInfo key)
     {
+        if (key.Key is ConsoleKey.UpArrow or ConsoleKey.PageUp)
+        {
+            _scrollOffset += key.Key == ConsoleKey.PageUp ? 5 : 1;
+            _dirty = true;
+            return;
+        }
+
+        if (key.Key is ConsoleKey.DownArrow or ConsoleKey.PageDown)
+        {
+            _scrollOffset = Math.Max(0, _scrollOffset - (key.Key == ConsoleKey.PageDown ? 5 : 1));
+            _dirty = true;
+            return;
+        }
+
         if ((key.Modifiers & ConsoleModifiers.Control) != 0 && key.Key == ConsoleKey.D)
         {
             _input.Clear();
-            _console.CompleteInput(null);
+            _console.CancelInput();
             _dirty = true;
             return;
         }
@@ -257,66 +303,129 @@ internal sealed class TerminalClientTuiHost
         }
     }
 
+    private void DetectResize()
+    {
+        var size = _driver.GetSize();
+        if (_lastSize != size)
+        {
+            _lastSize = size;
+            _dirty = true;
+        }
+    }
+
     private void Render()
     {
         _dirty = false;
-        try
-        {
-            Console.Clear();
-            Console.WriteLine("LocalAssistant terminal client");
-            Console.WriteLine($"State: {_snapshot.Lifecycle} / {_snapshot.Activity}");
-            Console.WriteLine($"Provider: {_snapshot.Provider ?? "unavailable"}");
-            Console.WriteLine($"Conversation: {_snapshot.ConversationId?.ToString("N")[..8] ?? "none"}");
+        var size = _lastSize ?? _driver.GetSize();
+        var width = Math.Max(1, size.Width);
+        var height = Math.Max(1, size.Height);
+        var statusLines = CreateStatusLines(width, height);
+        var footerLines = CreateFooterLines(width, height);
+        var transcriptHeight = Math.Max(0, height - statusLines.Count - footerLines.Count);
+        var lines = new List<string>(height);
 
-            if (_snapshot.Error is not null)
+        lines.AddRange(statusLines);
+        var transcriptLines = CreateTranscriptLines(width);
+        var visibleTranscript = transcriptLines
+            .Skip(Math.Max(0, transcriptLines.Count - transcriptHeight - _scrollOffset))
+            .Take(transcriptHeight)
+            .ToList();
+        lines.AddRange(visibleTranscript);
+        lines.AddRange(footerLines);
+
+        _driver.Render(lines.Take(height).ToList());
+    }
+
+    private List<string> CreateStatusLines(int width, int height)
+    {
+        var lines = new List<string>();
+        if (height <= 3)
+        {
+            lines.Add(
+                $"State: {_snapshot.Lifecycle} / {_snapshot.Activity}; " +
+                $"Provider: {_snapshot.Provider ?? "unavailable"}; " +
+                $"Conversation: {_snapshot.ConversationId?.ToString("N")[..8] ?? "none"}");
+        }
+        else
+        {
+            if (height >= 10)
             {
-                Console.WriteLine($"Error: {_snapshot.Error.SafeMessage} ({_snapshot.Error.Code})");
-                if (_snapshot.Error.IsUncertain)
+                lines.Add("LocalAssistant terminal client");
+            }
+
+            lines.Add($"State: {_snapshot.Lifecycle} / {_snapshot.Activity}");
+            lines.Add(
+                $"Provider: {_snapshot.Provider ?? "unavailable"}; " +
+                $"Conversation: {_snapshot.ConversationId?.ToString("N")[..8] ?? "none"}");
+        }
+
+        return lines.Select(line => Truncate(line, width)).ToList();
+    }
+
+    private List<string> CreateFooterLines(int width, int height)
+    {
+        var lines = new List<string>();
+
+        if (_snapshot.Error is not null)
+        {
+            var uncertainty = _snapshot.Error.IsUncertain
+                ? " Result uncertain: the server may have received the operation."
+                : string.Empty;
+            lines.Add($"Error: {_snapshot.Error.SafeMessage} ({_snapshot.Error.Code}).{uncertainty}");
+        }
+
+        if (_snapshot.PendingConfirmation is not null)
+        {
+            if (height < 7)
+            {
+                lines.Add(
+                    $"CONFIRMATION REQUIRED: {_snapshot.PendingConfirmation.ToolName}; " +
+                    $"expires {_snapshot.PendingConfirmation.ExpiresAtUtc:yyyy-MM-dd HH:mm} UTC");
+            }
+            else
+            {
+                lines.Add("CONFIRMATION REQUIRED");
+                lines.Add($"Tool: {_snapshot.PendingConfirmation.ToolName}");
+                lines.Add(
+                    $"Expires: {_snapshot.PendingConfirmation.ExpiresAtUtc:yyyy-MM-dd HH:mm} UTC");
+                lines.Add("Type approve or reject in the input line.");
+            }
+        }
+
+        if (_console.TryGetInputRequest(out var request) && request is not null)
+        {
+            var value = request.Kind == TerminalInputKind.Secret
+                ? new string('*', _input.Length)
+                : TerminalTextSanitizer.Normalize(_input.ToString());
+            lines.Add($"{TerminalTextSanitizer.Normalize(request.Prompt)}{value}");
+        }
+
+        return lines.Select(line => Truncate(line, width)).ToList();
+    }
+
+    private List<string> CreateTranscriptLines(int width)
+    {
+        var lines = new List<string>();
+        foreach (var entry in _transcript)
+        {
+            foreach (var line in entry.Split('\n'))
+            {
+                if (line.Length == 0)
                 {
-                    Console.WriteLine("Result uncertain: the server may have received the operation.");
+                    lines.Add(string.Empty);
+                    continue;
+                }
+
+                for (var offset = 0; offset < line.Length; offset += width)
+                {
+                    lines.Add(line.Substring(offset, Math.Min(width, line.Length - offset)));
                 }
             }
-
-            if (_snapshot.PendingConfirmation is not null)
-            {
-                Console.WriteLine("CONFIRMATION REQUIRED");
-                Console.WriteLine($"Tool: {_snapshot.PendingConfirmation.ToolName}");
-                Console.WriteLine("Type approve or reject in the input line.");
-            }
-
-            Console.WriteLine();
-            foreach (var entry in _transcript)
-            {
-                Console.WriteLine(entry);
-            }
-
-            if (_console.TryGetInputRequest(out var request) && request is not null)
-            {
-                var value = request.Kind == TerminalInputKind.Secret
-                    ? new string('*', _input.Length)
-                    : _input.ToString();
-                Console.WriteLine();
-                Console.Write($"{request.Prompt}{value}");
-            }
         }
-        catch (IOException)
-        {
-            _console.CancelInput();
-        }
+
+        return lines;
     }
 
-    private static void TryRestoreTerminal()
-    {
-        try
-        {
-            Console.CursorVisible = true;
-            Console.WriteLine();
-        }
-        catch (IOException)
-        {
-        }
-        catch (InvalidOperationException)
-        {
-        }
-    }
+    private static string Truncate(string value, int width) =>
+        value.Length <= width ? value : value[..width];
 }
