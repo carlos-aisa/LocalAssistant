@@ -811,6 +811,12 @@ No se registran por defecto:
 Una futura captura de contenido deberá ser opt-in, redactada y tener retención
 limitada.
 
+La TUI del cliente solo recibe snapshots operacionales seguros y transcript público.
+La entrada secreta de credenciales o desafíos no se incorpora al transcript, snapshots
+ni diagnósticos. Las confirmaciones requieren `approve` o `reject` escritos; el cliente
+no afirma todavía que el nombre de herramienta y la caducidad sean un resumen completo
+del efecto autorizado.
+
 ## Antes de exponer la API
 
 Será necesario añadir una identidad y autorización aptas para el despliegue, HTTPS,

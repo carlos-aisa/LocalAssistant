@@ -131,14 +131,17 @@ public sealed class TerminalClientApplication
 
     private async Task<CredentialAcquisitionResult> GetCredentialAsync(CancellationToken cancellationToken)
     {
-        _console.Write("Private client ID (leave empty to pair): ");
-        var clientId = _console.ReadLine()?.Trim();
+        var clientId = ReadLine(new TerminalInputRequest(
+            TerminalInputKind.Line,
+            "Private client ID (leave empty to pair): "))?.Trim();
         if (string.IsNullOrWhiteSpace(clientId))
         {
-            _console.Write("Administrative pairing challenge: ");
-            var challenge = _console.ReadSecret();
-            _console.Write("Private client display name: ");
-            var displayName = _console.ReadLine()?.Trim();
+            var challenge = ReadSecret(new TerminalInputRequest(
+                TerminalInputKind.Secret,
+                "Administrative pairing challenge: "));
+            var displayName = ReadLine(new TerminalInputRequest(
+                TerminalInputKind.Line,
+                "Private client display name: "))?.Trim();
             if (string.IsNullOrWhiteSpace(challenge) || string.IsNullOrWhiteSpace(displayName))
             {
                 return CredentialAcquisitionResult.Cancelled;
@@ -154,8 +157,9 @@ public sealed class TerminalClientApplication
                 new PrivateClientCredential(paired.Value!.ClientId, paired.Value.Credential));
         }
 
-        _console.Write("Private client credential: ");
-        var value = _console.ReadSecret();
+        var value = ReadSecret(new TerminalInputRequest(
+            TerminalInputKind.Secret,
+            "Private client credential: "));
         return string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(value)
             ? CredentialAcquisitionResult.Cancelled
             : CredentialAcquisitionResult.Obtained(new PrivateClientCredential(clientId, value));
@@ -196,8 +200,9 @@ public sealed class TerminalClientApplication
 
         while (true)
         {
-            _console.Write("You: ");
-            var input = _console.ReadLine();
+            var input = ReadLine(new TerminalInputRequest(
+                TerminalInputKind.Line,
+                "You: "));
             if (input is null)
             {
                 return 0;
@@ -427,8 +432,9 @@ public sealed class TerminalClientApplication
 
         var conversation = details.Response.Value!;
         _console.WriteLine($"Last conversation: \"{conversation.Title}\" — {conversation.LastActivityAtUtc.LocalDateTime:g}");
-        _console.Write("[R]esume  [N]ew  [L]ist conversations: ");
-        var selection = _console.ReadLine()?.Trim();
+        var selection = ReadLine(new TerminalInputRequest(
+            TerminalInputKind.Line,
+            "[R]esume  [N]ew  [L]ist conversations: "))?.Trim();
         if (string.Equals(selection, "r", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(selection, "resume", StringComparison.OrdinalIgnoreCase))
         {
@@ -546,8 +552,9 @@ public sealed class TerminalClientApplication
         _console.WriteLine($"Confirmation required for tool '{confirmation.ToolName}' before {confirmation.ExpiresAtUtc:O}.");
         while (true)
         {
-            _console.Write("Type approve, reject, or cancel: ");
-            var decision = _console.ReadLine()?.Trim();
+            var decision = ReadLine(new TerminalInputRequest(
+                TerminalInputKind.Line,
+                "Type approve, reject, or cancel: "))?.Trim();
             if (decision is null || decision.Equals("cancel", StringComparison.OrdinalIgnoreCase))
             {
                 return (ClientResults.Failure<ConversationResponse>(
@@ -716,8 +723,9 @@ public sealed class TerminalClientApplication
                 _console.WriteLine($"{index + 1}. {item.Title} — {item.LastActivityAtUtc.LocalDateTime:g}");
             }
 
-            _console.Write("Select a number, [N]ext, or [C]ancel: ");
-            var selection = _console.ReadLine()?.Trim();
+            var selection = ReadLine(new TerminalInputRequest(
+                TerminalInputKind.Line,
+                "Select a number, [N]ext, or [C]ancel: "))?.Trim();
             if (string.Equals(selection, "n", StringComparison.OrdinalIgnoreCase) &&
                 !string.IsNullOrWhiteSpace(page.NextCursor))
             {
@@ -821,7 +829,7 @@ public sealed class TerminalClientApplication
 
             foreach (var message in history.Response.Value!.Items)
             {
-                _console.WriteLine($"{message.Role}: {message.Content}");
+                WriteConversationMessage(message.Role, message.Content);
             }
 
             if (string.IsNullOrWhiteSpace(history.Response.Value.NextCursor))
@@ -829,8 +837,10 @@ public sealed class TerminalClientApplication
                 return (true, accessToken, null);
             }
 
-            _console.Write("[N]ext history page or [C]ontinue: ");
-            if (!string.Equals(_console.ReadLine()?.Trim(), "n", StringComparison.OrdinalIgnoreCase))
+            var nextPage = ReadLine(new TerminalInputRequest(
+                TerminalInputKind.Line,
+                "[N]ext history page or [C]ontinue: "))?.Trim();
+            if (!string.Equals(nextPage, "n", StringComparison.OrdinalIgnoreCase))
             {
                 return (true, accessToken, null);
             }
@@ -849,8 +859,9 @@ public sealed class TerminalClientApplication
     {
         if (operation.Equals("rotate", StringComparison.OrdinalIgnoreCase))
         {
-            _console.Write("Administrative rotation challenge: ");
-            var challenge = _console.ReadSecret();
+            var challenge = ReadSecret(new TerminalInputRequest(
+                TerminalInputKind.Secret,
+                "Administrative rotation challenge: "));
             var rotation = await _apiClient.RotateCredentialAsync(challenge, credential.ClientId, cancellationToken);
             if (!rotation.IsSuccess || !string.Equals(rotation.Value!.ClientId, credential.ClientId, StringComparison.Ordinal))
             {
@@ -896,14 +907,17 @@ public sealed class TerminalClientApplication
 
         if (operation.Equals("revoke", StringComparison.OrdinalIgnoreCase))
         {
-            _console.Write("Type REVOKE to revoke this client: ");
-            if (!string.Equals(_console.ReadLine(), "REVOKE", StringComparison.Ordinal))
+            var revocationConfirmation = ReadLine(new TerminalInputRequest(
+                TerminalInputKind.Line,
+                "Type REVOKE to revoke this client: "));
+            if (!string.Equals(revocationConfirmation, "REVOKE", StringComparison.Ordinal))
             {
                 return new(true, 0, accessToken, provider, conversationId);
             }
 
-            _console.Write("Administrative revocation challenge: ");
-            var challenge = _console.ReadSecret();
+            var challenge = ReadSecret(new TerminalInputRequest(
+                TerminalInputKind.Secret,
+                "Administrative revocation challenge: "));
             var revoked = await _apiClient.RevokeClientAsync(challenge, credential.ClientId, cancellationToken);
             if (!revoked.IsSuccess || !string.Equals(revoked.Value!.ClientId, credential.ClientId, StringComparison.Ordinal))
             {
@@ -970,7 +984,7 @@ public sealed class TerminalClientApplication
         _console.WriteLine($"Conversation: {response.ConversationId}");
         if (!string.IsNullOrWhiteSpace(response.Content))
         {
-            _console.WriteLine($"Assistant: {response.Content}");
+            WriteConversationMessage("Assistant", response.Content);
         }
 
         _console.WriteLine($"Iterations: {response.Iterations}");
@@ -987,8 +1001,49 @@ public sealed class TerminalClientApplication
 
     private void WriteError(ClientError error)
     {
+        if (_console is IStructuredTerminalConsole structuredConsole)
+        {
+            structuredConsole.WriteError(error);
+            return;
+        }
+
         var suffix = error.IsUncertain ? " The server may have received the operation; it was not retried." : string.Empty;
         _console.WriteLine($"Error ({error.Code}): {error.Message}{suffix}");
+    }
+
+    private string? ReadLine(TerminalInputRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (_console is IStructuredTerminalConsole structuredConsole)
+        {
+            return structuredConsole.ReadLine(request);
+        }
+
+        _console.Write(request.Prompt);
+        return _console.ReadLine();
+    }
+
+    private string ReadSecret(TerminalInputRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (_console is IStructuredTerminalConsole structuredConsole)
+        {
+            return structuredConsole.ReadSecret(request);
+        }
+
+        _console.Write(request.Prompt);
+        return _console.ReadSecret();
+    }
+
+    private void WriteConversationMessage(string role, string content)
+    {
+        if (_console is IStructuredTerminalConsole structuredConsole)
+        {
+            structuredConsole.WriteConversationMessage(role, content);
+            return;
+        }
+
+        _console.WriteLine($"{role}: {content}");
     }
 
     private void BeginActivity(TerminalClientActivity activity)

@@ -2,6 +2,14 @@ using System.Text;
 
 namespace LocalAssistant.TerminalClient;
 
+internal enum TerminalInputKind
+{
+    Line,
+    Secret,
+}
+
+internal sealed record TerminalInputRequest(TerminalInputKind Kind, string Prompt);
+
 public interface ITerminalConsole
 {
     string? ReadLine();
@@ -13,9 +21,27 @@ public interface ITerminalConsole
     void WriteLine(string value);
 }
 
-public sealed class SystemTerminalConsole : ITerminalConsole
+internal interface IStructuredTerminalConsole : ITerminalConsole
+{
+    string? ReadLine(TerminalInputRequest request);
+
+    string ReadSecret(TerminalInputRequest request);
+
+    void WriteConversationMessage(string role, string content);
+
+    void WriteError(ClientError clientError);
+}
+
+public sealed class SystemTerminalConsole : IStructuredTerminalConsole
 {
     public string? ReadLine() => Console.ReadLine();
+
+    string? IStructuredTerminalConsole.ReadLine(TerminalInputRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        Console.Write(request.Prompt);
+        return Console.ReadLine();
+    }
 
     public string ReadSecret()
     {
@@ -52,7 +78,26 @@ public sealed class SystemTerminalConsole : ITerminalConsole
         }
     }
 
+    string IStructuredTerminalConsole.ReadSecret(TerminalInputRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        Console.Write(request.Prompt);
+        return ReadSecret();
+    }
+
     public void Write(string value) => Console.Write(value);
 
     public void WriteLine(string value) => Console.WriteLine(value);
+
+    void IStructuredTerminalConsole.WriteConversationMessage(string role, string content) =>
+        WriteLine($"{role}: {content}");
+
+    void IStructuredTerminalConsole.WriteError(ClientError clientError)
+    {
+        ArgumentNullException.ThrowIfNull(clientError);
+        var suffix = clientError.IsUncertain
+            ? " The server may have received the operation; it was not retried."
+            : string.Empty;
+        WriteLine($"Error ({clientError.Code}): {clientError.Message}{suffix}");
+    }
 }

@@ -19,14 +19,27 @@ internal static class TerminalClientProgram
                 BaseAddress = options.BaseUri,
                 Timeout = TerminalClientOptions.RequestTimeout,
             };
-            var application = new TerminalClientApplication(
-                new PrivateApiClient(httpClient),
-                new SystemTerminalConsole(),
-                options,
-                new DpapiPrivateClientCredentialStore());
-
             try
             {
+                if (TerminalPresentationSelector.UseTui(options, new SystemTerminalPresentationCapabilities()))
+                {
+                    var console = new TerminalClientTuiConsoleAdapter();
+                    var stateSink = new TerminalClientTuiStateSink();
+                    var tuiApplication = new TerminalClientApplication(
+                        new PrivateApiClient(httpClient),
+                        console,
+                        options,
+                        new DpapiPrivateClientCredentialStore(),
+                        stateSink);
+                    return await new TerminalClientTuiHost(console, stateSink)
+                        .RunAsync(tuiApplication, cancellationSource.Token);
+                }
+
+                var application = new TerminalClientApplication(
+                    new PrivateApiClient(httpClient),
+                    new SystemTerminalConsole(),
+                    options,
+                    new DpapiPrivateClientCredentialStore());
                 return await application.RunAsync(cancellationSource.Token);
             }
             finally

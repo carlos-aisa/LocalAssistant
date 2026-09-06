@@ -549,6 +549,16 @@ Consulta [la arquitectura](docs/ARCHITECTURE.md), [la visión](docs/VISION.md),
 [OpenAPI](docs/api/openapi.yaml) y [los estándares](docs/standards/README.md) para
 continuar.
 
+## Cliente terminal y degradación
+
+La TUI mínima se activa solo con entrada y salida interactivas. `--plain`, redirección o
+un terminal no compatible conservan el cliente textual sin secuencias ANSI. La TUI usa
+los mismos comandos escritos; una confirmación requiere escribir `approve` o `reject`.
+
+La entrada de credenciales y desafíos administrativos se enmascara y no se añade al
+transcript, snapshots operacionales ni logs. La confirmación aún no incluye un resumen
+seguro del efecto de la herramienta y no muestra argumentos crudos.
+
 ## Evolución prevista, no implementada
 
 ```mermaid
