@@ -271,6 +271,23 @@ public sealed class TerminalClientTuiTranscriptTests
         Assert.Equal(expected, view.Lines);
     }
 
+    // TR-18b
+    [Fact]
+    public void HugeViewportAndHugeScrollOffsetTogetherDoNotOverflow()
+    {
+        var transcript = new TerminalClientTuiTranscript();
+        foreach (var entry in new[] { "A", "B", "C" })
+        {
+            transcript.Add(entry);
+        }
+
+        var view = transcript.CreateView(40, int.MaxValue - 3, int.MaxValue - 3);
+
+        string[] expected = ["A", "B", "C"];
+        Assert.Equal(0, view.ClampedScrollOffset);
+        Assert.Equal(expected, view.Lines);
+    }
+
     // TR-19
     [Theory]
     [InlineData(0)]

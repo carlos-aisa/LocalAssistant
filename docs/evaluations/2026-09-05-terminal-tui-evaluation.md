@@ -168,13 +168,14 @@ Diseño y plan: `docs/specs/2026-09-08-terminal-tui-transcript-budget-design.md`
 `docs/plans/2026-09-08-terminal-tui-transcript-budget-implementation-plan.md`.
 
 Automatizado: `dotnet format` sin cambios; `dotnet build -c Release` sin avisos;
-`dotnet test LocalAssistant.sln -c Release` → 563/563; `git diff --check` limpio; sin
+`dotnet test LocalAssistant.sln -c Release` → 564/564; `git diff --check` limpio; sin
 procesos `testhost` ni `LocalAssistant.Api` residuales.
 
-Cobertura determinista nueva: `TerminalClientTuiTranscriptTests` (`TR-01`..`TR-27`) —
-coste de líneas de referencia, doble presupuesto en `Add`, entrada sobredimensionada
-por caracteres y por líneas (marcador único, reserva de 39), expulsión de las más
-antiguas, `CreateView` puro con offset cero/intermedio/excesivo/`int.MaxValue`,
+Cobertura determinista nueva: `TerminalClientTuiTranscriptTests` (`TR-01`..`TR-27`,
+incluida `TR-18b`) — coste de líneas de referencia, doble presupuesto en `Add`, entrada
+sobredimensionada por caracteres y por líneas (marcador único, reserva de 39), expulsión
+de las más antiguas, `CreateView` puro con offset cero/intermedio/excesivo/`int.MaxValue`
+y con `viewportHeight` y `scrollOffset` ambos enormes (saturación sin desbordar),
 `viewportHeight == 0`, argumentos inválidos, parada temprana por el contador de
 segmentos visitados, y consulta ancho→estrecho→ancho sin pérdida de contenido.
 `TerminalClientTuiTests` — el host adopta `ClampedScrollOffset` (una sola `PageDown`
