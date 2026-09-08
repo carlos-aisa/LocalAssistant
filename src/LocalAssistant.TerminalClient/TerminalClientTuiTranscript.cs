@@ -63,9 +63,11 @@ internal sealed class TerminalClientTuiTranscript
 
         // The transcript can never yield more wrapped lines than it holds characters
         // (plus one per empty segment), so this cap bounds the work without truncating
-        // any reachable window and without overflowing int on a hostile scrollOffset.
+        // any reachable window. Everything stays in long and saturates at int.MaxValue
+        // so a hostile viewportHeight + scrollOffset cannot overflow to a negative.
         var ceiling = (long)viewportHeight + MaximumCharacters + MaximumReferenceLines;
-        var needed = (int)Math.Min((long)viewportHeight + scrollOffset, ceiling);
+        var requested = (long)viewportHeight + scrollOffset;
+        var needed = (int)Math.Clamp(Math.Min(requested, ceiling), 0, int.MaxValue);
 
         var recentToOld = new List<string>();
         for (var node = _entries.Last; node is not null; node = node.Previous)

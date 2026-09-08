@@ -168,30 +168,31 @@ Diseño y plan: `docs/specs/2026-09-08-terminal-tui-transcript-budget-design.md`
 `docs/plans/2026-09-08-terminal-tui-transcript-budget-implementation-plan.md`.
 
 Automatizado: `dotnet format` sin cambios; `dotnet build -c Release` sin avisos;
-`dotnet test LocalAssistant.sln -c Release` → 563/563; `git diff --check` limpio; sin
+`dotnet test LocalAssistant.sln -c Release` → 564/564; `git diff --check` limpio; sin
 procesos `testhost` ni `LocalAssistant.Api` residuales.
 
-Cobertura determinista nueva: `TerminalClientTuiTranscriptTests` (`TR-01`..`TR-27`) —
-coste de líneas de referencia, doble presupuesto en `Add`, entrada sobredimensionada
-por caracteres y por líneas (marcador único, reserva de 39), expulsión de las más
-antiguas, `CreateView` puro con offset cero/intermedio/excesivo/`int.MaxValue`,
+Cobertura determinista nueva: `TerminalClientTuiTranscriptTests` (`TR-01`..`TR-27`,
+incluida `TR-18b`) — coste de líneas de referencia, doble presupuesto en `Add`, entrada
+sobredimensionada por caracteres y por líneas (marcador único, reserva de 39), expulsión
+de las más antiguas, `CreateView` puro con offset cero/intermedio/excesivo/`int.MaxValue`
+y con `viewportHeight` y `scrollOffset` ambos enormes (saturación sin desbordar),
 `viewportHeight == 0`, argumentos inválidos, parada temprana por el contador de
 segmentos visitados, y consulta ancho→estrecho→ancho sin pérdida de contenido.
 `TerminalClientTuiTests` — el host adopta `ClampedScrollOffset` (una sola `PageDown`
 tras sobre-desplazar vuelve al final) y la región de transcript llena exactamente el
 hueco de las filas prioritarias en `40×8`.
 
-### Runbook manual (Windows Terminal + PowerShell)
-
-Pendiente de ejecución por el operador; registrar el resultado de cada paso aquí.
+### Runbook manual (Windows Terminal + PowerShell) — ejecutado 2026-09-08
 
 - M1. Sesión larga con el proveedor falso: encadenar respuestas hasta llenar varias
   pantallas; `PageUp`/`PageDown` recorren el histórico y se detienen en el marcador
-  `[Earlier transcript content truncated]` cuando aplica, sin pasar de él. Esperado:
-  scroll fluido, el histórico nunca se vacía, ninguna línea desborda el ancho.
+  `[Earlier transcript content truncated]` cuando aplica, sin pasar de él. Scroll
+  fluido, el histórico nunca se vacía, ninguna línea desborda el ancho — OK
 - M2. Durante esa sesión, reducir el ancho de la ventana a ~12 columnas y volver a
-  ensancharla varias veces. Esperado: al recuperar el ancho, ninguna línea antigua ha
-  desaparecido de forma permanente (la retención no depende del ancho).
-- M3. Forzar una respuesta muy larga en un solo turno. Esperado: esa entrada aparece
-  encabezada por `[Earlier transcript content truncated]` y su final permanece legible;
-  el marcador no se duplica.
+  ensancharla varias veces. Al recuperar el ancho, ninguna línea antigua ha
+  desaparecido de forma permanente (la retención no depende del ancho) — OK
+- M3. Forzar una respuesta muy larga en un solo turno. Esa entrada aparece encabezada
+  por `[Earlier transcript content truncated]` y su final permanece legible; el
+  marcador no se duplica — OK
+
+Conclusión: incremento 4 verificado manualmente.

@@ -31,7 +31,7 @@ autenticación, autorización ni OpenAPI.
   re-verificación con prompt largo en compacto); hallazgo abierto: EOF/`Ctrl+C` en el
   prompt de confirmación deja la confirmación pendiente en el servidor (arreglo en su
   propio commit).
-- Incremento 4 — **finalizado** (2026-09-08). Diseño y plan de detalle en
+- Incremento 4 — **finalizado** (2026-09-08; PR #72). Diseño y plan de detalle en
   `docs/specs/2026-09-08-terminal-tui-transcript-budget-design.md` y
   `docs/plans/2026-09-08-terminal-tui-transcript-budget-implementation-plan.md`.
   Retención solo en `Add` con presupuestos de caracteres y de líneas de referencia
@@ -39,8 +39,8 @@ autenticación, autorización ni OpenAPI.
   final con marcador y cumple ambos máximos; `CreateView` sustituye a `CreateLines`
   como consulta pura que materializa solo la ventana visible y devuelve un
   `ClampedScrollOffset` que el host adopta. Elimina la expulsión destructiva
-  dependiente del ancho de `CreateLines`. Suite completa 563/563. Verificación manual
-  en `docs/evaluations/2026-09-05-terminal-tui-evaluation.md`.
+  dependiente del ancho de `CreateLines`. Suite completa 564/564. Verificación manual
+  M1–M3 registrada en `docs/evaluations/2026-09-05-terminal-tui-evaluation.md`.
 - Incremento 5 — pendiente. El punto 5 de `ROADMAP.md` permanece desmarcado.
 
 ## Supuestos de implementación
@@ -188,7 +188,8 @@ excepciones internas ni datos de entrada.
 
 ## Incremento 4: transcript con presupuesto acotado
 
-> **Finalizado** (2026-09-08). Diseño y plan de detalle:
+> **Finalizado** (2026-09-08; PR #72, verificación manual M1–M3 registrada). Diseño y
+> plan de detalle:
 > `docs/specs/2026-09-08-terminal-tui-transcript-budget-design.md` y
 > `docs/plans/2026-09-08-terminal-tui-transcript-budget-implementation-plan.md`. El
 > esquema de abajo queda como referencia; el plan de detalle es la fuente de verdad.

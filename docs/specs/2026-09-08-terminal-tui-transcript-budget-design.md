@@ -148,12 +148,14 @@ Contrato:
 
 Algoritmo:
 
-1. `needed = viewportHeight + scrollOffset`, calculado en `long` y acotado a
+1. `needed = viewportHeight + scrollOffset`, con toda la aritmética en `long` y el
+   resultado saturado a `[0, int.MaxValue]` tras acotarlo a
    `viewportHeight + MaximumCharacters + MaximumReferenceLines` — cota superior del
    número de líneas envueltas que el transcript puede producir a cualquier ancho (nunca
    más de un carácter por línea, más una por segmento vacío). Ese techo no recorta
-   ninguna ventana alcanzable y evita el desbordamiento de `int` ante un `scrollOffset`
-   hostil; el host ya acota `_scrollOffset`, pero `CreateView` no confía en ello.
+   ninguna ventana alcanzable; la saturación a `int.MaxValue` evita que un
+   `viewportHeight` y un `scrollOffset` ambos enormes desborden `int` a un valor
+   negativo. El host ya acota `_scrollOffset`, pero `CreateView` no confía en ello.
 2. Recorrer las entradas de la más reciente a la más antigua y, dentro de cada entrada,
    sus segmentos de la última a la primera. Para un segmento de longitud `L` a `width`,
    los cortes de envoltura se calculan **siempre desde el inicio** (`0, width, 2·width,
@@ -269,7 +271,9 @@ El host adopta el `ClampedScrollOffset` devuelto. Se eliminan `CreateLines`,
 - `CreateView` repetido devuelve lo mismo y no altera `_characterCount` ni
   `_referenceLineCount`;
 - `CreateView` con un `scrollOffset` desmesurado (cercano a `int.MaxValue`) no
-  desborda `needed` y devuelve un `ClampedScrollOffset` válido;
+  desborda `needed` y devuelve un `ClampedScrollOffset` válido; y el caso combinado de
+  `viewportHeight` **y** `scrollOffset` ambos cercanos a `int.MaxValue` tampoco
+  desborda (`needed` satura en `int.MaxValue`);
 - parada temprana: sobre un transcript al límite y un viewport pequeño, el contador
   interno de segmentos visitados está acotado por `viewportHeight + scrollOffset` más
   los segmentos de la última entrada visitada;

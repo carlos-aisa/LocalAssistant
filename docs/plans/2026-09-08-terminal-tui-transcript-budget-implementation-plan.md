@@ -1,5 +1,9 @@
 # Plan de implementación del incremento 4: presupuesto acotado del transcript
 
+> **Estado: finalizado** (2026-09-08; PR #72). Código, docs y suite automatizada
+> (564/564, `dotnet format` y `build -c Release` limpios). Verificación manual M1–M3
+> ejecutada y registrada en `docs/evaluations/2026-09-05-terminal-tui-evaluation.md`.
+
 ## Objetivo
 
 Implementar el diseño aprobado en
@@ -151,8 +155,9 @@ sin límite:
    - `ArgumentOutOfRangeException.ThrowIfNegative(scrollOffset)`;
    - `viewportHeight == 0` → `new([], 0)`;
    - `needed = viewportHeight + (long)scrollOffset`, acotado a
-     `viewportHeight + MaximumCharacters + MaximumReferenceLines` y devuelto a `int`
-     sin desbordar;
+     `viewportHeight + MaximumCharacters + MaximumReferenceLines` y saturado a
+     `[0, int.MaxValue]` antes del `(int)` (ni `viewportHeight` ni `scrollOffset`
+     enormes deben desbordar a negativo);
    - recorrer entradas de la última a la primera; dentro de cada entrada, segmentos de
      `SegmentStarts` del último al primero; para un segmento de longitud `L` a `width`,
      emitir los trozos en orden inverso: `[k·width, L)` con `k = (L-1)/width`, luego
@@ -176,6 +181,7 @@ sin límite:
 | `TR-16` | `scrollOffset` intermedio válido | ventana desplazada; `ClampedScrollOffset` sin cambios |
 | `TR-17` | `scrollOffset` por encima del máximo | `ClampedScrollOffset == max(0, total - viewportHeight)` |
 | `TR-18` | `scrollOffset` cercano a `int.MaxValue` | no desborda; `ClampedScrollOffset` válido |
+| `TR-18b` | `viewportHeight` **y** `scrollOffset` ambos cercanos a `int.MaxValue` | `needed` satura en `int.MaxValue`; no desborda; `ClampedScrollOffset == 0`; devuelve todo el contenido |
 | `TR-19` | `viewportHeight == 0` | `Lines` vacío, `ClampedScrollOffset == 0` |
 | `TR-20` | `Lines.Count` siempre `≤ viewportHeight` | en todos los casos anteriores |
 | `TR-21` | `CreateView` repetido con los mismos argumentos | resultado idéntico; `_characterCount` y `_referenceLineCount` sin cambios |
