@@ -16,7 +16,8 @@ de la mecánica del incremento 3 del plan
   `40×8` con una indicación para ampliar;
 - `FitInputLine` / `FitTail` muestran el extremo activo de una entrada larga y la
   entrada secreta solo enmascarada;
-- `TerminalClientTuiTranscript` acota el transcript a 65.536 caracteres y 2.000 líneas.
+- `TerminalClientTuiTranscript` acota el transcript a 65.536 caracteres y 2.000 líneas
+  de referencia (el incremento 4 fijó esa segunda medida a un ancho de 40).
 
 Este documento cierra lo que falta del incremento 3 y no reabre esas piezas. No
 modifica el protocolo de entrada del canal cerrable (incremento 1), la comprobación de

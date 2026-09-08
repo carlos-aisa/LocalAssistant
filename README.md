@@ -564,10 +564,19 @@ seguro del efecto de la herramienta y no muestra argumentos crudos.
 
 En la TUI, `Ctrl+C`, EOF, `Ctrl+D` o `Ctrl+Z` con la entrada vacía cierran el canal de
 entrada y terminan el cliente limpiamente. Con texto pendiente, `Ctrl+D` y `Ctrl+Z` se
-ignoran. El transcript visual se limita a 65.536 caracteres normalizados y 2.000 líneas
-envueltas, conservando el contenido más reciente; no altera el historial ni las
+ignoran; `PageUp` y `PageDown` recorren el historial. El transcript visual se limita a
+65.536 caracteres normalizados y 2.000 líneas de referencia (medidas a un ancho fijo de
+40, no al ancho actual), conservando el contenido más reciente; reducir o ampliar la
+ventana nunca descarta contenido, y una respuesta que exceda ese presupuesto conserva
+su parte final con un marcador de truncado. El transcript no altera el historial ni las
 conversaciones persistidas. Si la ventana se reduce durante la sesión, la vista compacta
 prioriza entrada, confirmación, error y estado hasta que vuelva a medir al menos 40×8.
+
+Si en el prompt de confirmación de una herramienta se cierra el cliente con `Ctrl+C`,
+EOF, `Ctrl+D` o `Ctrl+Z` en lugar de escribir `approve` o `reject`, la confirmación
+nunca se aprueba, pero queda pendiente en el servidor hasta que caduca (unos cinco
+minutos); el siguiente mensaje de esa conversación se rechaza con `confirmation_pending`
+hasta entonces. Recuperación: `/new`, `/exit` o esperar la caducidad.
 
 ## Evolución prevista, no implementada
 
