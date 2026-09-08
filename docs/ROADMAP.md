@@ -273,13 +273,17 @@ La fase se entrega mediante incrementos demostrables y en este orden:
    bloqueantes. Las transiciones, cierre y recuperación se harán explícitos. Detener
    la reproducción es local; cancelar un turno HTTP no se presentará como cancelación
    fiable mientras falten identidad de operación e idempotencia de turno.
-5. [ ] **TUI accesible:** historial visual, entrada, estado de servidor, proveedor y
+5. [x] **TUI accesible:** historial visual, entrada, estado de servidor, proveedor y
    conversación, confirmación de herramientas y estado del reproductor. La animación
    representará estados reales, respetará movimiento reducido y degradará a texto
    plano en terminal no interactivo, redireccionado o redimensionado. Spectre.Console
    fue descartado tras evaluación; se adopta un renderizador mínimo propio sin ondas
    de audio simuladas. `PlayingVoice` sigue inactivo hasta el incremento de salida
-   hablada.
+   hablada. Entregado en PR #67/#68 y cerrado con las cinco tandas de
+   `docs/plans/2026-09-06-terminal-tui-gap-corrections-implementation-plan.md`
+   (PR #69–#73); verificación en `docs/evaluations/2026-09-05-terminal-tui-evaluation.md`.
+   Limitación conocida: cerrar en el prompt de confirmación deja la confirmación
+   pendiente en el servidor hasta su caducidad (limpieza server-side pendiente).
 6. **Salida hablada intercambiable simulada:** contratos de síntesis, reproducción y
    coordinación de salida, preferencias y pruebas deterministas sin un motor real.
 7. **TTS real tras una evaluación acotada:** voz, velocidad y volumen, con comandos

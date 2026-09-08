@@ -815,7 +815,11 @@ La TUI del cliente solo recibe snapshots operacionales seguros y transcript púb
 La entrada secreta de credenciales o desafíos no se incorpora al transcript, snapshots
 ni diagnósticos. Las confirmaciones requieren `approve` o `reject` escritos; el cliente
 no afirma todavía que el nombre de herramienta y la caducidad sean un resumen completo
-del efecto autorizado.
+del efecto autorizado. Ninguna combinación de control, EOF, scroll ni redimensionado
+aprueba una confirmación; sin embargo, cerrar el cliente en ese prompt sin responder
+deja la confirmación pendiente en el servidor hasta que caduca (`ConfirmationTimeout`,
+cinco minutos) y bloquea el siguiente turno de esa conversación con `confirmation_pending`.
+La limpieza server-side de ese caso queda como cambio pendiente separado.
 
 Al cerrar la TUI por cancelación, EOF, `Ctrl+D`, `Ctrl+Z` o salida controlada, el buffer
 visual de entrada se descarta antes de restaurar el terminal. Esta limpieza es de mejor

@@ -41,7 +41,14 @@ autenticación, autorización ni OpenAPI.
   `ClampedScrollOffset` que el host adopta. Elimina la expulsión destructiva
   dependiente del ancho de `CreateLines`. Suite completa 564/564. Verificación manual
   M1–M3 registrada en `docs/evaluations/2026-09-05-terminal-tui-evaluation.md`.
-- Incremento 5 — pendiente. El punto 5 de `ROADMAP.md` permanece desmarcado.
+- Incremento 5 — **finalizado** (2026-09-08). Reconciliación documental (`README.md`,
+  `docs/SECURITY.md`, y los diseños de gap-corrections e interpretación de teclas:
+  "líneas envueltas" → "líneas de referencia a ancho 40", terminología del bucle del
+  host, limitación conocida de la confirmación pendiente) y registro consolidado de la
+  comprobación manual en `docs/evaluations/2026-09-05-terminal-tui-evaluation.md`,
+  cubierta por los pases de los incrementos 2–4. Suite 564/564. **El punto 5 de
+  `ROADMAP.md` queda marcado.** Cambio pendiente separado: limpieza server-side de la
+  confirmación al cerrar en su prompt (EOF/`Ctrl+C`).
 
 ## Supuestos de implementación
 
@@ -227,6 +234,10 @@ los límites pertenecen únicamente a la representación visual de la sesión ac
   snapshots.
 
 ## Incremento 5: cierre documental y comprobación manual
+
+> **Finalizado** (2026-09-08). Reconciliación documental hecha; la comprobación manual
+> del punto 5 queda cubierta por los pases registrados de los incrementos 2–4 (tabla de
+> cobertura en el documento de evaluación); `ROADMAP.md` punto 5 marcado.
 
 **Archivos:**
 

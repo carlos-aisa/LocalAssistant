@@ -196,3 +196,65 @@ hueco de las filas prioritarias en `40×8`.
   marcador no se duplica — OK
 
 Conclusión: incremento 4 verificado manualmente.
+
+## Incremento 5 — cierre documental y comprobación manual consolidada
+
+Última tanda del `docs/plans/2026-09-06-terminal-tui-gap-corrections-implementation-plan.md`;
+cierra el punto 5 de la fase 5 del `docs/ROADMAP.md` ("TUI accesible"). Sin código.
+
+### Reconciliación documental
+
+- `README.md` §"Cliente terminal y degradación": el límite del transcript pasa a
+  "2.000 líneas de referencia (ancho fijo 40)"; se añade que reducir/ampliar la ventana
+  nunca descarta contenido, que `PageUp`/`PageDown` recorren el historial, y la
+  limitación de la confirmación pendiente al cerrar en su prompt.
+- `docs/SECURITY.md`: se documenta que ninguna tecla de control, EOF, scroll ni resize
+  aprueba una confirmación, y que cerrar en ese prompt la deja pendiente en el servidor
+  hasta la caducidad (limpieza server-side pendiente aparte).
+- `docs/specs/2026-09-06-terminal-tui-gap-corrections-design.md`: "líneas envueltas" →
+  "líneas de referencia (ancho 40)"; "solo el hilo del host modifica…" → "se modifican
+  serialmente desde el bucle del host"; nueva sección "Corrección posterior" que remite
+  a los diseños de los incrementos 3 y 4.
+- `docs/specs/2026-09-07-terminal-tui-key-interpretation-and-safe-layout-design.md`:
+  "2.000 líneas" → "2.000 líneas de referencia (ancho 40)".
+
+### Estado automatizado
+
+`dotnet format` sin cambios; `dotnet build -c Release` sin avisos;
+`dotnet test LocalAssistant.sln -c Release` → 564/564; `git diff --check` limpio; sin
+procesos `testhost` ni `LocalAssistant.Api` residuales.
+
+### Cobertura de la comprobación manual
+
+La TUI se entregó y endureció de forma incremental sobre `main`, y cada tanda se
+verificó manualmente en Windows Terminal + PowerShell en su momento. El pase manual que
+pide el incremento 5 (resize ±mínimo; `Ctrl+C`, `Ctrl+Z`, `/exit` y restauración del
+cursor; pairing cancelado en cada prompt; entrada larga, pegado y caracteres españoles;
+`approve` y `reject`; `--plain` y redirección sin ANSI) queda cubierto por esos
+registros, todos ellos sobre código ya integrado:
+
+| Escenario del plan | Registrado en |
+| --- | --- |
+| Resize por encima y por debajo del mínimo | inc. 2 T10; inc. 3 T7 (`30×6` con confirmación), T8 (`12×3`); inc. 4 M2 (`~12` columnas y ensanchar) |
+| `Ctrl+C`, `Ctrl+Z`, `/exit` y restauración del cursor | inc. 2 T5 (`/exit` `ExitCode` 0 + `CursorVisible`), T6 (`Ctrl+C`), T7 (`Ctrl+Z`+Enter como EOF), T8 (`Ctrl+Z`/`Ctrl+D` con texto); inc. 3 T5, T6 |
+| Pairing cancelado en cada prompt | correcciones del inc. 2 (cancelación terminal persistente durante pairing, con test de regresión) e inc. 2 T1 (pairing interactivo, credencial enmascarada) |
+| Entrada larga, pegado y caracteres españoles | inc. 2 T11 (unicode pegado); inc. 3 T9 (`~50` caracteres a `30` de ancho, `Backspace` sobre el final) |
+| Confirmación con `approve` y `reject` | inc. 2 T12 (`approve`/`reject`/`cancel`, reenvío vuelve a pedir); inc. 3 FASE 3 (teclas y scroll no aprueban) |
+| `--plain` y salida redirigida sin ANSI | inc. 2 T2 (`--plain`), T3 (redirigida, `salida.txt` sin secuencias ANSI) |
+| Límites del transcript y resize compacto (incorporado en el inc. 4) | inc. 4 M1–M3 |
+
+Todo escenario del plan tiene un registro manual fechado; la parte automatizada (matriz
+de selección de presentador, contrato de teclas, layout por umbrales, presupuesto del
+transcript, cancelación durante pairing) está cubierta por la suite (564/564).
+
+Conclusión: la comprobación manual del punto 5 de la fase 5 queda satisfecha por la
+evidencia acumulada de los incrementos 2, 3 y 4. Se marca el punto 5 del `ROADMAP.md`.
+
+### Limitación conocida documentada
+
+Cerrar el cliente (`Ctrl+C`, EOF, `Ctrl+D`, `Ctrl+Z`) en el prompt de confirmación de
+una herramienta nunca la aprueba, pero la deja pendiente en el servidor hasta la
+caducidad (`ConfirmationTimeout`, 5 min); el siguiente turno de esa conversación
+devuelve `confirmation_pending`. Recuperación: `/new`, `/exit` o esperar. Recogido en
+`README.md` y `docs/SECURITY.md`. La limpieza server-side es un cambio pendiente
+separado, fuera del alcance del incremento 5.

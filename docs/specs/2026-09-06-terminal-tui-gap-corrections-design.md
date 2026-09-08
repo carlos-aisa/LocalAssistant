@@ -151,10 +151,11 @@ fabricado directamente por los tests.
 ### Presupuesto acotado del transcript
 
 El almacenamiento visual usará una cola con presupuesto acumulado. Se conservarán
-como máximo 65.536 caracteres normalizados y 2.000 líneas envueltas. Al superar uno de
-los límites se eliminarán primero las entradas completas más antiguas. Si una sola
-entrada excede el presupuesto, se conservará su parte final con un marcador visible
-de truncado, porque el viewport inicial prioriza el contenido más reciente.
+como máximo 65.536 caracteres normalizados y 2.000 líneas de referencia (medidas a un
+ancho fijo de 40, no al ancho actual del terminal). Al superar uno de los límites se
+eliminarán primero las entradas completas más antiguas. Si una sola entrada excede el
+presupuesto, se conservará su parte final con un marcador visible de truncado, porque
+el viewport inicial prioriza el contenido más reciente.
 
 El renderer calculará únicamente las líneas necesarias para el viewport y el offset
 de scroll dentro de esos límites. Añadir contenido nuevo volverá al final; el scroll
@@ -171,7 +172,8 @@ usando el flujo textual y su EOF nativo.
 
 - Después de cerrar el canal, ninguna lectura puede quedar pendiente ni publicar otro
   prompt.
-- Solo el hilo del host modifica controles, buffer visual, viewport o driver.
+- El buffer visual, el viewport y el driver se modifican serialmente desde el bucle
+  del host, no desde un hilo dedicado.
 - Cancelar o cerrar limpia el buffer antes de restaurar el terminal.
 - El transcript y los snapshots nunca contienen entrada secreta.
 - Una confirmación solo se resuelve mediante las líneas completas `approve` o
@@ -223,6 +225,25 @@ La corrección estará terminada cuando:
 - las pruebas nuevas, formato, build Release y suite completa pasen;
 - la comprobación manual en Windows Terminal y PowerShell quede registrada;
 - el roadmap y la evaluación reflejen exactamente el estado verificado.
+
+## Corrección posterior
+
+Durante la implementación, los incrementos 3 y 4 refinaron dos áreas de este diseño y
+tienen sus propios documentos, que prevalecen sobre el esquema de arriba:
+
+- **Interpretación de teclas y layout seguro** —
+  [`2026-09-07-terminal-tui-key-interpretation-and-safe-layout-design.md`](2026-09-07-terminal-tui-key-interpretation-and-safe-layout-design.md).
+  `Escape` sobre un prompt entrega una línea vacía (`SubmitEmpty`), no cierra el canal;
+  `Ctrl+C` como tecla cancela la aplicación (`CancelApplication`) por una ruta distinta
+  al cierre del canal (`CloseChannel`); el layout compacto usa umbrales explícitos
+  (`≥ 40×8`, `20×6 ≤ tamaño < 40×8`, `< 20×6`) con prioridad de retención
+  «confirmación > input > aviso de tamaño > error > estado > transcript».
+- **Presupuesto acotado del transcript** —
+  [`2026-09-08-terminal-tui-transcript-budget-design.md`](2026-09-08-terminal-tui-transcript-budget-design.md).
+  El presupuesto de líneas es de **líneas de referencia a ancho 40**, no de líneas
+  envueltas al ancho actual (esa variante era destructiva al reducir la ventana). La
+  retención ocurre solo en `Add`; la consulta de render (`CreateView`) es pura y
+  materializa únicamente la ventana visible.
 
 ## Fuera de alcance
 
