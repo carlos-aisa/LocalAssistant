@@ -445,30 +445,79 @@ public sealed class TerminalClientTuiTests
     }
 
     [Fact]
-    public void TranscriptKeepsTheRecentTailWithinItsCharacterAndLineBudgets()
+    public async Task PageUpBeyondTheContentIsAdoptedSoOnePageDownReturnsToTheLatest()
     {
-        var transcript = new TerminalClientTuiTranscript();
-        transcript.Add(new string('a', TerminalClientTuiTranscript.MaximumCharacters + 100));
-        transcript.Add("recent-message");
+        var console = new TerminalClientTuiConsoleAdapter();
+        var driver = new FakeTerminalDriver(new TerminalSize(40, 10));
+        var host = new TerminalClientTuiHost(console, new TerminalClientTuiStateSink(), driver);
 
-        var lines = transcript.CreateLines(40);
+        var runTask = host.RunAsync(async _ =>
+        {
+            var input = await Task.Run(() => console.ReadLine(new TerminalInputRequest(
+                TerminalInputKind.Line,
+                "You: ")));
+            return input is null ? 2 : 0;
+        }, CancellationToken.None);
 
-        Assert.True(lines.Count <= TerminalClientTuiTranscript.MaximumWrappedLines);
-        Assert.Contains(lines, line => line.Contains("recent-message", StringComparison.Ordinal));
-        Assert.DoesNotContain(lines, line => line.Contains(new string('a', 100), StringComparison.Ordinal));
+        await console.WaitForInputAsync();
+        for (var index = 0; index < 12; index++)
+        {
+            console.WriteConversationMessage("Assistant", $"item-{index:D2}");
+        }
+
+        await WaitForFrameContainingAsync(driver, "item-11");
+        for (var press = 0; press < 4; press++)
+        {
+            driver.Enqueue(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
+        }
+
+        await WaitForFrameContainingAsync(driver, "item-00");
+        driver.Enqueue(new ConsoleKeyInfo('\0', ConsoleKey.PageDown, false, false, false));
+
+        // If the host did not adopt the clamped offset the internal offset would still be
+        // far past the end and a single PageDown could not scroll back to the bottom.
+        await WaitForFrameAsync(driver, frame => frame.Any(line => line.Contains("item-11", StringComparison.Ordinal))
+            && !frame.Any(line => line.Contains("item-00", StringComparison.Ordinal)));
+
+        console.CancelInput();
+        await runTask;
     }
 
     [Fact]
-    public void OversizedSingleTranscriptEntryKeepsItsTailAndTruncationMarker()
+    public async Task TranscriptRegionFillsExactlyTheSpaceLeftByThePriorityRowsAtTheMinimum()
     {
-        var transcript = new TerminalClientTuiTranscript();
-        transcript.Add(new string('a', TerminalClientTuiTranscript.MaximumCharacters + 10) + "final-tail");
+        var console = new TerminalClientTuiConsoleAdapter();
+        var driver = new FakeTerminalDriver(new TerminalSize(40, 8));
+        var host = new TerminalClientTuiHost(console, new TerminalClientTuiStateSink(), driver);
 
-        var lines = transcript.CreateLines(40);
+        var runTask = host.RunAsync(async _ =>
+        {
+            var input = await Task.Run(() => console.ReadLine(new TerminalInputRequest(
+                TerminalInputKind.Line,
+                "You: ")));
+            return input is null ? 2 : 0;
+        }, CancellationToken.None);
 
-        Assert.True(lines.Count <= TerminalClientTuiTranscript.MaximumWrappedLines);
-        Assert.Contains(lines, line => line.Contains("[Earlier transcript content truncated]", StringComparison.Ordinal));
-        Assert.Contains(lines, line => line.Contains("final-tail", StringComparison.Ordinal));
+        await console.WaitForInputAsync();
+        for (var index = 0; index < 20; index++)
+        {
+            console.WriteConversationMessage("Assistant", $"row-{index:D2}");
+        }
+
+        await WaitForFrameContainingAsync(driver, "row-19");
+        console.CancelInput();
+        await runTask;
+
+        var frame = driver.Frames.Last(f => f.Any(line => line.Contains("row-19", StringComparison.Ordinal)));
+        Assert.Equal(8, frame.Count);
+
+        // Two priority rows (state + input) pinned to the bottom; the six rows above them
+        // are the transcript window.
+        Assert.StartsWith("State:", frame[^2], StringComparison.Ordinal);
+        Assert.StartsWith("You:", frame[^1], StringComparison.Ordinal);
+        var transcriptRows = frame.Take(6).ToArray();
+        Assert.All(transcriptRows, line => Assert.DoesNotContain("State:", line));
+        Assert.Contains(transcriptRows, line => line.Contains("row-19", StringComparison.Ordinal));
     }
 
     [Fact]
