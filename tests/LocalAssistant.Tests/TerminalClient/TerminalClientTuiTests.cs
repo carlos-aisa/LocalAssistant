@@ -6,6 +6,8 @@ namespace LocalAssistant.Tests.TerminalClient;
 
 public sealed class TerminalClientTuiTests
 {
+    private const char EscControlChar = (char)0x1B;
+
     [Fact]
     public async Task SecretInputIsReturnedWithoutEnteringTheTranscript()
     {
@@ -511,6 +513,431 @@ public sealed class TerminalClientTuiTests
         Assert.Equal("first\\u000D\\nsecond", normalized);
     }
 
+    [Fact]
+    public async Task TextTypedWithoutAnActivePromptIsNotAttachedToTheNextPrompt()
+    {
+        var console = new TerminalClientTuiConsoleAdapter();
+        var driver = new FakeTerminalDriver(new TerminalSize(80, 20));
+        var host = new TerminalClientTuiHost(console, new TerminalClientTuiStateSink(), driver);
+        string? received = null;
+        var promptGate = new TaskCompletionSource();
+
+        var runTask = host.RunAsync(async _ =>
+        {
+            await promptGate.Task;
+            received = await Task.Run(() => console.ReadLine(new TerminalInputRequest(
+                TerminalInputKind.Line,
+                "Type approve, reject, or cancel: ")));
+            return 0;
+        }, CancellationToken.None);
+
+        driver.EnqueueCharacters("approve");
+        driver.Enqueue(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+        await WaitUntilAsync(() => !driver.HasPendingInput);
+
+        promptGate.SetResult();
+        await WaitForFrameContainingAsync(driver, "Type approve, reject, or cancel:");
+        driver.Enqueue(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+
+        Assert.Equal(0, await runTask.WaitAsync(TimeSpan.FromSeconds(2)));
+        Assert.Equal(string.Empty, received);
+        Assert.DoesNotContain(
+            driver.Frames.SelectMany(frame => frame),
+            line => line.Contains("cancel: approve", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task DriverDeliveredCtrlCCancelsTheApplicationAndClosesTheChannel()
+    {
+        var console = new TerminalClientTuiConsoleAdapter();
+        var driver = new FakeTerminalDriver(new TerminalSize(80, 20));
+        var host = new TerminalClientTuiHost(console, new TerminalClientTuiStateSink(), driver);
+        var cancelled = false;
+
+        var runTask = host.RunAsync(async token =>
+        {
+            try
+            {
+                await Task.Delay(Timeout.Infinite, token);
+            }
+            catch (OperationCanceledException)
+            {
+                cancelled = true;
+            }
+
+            return 2;
+        }, CancellationToken.None);
+
+        driver.Enqueue(new ConsoleKeyInfo((char)0x03, ConsoleKey.C, false, false, control: true));
+
+        Assert.Equal(2, await runTask.WaitAsync(TimeSpan.FromSeconds(2)));
+        Assert.True(cancelled);
+        Assert.True(driver.Restored);
+    }
+
+    [Fact]
+    public async Task CtrlDClosesTheChannelWithoutCancellingTheApplicationToken()
+    {
+        var console = new TerminalClientTuiConsoleAdapter();
+        var driver = new FakeTerminalDriver(new TerminalSize(80, 20));
+        var host = new TerminalClientTuiHost(console, new TerminalClientTuiStateSink(), driver);
+        var tokenWasCancelled = true;
+
+        var runTask = host.RunAsync(async token =>
+        {
+            var line = await Task.Run(() => console.ReadLine(new TerminalInputRequest(
+                TerminalInputKind.Line,
+                "You: ")));
+            tokenWasCancelled = token.IsCancellationRequested;
+            return line is null ? 7 : 0;
+        }, CancellationToken.None);
+
+        await console.WaitForInputAsync();
+        driver.Enqueue(new ConsoleKeyInfo((char)0x04, ConsoleKey.D, false, false, control: true));
+
+        Assert.Equal(7, await runTask.WaitAsync(TimeSpan.FromSeconds(2)));
+        Assert.False(tokenWasCancelled);
+    }
+
+    [Fact]
+    public async Task BackspaceShrinksTheInputShownInTheFrame()
+    {
+        var console = new TerminalClientTuiConsoleAdapter();
+        var driver = new FakeTerminalDriver(new TerminalSize(80, 20));
+        var host = new TerminalClientTuiHost(console, new TerminalClientTuiStateSink(), driver);
+
+        var runTask = host.RunAsync(async _ =>
+        {
+            await Task.Run(() => console.ReadLine(new TerminalInputRequest(TerminalInputKind.Line, "You: ")));
+            return 0;
+        }, CancellationToken.None);
+
+        await console.WaitForInputAsync();
+        driver.EnqueueCharacters("abcd");
+        await WaitForFrameWithLineAsync(driver, "You: abcd");
+        driver.Enqueue(new ConsoleKeyInfo('\b', ConsoleKey.Backspace, false, false, false));
+        await WaitForFrameWithLineAsync(driver, "You: abc");
+
+        console.CancelInput();
+        await runTask;
+    }
+
+    [Fact]
+    public async Task PageUpAndPageDownScrollWithoutCompletingThePrompt()
+    {
+        var console = new TerminalClientTuiConsoleAdapter();
+        var driver = new FakeTerminalDriver(new TerminalSize(40, 10));
+        var host = new TerminalClientTuiHost(console, new TerminalClientTuiStateSink(), driver);
+
+        var runTask = host.RunAsync(async _ =>
+        {
+            var input = await Task.Run(() => console.ReadLine(new TerminalInputRequest(TerminalInputKind.Line, "You: ")));
+            return input is null ? 9 : 0;
+        }, CancellationToken.None);
+
+        await console.WaitForInputAsync();
+        for (var index = 0; index < 12; index++)
+        {
+            console.WriteConversationMessage("Assistant", $"line-{index:D2}");
+        }
+
+        await WaitForFramesAsync(driver, 2);
+        driver.Enqueue(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
+        driver.Enqueue(new ConsoleKeyInfo('\0', ConsoleKey.PageDown, false, false, false));
+        await WaitUntilAsync(() => !driver.HasPendingInput);
+
+        Assert.False(runTask.IsCompleted);
+        driver.EnqueueEndOfInput();
+        Assert.Equal(9, await runTask.WaitAsync(TimeSpan.FromSeconds(2)));
+    }
+
+    [Fact]
+    public async Task RepeatedPageUpKeepsScrollingResponsiveAfterResize()
+    {
+        var console = new TerminalClientTuiConsoleAdapter();
+        var driver = new FakeTerminalDriver(new TerminalSize(40, 12));
+        var host = new TerminalClientTuiHost(console, new TerminalClientTuiStateSink(), driver);
+
+        var runTask = host.RunAsync(async _ =>
+        {
+            await Task.Run(() => console.ReadLine(new TerminalInputRequest(TerminalInputKind.Line, "You: ")));
+            return 0;
+        }, CancellationToken.None);
+
+        await console.WaitForInputAsync();
+        for (var index = 0; index < 30; index++)
+        {
+            console.WriteConversationMessage("Assistant", $"row-{index:D2}");
+        }
+
+        await WaitForFrameContainingAsync(driver, "row-29");
+        for (var index = 0; index < 200; index++)
+        {
+            driver.Enqueue(new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false));
+        }
+
+        await WaitUntilAsync(() => !driver.HasPendingInput);
+        await WaitForFrameContainingAsync(driver, "row-00");
+
+        driver.Size = new TerminalSize(40, 8);
+        await WaitForFrameContainingAsync(driver, "row-04");
+        var framesBefore = driver.Frames.Count;
+        driver.Enqueue(new ConsoleKeyInfo('\0', ConsoleKey.PageDown, false, false, false));
+        await WaitForFramesAsync(driver, framesBefore + 1);
+
+        // One PageDown moves the viewport window toward newer content by exactly the page
+        // size. Without the offset clamp it would be astronomically large and PageDown would
+        // have no visible effect.
+        await WaitForFrameContainingAsync(driver, "row-14");
+
+        console.CancelInput();
+        await runTask;
+    }
+
+    [Fact]
+    public async Task CompactViewportKeepsConfirmationInputAndTheResizeHint()
+    {
+        var console = new TerminalClientTuiConsoleAdapter();
+        var sink = new TerminalClientTuiStateSink();
+        var driver = new FakeTerminalDriver(new TerminalSize(20, 6));
+        var host = new TerminalClientTuiHost(console, sink, driver);
+
+        var runTask = host.RunAsync(async _ =>
+        {
+            await Task.Run(() => console.ReadLine(new TerminalInputRequest(TerminalInputKind.Line, "You: ")));
+            return 0;
+        }, CancellationToken.None);
+
+        sink.OnStateChanged(TerminalClientStateSnapshot.Initial with
+        {
+            Lifecycle = TerminalClientLifecycle.Ready,
+            Activity = TerminalClientActivity.AwaitingConfirmation,
+            Provider = "fake",
+            PendingConfirmation = new TerminalClientPendingConfirmation(
+                "create_reminder",
+                DateTimeOffset.Parse("2026-09-07T12:00:00+00:00", CultureInfo.InvariantCulture)),
+            Error = new TerminalClientOperationError(
+                TerminalClientErrorSeverity.Recoverable,
+                true,
+                "temporary",
+                "temporary failure",
+                "turn"),
+        });
+
+        await console.WaitForInputAsync();
+        await WaitForFramesAsync(driver, 2);
+        console.CancelInput();
+        await runTask;
+
+        var frame = driver.Frames.Last();
+        Assert.Contains(frame, line => line.StartsWith("CONFIRM:", StringComparison.Ordinal));
+        Assert.Contains(frame, line => line.StartsWith("You:", StringComparison.Ordinal));
+        Assert.Contains(frame, line => line.StartsWith("Terminal too small", StringComparison.Ordinal));
+        Assert.All(frame, line => Assert.True(line.Length <= 20));
+    }
+
+    [Theory]
+    [InlineData(10, 2)]
+    [InlineData(1, 1)]
+    public async Task SubMinimumViewportRendersWithoutThrowingOrOverflowing(int width, int height)
+    {
+        var console = new TerminalClientTuiConsoleAdapter();
+        var sink = new TerminalClientTuiStateSink();
+        var driver = new FakeTerminalDriver(new TerminalSize(width, height));
+        var host = new TerminalClientTuiHost(console, sink, driver);
+
+        var runTask = host.RunAsync(async _ =>
+        {
+            await Task.Run(() => console.ReadLine(new TerminalInputRequest(TerminalInputKind.Line, "You: ")));
+            return 0;
+        }, CancellationToken.None);
+
+        sink.OnStateChanged(TerminalClientStateSnapshot.Initial with
+        {
+            Lifecycle = TerminalClientLifecycle.Ready,
+            Activity = TerminalClientActivity.AwaitingConfirmation,
+            Provider = "fake",
+            PendingConfirmation = new TerminalClientPendingConfirmation(
+                "create_reminder",
+                DateTimeOffset.Parse("2026-09-07T12:00:00+00:00", CultureInfo.InvariantCulture)),
+            Error = new TerminalClientOperationError(
+                TerminalClientErrorSeverity.Recoverable,
+                true,
+                "network\nerror",
+                "failed" + EscControlChar + "[2J",
+                "turn"),
+        });
+
+        await console.WaitForInputAsync();
+        await WaitForFramesAsync(driver, 2);
+        console.CancelInput();
+        await runTask;
+
+        Assert.All(driver.Frames.SelectMany(frame => frame), line =>
+        {
+            Assert.True(line.Length <= width);
+            Assert.DoesNotContain('\n', line);
+            Assert.DoesNotContain(EscControlChar, line);
+        });
+    }
+
+    [Fact]
+    public async Task LongLineInputShowsItsActiveEndWithATruncationMarker()
+    {
+        var console = new TerminalClientTuiConsoleAdapter();
+        var driver = new FakeTerminalDriver(new TerminalSize(20, 10));
+        var host = new TerminalClientTuiHost(console, new TerminalClientTuiStateSink(), driver);
+
+        var runTask = host.RunAsync(async _ =>
+        {
+            await Task.Run(() => console.ReadLine(new TerminalInputRequest(TerminalInputKind.Line, "You: ")));
+            return 0;
+        }, CancellationToken.None);
+
+        await console.WaitForInputAsync();
+        driver.EnqueueCharacters("0123456789abcdefghijZ");
+        await WaitForFrameContainingAsync(driver, "Z");
+
+        var inputLine = Assert.Single(driver.Frames.Last(), line => line.Contains('Z', StringComparison.Ordinal));
+        Assert.True(inputLine.Length <= 20);
+        Assert.StartsWith("…", inputLine);
+        Assert.EndsWith("Z", inputLine);
+        Assert.DoesNotContain("012345", inputLine);
+
+        console.CancelInput();
+        await runTask;
+    }
+
+    [Fact]
+    public async Task LongSecretInputShowsOnlyAMaskedTail()
+    {
+        var console = new TerminalClientTuiConsoleAdapter();
+        var driver = new FakeTerminalDriver(new TerminalSize(16, 10));
+        var host = new TerminalClientTuiHost(console, new TerminalClientTuiStateSink(), driver);
+
+        var runTask = host.RunAsync(async _ =>
+        {
+            await Task.Run(() => console.ReadSecret(new TerminalInputRequest(TerminalInputKind.Secret, "Secret: ")));
+            return 0;
+        }, CancellationToken.None);
+
+        await console.WaitForInputAsync();
+        driver.EnqueueCharacters("private-value-1234567890");
+        await WaitForFramesAsync(driver, 2);
+
+        Assert.DoesNotContain(
+            driver.Frames.SelectMany(frame => frame),
+            line => line.Contains("private-value", StringComparison.Ordinal));
+        Assert.Contains(driver.Frames.Last(), line => line.Contains('*', StringComparison.Ordinal));
+
+        console.CancelInput();
+        await runTask;
+    }
+
+    [Fact]
+    public async Task ResizeWhileAwaitingASecretNeverLeaksTheSecret()
+    {
+        var console = new TerminalClientTuiConsoleAdapter();
+        var driver = new FakeTerminalDriver(new TerminalSize(80, 20));
+        var host = new TerminalClientTuiHost(console, new TerminalClientTuiStateSink(), driver);
+
+        var runTask = host.RunAsync(async _ =>
+        {
+            await Task.Run(() => console.ReadSecret(new TerminalInputRequest(TerminalInputKind.Secret, "Challenge: ")));
+            return 0;
+        }, CancellationToken.None);
+
+        await console.WaitForInputAsync();
+        driver.EnqueueCharacters("top-secret-challenge");
+        await WaitForFramesAsync(driver, 2);
+        driver.Size = new TerminalSize(30, 6);
+        await WaitForFramesAsync(driver, 3);
+        driver.Size = new TerminalSize(80, 20);
+        await WaitForFramesAsync(driver, 4);
+
+        Assert.DoesNotContain(
+            driver.Frames.SelectMany(frame => frame),
+            line => line.Contains("top-secret", StringComparison.Ordinal));
+
+        console.CancelInput();
+        await runTask;
+    }
+
+    [Fact]
+    public async Task EveryRenderedLineIsOneWidthBoundRowEvenWithHostileMetadata()
+    {
+        foreach (var width in new[] { 12, 20, 40, 80 })
+        {
+            var console = new TerminalClientTuiConsoleAdapter();
+            var sink = new TerminalClientTuiStateSink();
+            var driver = new FakeTerminalDriver(new TerminalSize(width, 10));
+            var host = new TerminalClientTuiHost(console, sink, driver);
+            var runTask = host.RunAsync(async _ =>
+            {
+                await Task.Run(() => console.ReadLine(new TerminalInputRequest(TerminalInputKind.Line, "You: ")));
+                return 0;
+            }, CancellationToken.None);
+
+            sink.OnStateChanged(TerminalClientStateSnapshot.Initial with
+            {
+                Lifecycle = TerminalClientLifecycle.Ready,
+                Activity = TerminalClientActivity.AwaitingConfirmation,
+                Provider = "fake",
+                PendingConfirmation = new TerminalClientPendingConfirmation(
+                    "tool\r\n" + EscControlChar + "]8;evilname",
+                    DateTimeOffset.Parse("2026-09-07T12:00:00+00:00", CultureInfo.InvariantCulture)),
+                Error = new TerminalClientOperationError(
+                    TerminalClientErrorSeverity.Recoverable,
+                    true,
+                    "code" + EscControlChar + "[2J\r\n",
+                    "message\nwith controls",
+                    "turn"),
+            });
+
+            await console.WaitForInputAsync();
+            await WaitForFramesAsync(driver, 2);
+            console.CancelInput();
+            await runTask;
+
+            Assert.All(driver.Frames.SelectMany(frame => frame), line =>
+            {
+                Assert.True(line.Length <= width, $"line '{line}' exceeds width {width}");
+                Assert.DoesNotContain('\n', line);
+                Assert.DoesNotContain(EscControlChar, line);
+            });
+        }
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        for (var attempt = 0; attempt < 300; attempt++)
+        {
+            if (condition())
+            {
+                return;
+            }
+
+            await Task.Delay(10);
+        }
+
+        throw new TimeoutException("The expected condition was not observed.");
+    }
+
+    private static async Task WaitForFrameWithLineAsync(FakeTerminalDriver driver, string line)
+    {
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            if (driver.Frames.Any(frame => frame.Contains(line)))
+            {
+                return;
+            }
+
+            await Task.Delay(10);
+        }
+
+        throw new TimeoutException($"No rendered TUI frame contained the exact line '{line}'.");
+    }
+
     private static async Task WaitForFramesAsync(FakeTerminalDriver driver, int count)
     {
         for (var attempt = 0; attempt < 200; attempt++)
@@ -602,6 +1029,8 @@ public sealed class TerminalClientTuiTests
         public int RestoreCount { get; private set; }
 
         public int InputReadCount { get; private set; }
+
+        public bool HasPendingInput => !_inputs.IsEmpty;
 
         public TerminalSize GetSize() => Size;
 

@@ -164,6 +164,8 @@ internal sealed class TerminalClientTuiHost
     private TerminalClientStateSnapshot _snapshot = TerminalClientStateSnapshot.Initial;
     private TerminalSize? _lastSize;
     private TerminalInputRequest? _renderedInputRequest;
+    private TerminalInputRequest? _bufferedRequest;
+    private CancellationTokenSource? _applicationCancellation;
     private int _scrollOffset;
     private int _clearInputRequested;
     private bool _dirty = true;
@@ -189,8 +191,10 @@ internal sealed class TerminalClientTuiHost
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(operation);
-        using var cancellationRegistration = cancellationToken.Register(RequestTerminalClose);
-        var applicationTask = Task.Run(() => operation(cancellationToken), CancellationToken.None);
+        using var applicationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _applicationCancellation = applicationCancellation;
+        using var cancellationRegistration = cancellationToken.Register(CloseInputChannel);
+        var applicationTask = Task.Run(() => operation(applicationCancellation.Token), CancellationToken.None);
 
         try
         {
@@ -220,17 +224,31 @@ internal sealed class TerminalClientTuiHost
         }
         finally
         {
+            _applicationCancellation = null;
             _console.CloseInput();
             ClearInputBuffer();
             _driver.Restore();
         }
     }
 
-    private void RequestTerminalClose()
+    private void CloseInputChannel()
     {
         _console.CloseInput();
         Interlocked.Exchange(ref _clearInputRequested, 1);
         _dirty = true;
+    }
+
+    private void CancelApplication()
+    {
+        try
+        {
+            _applicationCancellation?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        CloseInputChannel();
     }
 
     private void DrainUpdates()
@@ -273,7 +291,7 @@ internal sealed class TerminalClientTuiHost
 
             if (input.IsEndOfInput)
             {
-                RequestTerminalClose();
+                CloseInputChannel();
                 return;
             }
 
@@ -286,68 +304,62 @@ internal sealed class TerminalClientTuiHost
 
     private void ProcessKey(ConsoleKeyInfo key)
     {
-        if (key.Key is ConsoleKey.UpArrow or ConsoleKey.PageUp)
-        {
-            _scrollOffset += key.Key == ConsoleKey.PageUp ? 5 : 1;
-            _dirty = true;
-            return;
-        }
+        _console.TryGetInputRequest(out var request);
+        RebindBufferTo(request);
+        var intent = TerminalKeyInterpreter.Interpret(key, request is not null, _input.Length > 0);
 
-        if (key.Key is ConsoleKey.DownArrow or ConsoleKey.PageDown)
+        switch (intent.Action)
         {
-            _scrollOffset = Math.Max(0, _scrollOffset - (key.Key == ConsoleKey.PageDown ? 5 : 1));
-            _dirty = true;
-            return;
-        }
-
-        if (IsEndOfInputKey(key))
-        {
-            if (_input.Length == 0)
-            {
-                RequestTerminalClose();
-            }
-
-            return;
-        }
-
-        if (key.Key == ConsoleKey.Escape)
-        {
-            ClearInputBuffer();
-            _console.CompleteInput(string.Empty);
-            _dirty = true;
-            return;
-        }
-
-        if (key.Key == ConsoleKey.Enter)
-        {
-            var value = _input.ToString();
-            ClearInputBuffer();
-            _console.CompleteInput(value);
-            _dirty = true;
-            return;
-        }
-
-        if (key.Key == ConsoleKey.Backspace)
-        {
-            if (_input.Length > 0)
-            {
+            case TerminalKeyAction.CancelApplication:
+                CancelApplication();
+                break;
+            case TerminalKeyAction.CloseChannel:
+                CloseInputChannel();
+                break;
+            case TerminalKeyAction.Scroll:
+                _scrollOffset = Math.Clamp(
+                    _scrollOffset + intent.ScrollDelta,
+                    0,
+                    TerminalClientTuiTranscript.MaximumWrappedLines);
+                _dirty = true;
+                break;
+            case TerminalKeyAction.Submit:
+                SubmitBuffer(_input.ToString());
+                break;
+            case TerminalKeyAction.SubmitEmpty:
+                SubmitBuffer(string.Empty);
+                break;
+            case TerminalKeyAction.DeletePrevious:
                 _input.Length--;
                 _dirty = true;
-            }
-
-            return;
-        }
-
-        if (!char.IsControl(key.KeyChar))
-        {
-            _input.Append(key.KeyChar);
-            _dirty = true;
+                break;
+            case TerminalKeyAction.Insert:
+                _input.Append(intent.Character);
+                _dirty = true;
+                break;
+            case TerminalKeyAction.Ignore:
+                break;
         }
     }
 
-    private static bool IsEndOfInputKey(ConsoleKeyInfo key) =>
-        (key.Modifiers & ConsoleModifiers.Control) != 0 &&
-        key.Key is ConsoleKey.D or ConsoleKey.Z;
+    private void SubmitBuffer(string value)
+    {
+        ClearInputBuffer();
+        _bufferedRequest = null;
+        _console.CompleteInput(value);
+        _dirty = true;
+    }
+
+    private void RebindBufferTo(TerminalInputRequest? request)
+    {
+        if (ReferenceEquals(request, _bufferedRequest))
+        {
+            return;
+        }
+
+        ClearInputBuffer();
+        _bufferedRequest = request;
+    }
 
     private void DetectResize()
     {
@@ -388,14 +400,19 @@ internal sealed class TerminalClientTuiHost
 
     private List<string> CreateFrame(int width, int height)
     {
+        // At the compatible minimum (40x8) the priority rows always fit, so their order
+        // here is purely visual: transcript on top, then state, error, confirmation, and
+        // the input line adjacent to the bottom edge. The Take(height) is a defensive cap.
         var priorityLines = new List<string>();
-        AddInputLine(priorityLines, width);
-        AddConfirmationLine(priorityLines, width);
-        AddErrorLine(priorityLines, width);
         priorityLines.Add(FitLine(CreateStateLine(), width));
+        AddErrorLine(priorityLines, width);
+        AddConfirmationLine(priorityLines, width);
+        AddInputLine(priorityLines, width);
 
         var transcriptHeight = Math.Max(0, height - priorityLines.Count);
         var transcript = _transcript.CreateLines(width);
+        var maxOffset = Math.Max(0, transcript.Count - transcriptHeight);
+        _scrollOffset = Math.Min(_scrollOffset, maxOffset);
         var first = Math.Max(0, transcript.Count - transcriptHeight - _scrollOffset);
         var visibleTranscript = transcript.Skip(first).Take(transcriptHeight);
         return visibleTranscript.Concat(priorityLines).Take(height).ToList();
@@ -403,11 +420,14 @@ internal sealed class TerminalClientTuiHost
 
     private List<string> CreateCompactFrame(int width, int height)
     {
+        // Below the compatible minimum, rows are dropped by retention priority
+        // (confirmation, input, resize hint, error, state); Take(height) keeps the top.
         var lines = new List<string>();
-        AddInputLine(lines, width);
         AddConfirmationLine(lines, width);
-        AddErrorLine(lines, width);
+        AddInputLine(lines, width);
         lines.Add(FitLine("Terminal too small. Resize to at least 40x8.", width));
+        AddErrorLine(lines, width);
+        lines.Add(FitLine(CreateStateLine(), width));
         return lines.Take(height).ToList();
     }
 
