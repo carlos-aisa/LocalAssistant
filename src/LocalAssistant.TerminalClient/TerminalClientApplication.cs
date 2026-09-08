@@ -6,7 +6,9 @@ public sealed class TerminalClientApplication
     private readonly ITerminalConsole _console;
     private readonly TerminalClientOptions _options;
     private readonly IPrivateClientCredentialStore _credentialStore;
+    private readonly ISpokenOutputCoordinator _spokenOutput;
     private readonly TerminalClientStateCoordinator _stateCoordinator;
+    private bool _spokenOutputCancellationRecorded;
 
     public TerminalClientApplication(
         PrivateApiClient apiClient,
@@ -18,7 +20,8 @@ public sealed class TerminalClientApplication
             console,
             options,
             credentialStore ?? new ManualPrivateClientCredentialStore(),
-            new TerminalClientStateTextSink(console))
+            new TerminalClientStateTextSink(console),
+            new UnavailableSpokenOutputCoordinator())
     {
     }
 
@@ -27,13 +30,15 @@ public sealed class TerminalClientApplication
         ITerminalConsole console,
         TerminalClientOptions options,
         IPrivateClientCredentialStore credentialStore,
-        ITerminalClientStateSink stateSink)
+        ITerminalClientStateSink stateSink,
+        ISpokenOutputCoordinator? spokenOutput = null)
     {
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _console = console ?? throw new ArgumentNullException(nameof(console));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _credentialStore = credentialStore ?? throw new ArgumentNullException(nameof(credentialStore));
-        _stateCoordinator = new TerminalClientStateCoordinator(stateSink);
+        _spokenOutput = spokenOutput ?? new UnavailableSpokenOutputCoordinator();
+        _stateCoordinator = new TerminalClientStateCoordinator(stateSink, _spokenOutput.State);
     }
 
     public async Task<int> RunAsync(CancellationToken cancellationToken)
@@ -126,6 +131,7 @@ public sealed class TerminalClientApplication
         finally
         {
             Close();
+            await _spokenOutput.DisposeAsync();
         }
     }
 
@@ -290,6 +296,9 @@ public sealed class TerminalClientApplication
                         cancellationToken);
                     credential = persistedResolvedConversation.Credential;
                     ShowResponse(resolved.Response.Value);
+                    var spokenOutputError = await PlaySpokenOutputAsync(
+                        resolved.Response.Value,
+                        cancellationToken);
                     if (resolved.Response.Value.Confirmation is not null)
                     {
                         var nextConfirmation = resolved.Response.Value.Confirmation;
@@ -307,7 +316,17 @@ public sealed class TerminalClientApplication
                     }
                     else
                     {
-                        if (persistedResolvedConversation.Error is not null)
+                        if (spokenOutputError is not null)
+                        {
+                            Ready(
+                                provider,
+                                conversationId,
+                                pendingConfirmation: null,
+                                clearError: false,
+                                errorOverride: ToOperationError(spokenOutputError, "speech_output"));
+                            WriteError(spokenOutputError);
+                        }
+                        else if (persistedResolvedConversation.Error is not null)
                         {
                             Ready(
                                 provider,
@@ -343,7 +362,20 @@ public sealed class TerminalClientApplication
             }
             else
             {
-                if (persistedConversation.Error is not null)
+                var spokenOutputError = await PlaySpokenOutputAsync(
+                    sent.Response.Value,
+                    cancellationToken);
+                if (spokenOutputError is not null)
+                {
+                    Ready(
+                        provider,
+                        conversationId,
+                        pendingConfirmation: null,
+                        clearError: false,
+                        errorOverride: ToOperationError(spokenOutputError, "speech_output"));
+                    WriteError(spokenOutputError);
+                }
+                else if (persistedConversation.Error is not null)
                 {
                     Ready(
                         provider,
@@ -1005,6 +1037,74 @@ public sealed class TerminalClientApplication
         }
     }
 
+    private async Task<ClientError?> PlaySpokenOutputAsync(
+        ConversationResponse response,
+        CancellationToken cancellationToken)
+    {
+        if (!IsSpokenOutputEligible(response))
+        {
+            return null;
+        }
+
+        _spokenOutputCancellationRecorded = false;
+        try
+        {
+            var preparation = await _spokenOutput.PrepareAsync(response.Content!, cancellationToken);
+            if (preparation.Kind == SpokenOutputPreparationKind.SynthesisFailed)
+            {
+                return new ClientError(
+                    "speech_synthesis_failed",
+                    "The response was shown, but spoken output could not be prepared.");
+            }
+
+            if (preparation.Kind == SpokenOutputPreparationKind.Cancelled)
+            {
+                return new ClientError(
+                    "speech_output_cancelled",
+                    "The response was shown, but spoken output was cancelled.");
+            }
+
+            if (preparation.Kind != SpokenOutputPreparationKind.Prepared ||
+                preparation.PreparedOutput is null)
+            {
+                return null;
+            }
+
+            await using var preparedOutput = preparation.PreparedOutput;
+            BeginActivity(TerminalClientActivity.PlayingVoice);
+            var playback = await preparedOutput.PlayAsync(cancellationToken);
+            return playback.Kind switch
+            {
+                SpokenOutputPlaybackKind.Completed => null,
+                SpokenOutputPlaybackKind.PlaybackFailed => new ClientError(
+                    "speech_playback_failed",
+                    "The response was shown, but spoken output could not be played."),
+                SpokenOutputPlaybackKind.Cancelled => new ClientError(
+                    "speech_output_cancelled",
+                    "The response was shown, but spoken output was cancelled."),
+                _ => throw new InvalidOperationException("The spoken-output playback result was not recognized."),
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (_stateCoordinator.Current.Error?.IsUncertain != true)
+            {
+                RecordError(
+                    new ClientError("operation_cancelled", "The spoken output was cancelled."),
+                    "speech_output",
+                    canBeUncertain: false);
+            }
+
+            _spokenOutputCancellationRecorded = true;
+            throw;
+        }
+    }
+
+    private static bool IsSpokenOutputEligible(ConversationResponse response) =>
+        !string.IsNullOrWhiteSpace(response.Content) &&
+        response.Confirmation is null &&
+        response.Error is null;
+
     private void WriteError(ClientError error)
     {
         if (_console is IStructuredTerminalConsole structuredConsole)
@@ -1155,6 +1255,11 @@ public sealed class TerminalClientApplication
 
     private void HandleCancellation()
     {
+        if (_spokenOutputCancellationRecorded)
+        {
+            return;
+        }
+
         var current = _stateCoordinator.Current;
         if (current.Lifecycle == TerminalClientLifecycle.Connecting)
         {
@@ -1229,7 +1334,8 @@ public sealed class TerminalClientApplication
             error,
             provider ?? current.Provider,
             replaceConversation ? conversationId : conversationId ?? current.ConversationId,
-            pendingConfirmation);
+            pendingConfirmation,
+            _spokenOutput.State);
         if (!_stateCoordinator.TryTransition(next))
         {
             throw new InvalidOperationException("The terminal client requested an invalid state transition.");
@@ -1258,6 +1364,7 @@ public sealed class TerminalClientApplication
         TerminalClientActivity.SendingTurn => "turn",
         TerminalClientActivity.ResolvingConfirmation => "confirmation",
         TerminalClientActivity.CompletingConversation => "completion",
+        TerminalClientActivity.PlayingVoice => "speech_output",
         TerminalClientActivity.ResumingConversation => "resume",
         TerminalClientActivity.SelectingConversation => "selection",
         _ => "client",

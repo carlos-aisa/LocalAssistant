@@ -35,7 +35,11 @@ ensamblados con responsabilidades ejecutables y comprobables:
 - `LocalAssistant.Tests`: pruebas unitarias e integración HTTP en proceso.
 
 No hay worker ni microservicios. Ollama sigue siendo un proceso externo opcional;
-voz, Home Assistant, MQTT, bases vectoriales y Open WebUI son evoluciones futuras.
+Home Assistant, MQTT, bases vectoriales y Open WebUI son evoluciones futuras. El cliente
+terminal contiene un plano local de salida hablada con contratos de síntesis,
+reproducción y coordinación, pero su composición normal declara esa capacidad como no
+disponible: no incorpora motor TTS, SDK, proceso de audio ni tráfico multimedia hacia
+la API.
 
 ## Flujo de una conversación
 

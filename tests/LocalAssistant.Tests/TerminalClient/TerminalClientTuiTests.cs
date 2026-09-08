@@ -53,6 +53,52 @@ public sealed class TerminalClientTuiTests
     }
 
     [Fact]
+    public async Task TuiRendersSpokenOutputAvailabilityAndPlaybackWithoutColor()
+    {
+        var console = new TerminalClientTuiConsoleAdapter();
+        var sink = new TerminalClientTuiStateSink();
+        var driver = new FakeTerminalDriver(new TerminalSize(100, 16));
+        var host = new TerminalClientTuiHost(console, sink, driver);
+
+        var runTask = host.RunAsync(async _ =>
+        {
+            var input = await Task.Run(() => console.ReadLine(new TerminalInputRequest(
+                TerminalInputKind.Line,
+                "You: ")));
+            return input is null ? 2 : 0;
+        }, CancellationToken.None);
+
+        await console.WaitForInputAsync();
+        var ready = TerminalClientStateSnapshot.Initial with
+        {
+            Lifecycle = TerminalClientLifecycle.Ready,
+            Provider = "fake",
+            SpokenOutput = new TerminalClientSpokenOutputState(
+                SpokenOutputAvailability.Ready,
+                IsMuted: false),
+        };
+        sink.OnStateChanged(ready);
+        await WaitForFrameContainingAsync(driver, "Speech: ready");
+
+        sink.OnStateChanged(ready with
+        {
+            Activity = TerminalClientActivity.PlayingVoice,
+        });
+        await WaitForFrameContainingAsync(driver, "Speech: playing");
+
+        sink.OnStateChanged(ready with
+        {
+            SpokenOutput = new TerminalClientSpokenOutputState(
+                SpokenOutputAvailability.Ready,
+                IsMuted: true),
+        });
+        await WaitForFrameContainingAsync(driver, "Speech: muted");
+
+        console.CancelInput();
+        await runTask;
+    }
+
+    [Fact]
     public async Task CancellationUnblocksPendingInputAndRestoresTheTerminal()
     {
         using var cancellationSource = new CancellationTokenSource();

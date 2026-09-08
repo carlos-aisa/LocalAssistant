@@ -72,7 +72,7 @@ Implementado:
 - Evaluación local reproducible de decisiones de tool calling por modelo.
 
 No implementado: detección automática de capacidades por modelo, acceso real a
-Internet, proveedores cloud, auditoría durable, gestión de usuarios, voz, wake word,
+Internet, proveedores cloud, auditoría durable, gestión de usuarios, TTS real, wake word,
 RAG, agenda durable o notificaciones, Home Assistant, MQTT, MCP, interfaz gráfica ni
 ejecución de comandos.
 
@@ -561,6 +561,14 @@ mismos comandos escritos; una confirmación requiere escribir `approve` o `rejec
 La entrada de credenciales y desafíos administrativos se enmascara y no se añade al
 transcript, snapshots operacionales ni logs. La confirmación aún no incluye un resumen
 seguro del efecto de la herramienta y no muestra argumentos crudos.
+
+El cliente incorpora contratos locales e intercambiables de síntesis y reproducción
+para probar el ciclo de salida hablada sin un motor real. La composición normal declara
+la salida como no disponible, por lo que continúa mostrando texto. Los dobles de prueba
+pueden recorrer `PlayingVoice`; una respuesta final se muestra antes de esa operación,
+y un fallo local vuelve a texto con un error recuperable conocido. No existen todavía
+TTS real, audio persistido, voz configurable, ni comandos `mute`, `unmute`, `stop` o
+`repeat`.
 
 En la TUI, `Ctrl+C`, EOF, `Ctrl+D` o `Ctrl+Z` con la entrada vacía cierran el canal de
 entrada y terminan el cliente limpiamente. Con texto pendiente, `Ctrl+D` y `Ctrl+Z` se

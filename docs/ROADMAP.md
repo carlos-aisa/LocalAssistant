@@ -284,8 +284,12 @@ La fase se entrega mediante incrementos demostrables y en este orden:
    (PR #69–#73); verificación en `docs/evaluations/2026-09-05-terminal-tui-evaluation.md`.
    Limitación conocida: cerrar en el prompt de confirmación deja la confirmación
    pendiente en el servidor hasta su caducidad (limpieza server-side pendiente).
-6. **Salida hablada intercambiable simulada:** contratos de síntesis, reproducción y
-   coordinación de salida, preferencias y pruebas deterministas sin un motor real.
+6. [x] **Salida hablada intercambiable simulada:** contratos locales de síntesis,
+   reproducción y coordinación, preferencia de sesión para silenciar, contexto seguro
+   de disponibilidad en snapshots y pruebas deterministas sin un motor real. La
+   composición normal declara salida no disponible; `PlayingVoice` solo se activa con
+   dobles de prueba durante reproducción efectiva. No hay TTS, audio persistido ni
+   comandos de voz hasta el incremento 7.
 7. **TTS real tras una evaluación acotada:** voz, velocidad y volumen, con comandos
    `mute`, `unmute`, `stop` y `repeat`. La síntesis será local por defecto, no se
    conservará audio, las métricas no copiarán contenido y un fallo volverá a texto.

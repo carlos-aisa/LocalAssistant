@@ -63,12 +63,15 @@ también cubre una respuesta `2xx` mutable cuyo contrato no puede validarse. No 
 cancelación HTTP fiable ni autoriza un reintento automático; ante incertidumbre
 administrativa el cliente conserva sus credenciales locales y se bloquea.
 
-La síntesis y reproducción de fase 5 son locales por defecto y no añaden audio a la
-API ni al orquestador. Los buffers o archivos temporales se limitarán a la sesión,
+La síntesis y reproducción de fase 5 pertenecen al cliente local y no añaden audio a
+la API ni al orquestador. El incremento actual usa únicamente contratos y dobles
+deterministas: la composición normal declara la salida no disponible y no crea buffers
+ni archivos de audio. Los artefactos de un adaptador futuro se limitarán a la sesión,
 se eliminarán al terminar o fallar la reproducción y no se conservarán por defecto.
 Un adaptador TTS externo requerirá la política de egreso ya definida, proveedor y
-retención explícitos. `mute`, `stop` y `repeat` controlan solo la salida local; no
-deben presentar una cancelación de turno como garantía que el protocolo todavía no da.
+retención explícitos. `mute`, `stop` y `repeat` siguen pendientes; cuando existan,
+controlarán solo la salida local y no deberán presentar una cancelación de turno como
+garantía que el protocolo todavía no da.
 
 ## Modelo inicial de herramientas
 

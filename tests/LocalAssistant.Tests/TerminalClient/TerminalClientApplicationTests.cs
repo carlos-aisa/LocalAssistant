@@ -51,6 +51,7 @@ public sealed class TerminalClientApplicationTests
     {
         var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
         var sink = new RecordingTerminalClientStateSink();
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
         var handler = new RecordingHttpMessageHandler(
         [
             _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
@@ -74,7 +75,8 @@ public sealed class TerminalClientApplicationTests
             console,
             TerminalClientOptions.Parse(["--provider=fake", "--scenario=direct"]),
             new TestCredentialStore(),
-            sink);
+            sink,
+            spokenOutput);
 
         var exitCode = await application.RunAsync(CancellationToken.None);
 
@@ -91,6 +93,7 @@ public sealed class TerminalClientApplicationTests
             snapshot.Error?.Severity == TerminalClientErrorSeverity.Recoverable &&
             snapshot.Error.Code == "provider_timeout" &&
             snapshot.ConversationId == conversationId);
+        Assert.Equal(["Second response"], spokenOutput.PreparedTexts);
     }
 
     [Fact]
@@ -123,6 +126,183 @@ public sealed class TerminalClientApplicationTests
         Assert.Equal(0, exitCode);
         Assert.Contains("Confirmation required", console.Output, StringComparison.Ordinal);
         Assert.Equal(4, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task FinalResponseUsesSpokenOutputAfterItIsShown()
+    {
+        var conversationId = Guid.Parse("45701f36-0ce8-4ac3-8c09-e49fcdeed895");
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Final response")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "Hello", null],
+            "credential-a");
+        var application = CreateApplication(httpClient, console, stateSink: sink, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(["Final response"], spokenOutput.PreparedTexts);
+        Assert.Equal(1, spokenOutput.PlayCount);
+        Assert.Contains("Assistant: Final response", console.Output, StringComparison.Ordinal);
+        Assert.Contains(sink.Snapshots, snapshot =>
+            snapshot.Activity == TerminalClientActivity.PlayingVoice &&
+            snapshot.SpokenOutput.Availability == SpokenOutputAvailability.Ready);
+    }
+
+    [Fact]
+    public async Task ProductionCompositionKeepsSpokenOutputUnavailable()
+    {
+        var conversationId = Guid.Parse("8856053c-10a3-47bc-a689-3a7b070342f7");
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Final response")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "Hello", null],
+            "credential-a");
+        var application = CreateApplication(httpClient, console, stateSink: sink);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.All(sink.Snapshots, snapshot =>
+            Assert.Equal(SpokenOutputAvailability.Unavailable, snapshot.SpokenOutput.Availability));
+        Assert.DoesNotContain(sink.Snapshots, snapshot =>
+            snapshot.Activity == TerminalClientActivity.PlayingVoice);
+    }
+
+    [Fact]
+    public async Task FinalResponseAfterConfirmationUsesSpokenOutputButThePendingResponseDoesNot()
+    {
+        var conversationId = Guid.Parse("dc546f75-73ed-4e3a-8423-06ec6e68e2ae");
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.Accepted, ConfirmationResponseJson(conversationId)),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Reminder rejected")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "Create a reminder", "reject", null],
+            "credential-a");
+        var application = CreateApplication(httpClient, console, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(["Reminder rejected"], spokenOutput.PreparedTexts);
+        Assert.Equal(1, spokenOutput.PlayCount);
+    }
+
+    [Fact]
+    public async Task SpokenOutputFailurePreservesTheTextAndAllowsTheNextTurn()
+    {
+        var firstConversationId = Guid.Parse("9d8c2574-8345-45ec-9f9f-7b8e430c2e2c");
+        var spokenOutput = new RecordingSpokenOutputCoordinator
+        {
+            PlaybackResult = SpokenOutputPlaybackResult.PlaybackFailed,
+        };
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(firstConversationId, "First response")),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(firstConversationId, "Second response")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "First", "Second", null],
+            "credential-a");
+        var application = CreateApplication(httpClient, console, stateSink: sink, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Assistant: First response", console.Output, StringComparison.Ordinal);
+        Assert.Contains("Error (speech_playback_failed)", console.Output, StringComparison.Ordinal);
+        Assert.Contains("Assistant: Second response", console.Output, StringComparison.Ordinal);
+        Assert.Equal(2, spokenOutput.PlayCount);
+        Assert.Contains(sink.Snapshots, snapshot =>
+            snapshot.Error?.Code == "speech_playback_failed" &&
+            !snapshot.Error.IsUncertain);
+    }
+
+    [Fact]
+    public async Task SynthesisFailureIsRecoverableAndDoesNotPreventTheNextTurn()
+    {
+        var conversationId = Guid.Parse("c4b1da59-b8a8-4f7d-86af-5656a1d1fce6");
+        var spokenOutput = new RecordingSpokenOutputCoordinator
+        {
+            PreparationKind = SpokenOutputPreparationKind.SynthesisFailed,
+        };
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "First response")),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Second response")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "First", "Second", null],
+            "credential-a");
+        var application = CreateApplication(httpClient, console, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(["First response", "Second response"], spokenOutput.PreparedTexts);
+        Assert.Equal(0, spokenOutput.PlayCount);
+        Assert.Contains("Error (speech_synthesis_failed)", console.Output, StringComparison.Ordinal);
+        Assert.Contains("Assistant: Second response", console.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CancellationDuringSpokenPlaybackIsKnownAndClosesTheApplication()
+    {
+        var conversationId = Guid.Parse("9d15d10b-6cb4-477c-806a-53b2e1676080");
+        var spokenOutput = new RecordingSpokenOutputCoordinator
+        {
+            BlockPlaybackUntilCancellation = true,
+        };
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Final response")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "Hello", null],
+            "credential-a");
+        using var cancellationSource = new CancellationTokenSource();
+        var application = CreateApplication(httpClient, console, stateSink: sink, spokenOutput: spokenOutput);
+
+        var runTask = application.RunAsync(cancellationSource.Token);
+        await spokenOutput.WaitForPlaybackAsync();
+        cancellationSource.Cancel();
+
+        Assert.Equal(2, await runTask);
+        Assert.Contains(sink.Snapshots, snapshot =>
+            snapshot.Error?.Operation == "speech_output" &&
+            !snapshot.Error.IsUncertain);
+        Assert.Equal(TerminalClientLifecycle.Closed, sink.Snapshots[^1].Lifecycle);
     }
 
     [Fact]
@@ -1488,17 +1668,19 @@ public sealed class TerminalClientApplicationTests
         HttpClient httpClient,
         ITerminalConsole console,
         IPrivateClientCredentialStore? credentialStore = null,
-        ITerminalClientStateSink? stateSink = null)
+        ITerminalClientStateSink? stateSink = null,
+        ISpokenOutputCoordinator? spokenOutput = null)
     {
         var options = TerminalClientOptions.Parse(["--provider=fake"]);
-        return stateSink is null
+        return stateSink is null && spokenOutput is null
             ? new TerminalClientApplication(new PrivateApiClient(httpClient), console, options, credentialStore)
             : new TerminalClientApplication(
                 new PrivateApiClient(httpClient),
                 console,
                 options,
                 credentialStore ?? new ManualPrivateClientCredentialStore(),
-                stateSink);
+                stateSink ?? NullTerminalClientStateSink.Instance,
+                spokenOutput);
     }
 
     private static string ConversationResponseJson(Guid conversationId, string content) => $$"""
@@ -1554,6 +1736,72 @@ public sealed class TerminalClientApplicationTests
           "confirmation": null
         }
         """;
+}
+
+internal sealed class RecordingSpokenOutputCoordinator : ISpokenOutputCoordinator
+{
+    public TerminalClientSpokenOutputState State { get; } = new(
+        SpokenOutputAvailability.Ready,
+        IsMuted: false);
+
+    public List<string> PreparedTexts { get; } = [];
+
+    public int PlayCount { get; private set; }
+
+    public SpokenOutputPreparationKind PreparationKind { get; set; } =
+        SpokenOutputPreparationKind.Prepared;
+
+    public SpokenOutputPlaybackResult PlaybackResult { get; set; } =
+        SpokenOutputPlaybackResult.Completed;
+
+    public bool BlockPlaybackUntilCancellation { get; set; }
+
+    private TaskCompletionSource<bool> PlaybackStarted { get; } = new(
+        TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task<SpokenOutputPreparation> PrepareAsync(string text, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        PreparedTexts.Add(text);
+        return Task.FromResult(PreparationKind switch
+        {
+            SpokenOutputPreparationKind.Unavailable => SpokenOutputPreparation.Unavailable,
+            SpokenOutputPreparationKind.Muted => SpokenOutputPreparation.Muted,
+            SpokenOutputPreparationKind.SynthesisFailed => SpokenOutputPreparation.SynthesisFailed,
+            SpokenOutputPreparationKind.Cancelled => SpokenOutputPreparation.Cancelled,
+            SpokenOutputPreparationKind.Prepared => SpokenOutputPreparation.Prepared(new PreparedOutput(this)),
+            _ => throw new InvalidOperationException("The spoken-output preparation kind was not recognized."),
+        });
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    public Task<bool> WaitForPlaybackAsync() => PlaybackStarted.Task;
+
+    private sealed class PreparedOutput : IPreparedSpokenOutput
+    {
+        private readonly RecordingSpokenOutputCoordinator _owner;
+
+        public PreparedOutput(RecordingSpokenOutputCoordinator owner)
+        {
+            _owner = owner;
+        }
+
+        public async Task<SpokenOutputPlaybackResult> PlayAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _owner.PlayCount++;
+            _owner.PlaybackStarted.TrySetResult(true);
+            if (_owner.BlockPlaybackUntilCancellation)
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+
+            return _owner.PlaybackResult;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
 }
 
 internal sealed class ScriptedTerminalConsole : ITerminalConsole, IDisposable

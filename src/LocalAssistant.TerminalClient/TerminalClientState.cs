@@ -46,7 +46,8 @@ internal sealed record TerminalClientStateSnapshot(
     TerminalClientOperationError? Error,
     string? Provider,
     Guid? ConversationId,
-    TerminalClientPendingConfirmation? PendingConfirmation)
+    TerminalClientPendingConfirmation? PendingConfirmation,
+    TerminalClientSpokenOutputState SpokenOutput)
 {
     public static TerminalClientStateSnapshot Initial { get; } = new(
         TerminalClientLifecycle.Disconnected,
@@ -54,7 +55,8 @@ internal sealed record TerminalClientStateSnapshot(
         null,
         null,
         null,
-        null);
+        null,
+        TerminalClientSpokenOutputState.Unavailable);
 }
 
 internal interface ITerminalClientStateSink
@@ -77,9 +79,18 @@ internal sealed class TerminalClientStateCoordinator
     private TerminalClientStateSnapshot _current = TerminalClientStateSnapshot.Initial;
     private bool _initialPublished;
 
-    public TerminalClientStateCoordinator(ITerminalClientStateSink? sink)
+    public TerminalClientStateCoordinator(
+        ITerminalClientStateSink? sink,
+        TerminalClientSpokenOutputState? spokenOutput = null)
     {
         _sink = sink ?? NullTerminalClientStateSink.Instance;
+        if (spokenOutput is not null)
+        {
+            _current = _current with
+            {
+                SpokenOutput = spokenOutput,
+            };
+        }
     }
 
     public TerminalClientStateSnapshot Current => _current;
@@ -118,6 +129,14 @@ internal sealed class TerminalClientStateCoordinator
     {
         if (snapshot.Lifecycle == TerminalClientLifecycle.Ready &&
             string.IsNullOrWhiteSpace(snapshot.Provider))
+        {
+            return false;
+        }
+
+        if (snapshot.Activity == TerminalClientActivity.PlayingVoice &&
+            (snapshot.Lifecycle != TerminalClientLifecycle.Ready ||
+             snapshot.SpokenOutput.Availability != SpokenOutputAvailability.Ready ||
+             snapshot.SpokenOutput.IsMuted))
         {
             return false;
         }
@@ -161,11 +180,6 @@ internal sealed class TerminalClientStateCoordinator
         TerminalClientStateSnapshot current,
         TerminalClientStateSnapshot next)
     {
-        if (next.Activity == TerminalClientActivity.PlayingVoice)
-        {
-            return false;
-        }
-
         if (current.Lifecycle == TerminalClientLifecycle.Closed)
         {
             return false;
@@ -241,12 +255,17 @@ internal sealed class TerminalClientStateCoordinator
             TerminalClientActivity.SelectingConversation => next.Activity is
                 TerminalClientActivity.None or TerminalClientActivity.CompletingConversation,
             TerminalClientActivity.SendingTurn => next.Activity is
-                TerminalClientActivity.None or TerminalClientActivity.AwaitingConfirmation,
+                TerminalClientActivity.None or
+                TerminalClientActivity.AwaitingConfirmation or
+                TerminalClientActivity.PlayingVoice,
             TerminalClientActivity.AwaitingConfirmation => next.Activity is
                 TerminalClientActivity.None or TerminalClientActivity.ResolvingConfirmation,
             TerminalClientActivity.ResolvingConfirmation => next.Activity is
-                TerminalClientActivity.None or TerminalClientActivity.AwaitingConfirmation,
+                TerminalClientActivity.None or
+                TerminalClientActivity.AwaitingConfirmation or
+                TerminalClientActivity.PlayingVoice,
             TerminalClientActivity.CompletingConversation => next.Activity == TerminalClientActivity.None,
+            TerminalClientActivity.PlayingVoice => next.Activity == TerminalClientActivity.None,
             _ => false,
         };
     }
