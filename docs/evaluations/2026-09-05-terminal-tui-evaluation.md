@@ -141,7 +141,7 @@ restricción del plan padre sobre `TerminalClientApplication`.
 
 ### Correcciones de revisión posteriores al pase manual
 
-Suite completa tras las correcciones: 527/527. Detectadas en revisión del código
+Suite completa tras las correcciones: 530/530. Detectadas en revisión del código
 commiteado:
 
 - **El prompt desaparecía en modo compacto.** `FitInputLine` devolvía una línea vacía
@@ -158,6 +158,6 @@ commiteado:
   señales observables (`WaitForFrameAsync`, `WhenInputChangedAsync`) y estructura
   interna con bloqueo; los timeouts se conservan solo como protección contra cuelgues.
 
-Pendiente de re-verificación manual: **T7** con un prompt más largo que el ancho en
-modo compacto (p. ej. `/admin rotate` a `mode con: cols=30`); en el pase anterior solo
-se probó con `You:`, que no dispara el fallo del prompt invisible.
+Re-verificación manual **T7** tras la corrección del prompt en compacto: con
+`mode con: cols=30` y el prompt de credencial / `/admin rotate` (más largo que el
+ancho), la línea de entrada muestra la cabeza del prompt y nunca queda vacía — OK.
