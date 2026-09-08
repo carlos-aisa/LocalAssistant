@@ -1,10 +1,14 @@
 # Plan de implementación del incremento 3: interpretación de teclas y layout seguro
 
-> **Estado: finalizado (2026-09-07).** `TerminalKeyInterpreter` puro con `inputActive`,
-> host como ejecutor de intenciones con CTS enlazado y buffer ligado a la solicitud,
-> contrato de `SystemTerminalDriver.TryReadInput` probado y layout con prioridad de
-> retención por umbrales. `dotnet format`, `dotnet build -c Release` y la suite completa
-> (525/525) pasan. Incrementos 4 y 5 y el punto 5 de `ROADMAP.md` siguen pendientes.
+> **Estado: finalizado** (implementado 2026-09-07, verificación manual y correcciones
+> de revisión 2026-09-08). `TerminalKeyInterpreter` puro con `inputActive`, host como
+> ejecutor de intenciones con CTS enlazado y buffer ligado a la solicitud, contrato de
+> `SystemTerminalDriver.TryReadInput` probado y layout con prioridad de retención por
+> umbrales. Correcciones de revisión: prompt visible en modo compacto, `Render` con
+> tamaño vigente, señales observables en el driver falso. `dotnet format`,
+> `dotnet build -c Release` y la suite completa (530/530) pasan. Incrementos 4 y 5 y el
+> punto 5 de `ROADMAP.md` siguen pendientes; hallazgo abierto (EOF/`Ctrl+C` en
+> confirmación) en su propio commit.
 
 ## Objetivo
 

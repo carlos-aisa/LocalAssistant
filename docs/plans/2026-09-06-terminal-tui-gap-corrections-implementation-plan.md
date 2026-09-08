@@ -19,15 +19,18 @@ autenticación, autorización ni OpenAPI.
   `docs/plans/2026-09-06-terminal-tui-compatibility-preflight-implementation-plan.md`.
   Verificación manual registrada en
   `docs/evaluations/2026-09-05-terminal-tui-evaluation.md`.
-- Incremento 3 — **finalizado** (implementado 2026-09-07, verificación manual
-  2026-09-08). Diseño y plan de detalle en
+- Incremento 3 — **finalizado** (implementado 2026-09-07, verificación manual y
+  correcciones de revisión 2026-09-08; PR #70). Diseño y plan de detalle en
   `docs/specs/2026-09-07-terminal-tui-key-interpretation-and-safe-layout-design.md` y
   `docs/plans/2026-09-07-terminal-tui-key-interpretation-and-safe-layout-implementation-plan.md`.
   `TerminalKeyInterpreter` puro, host como ejecutor de intenciones, contrato de
-  `TryReadInput` probado y layout con prioridad de retención por umbrales. Verificación
-  manual en `docs/evaluations/2026-09-05-terminal-tui-evaluation.md`; hallazgo abierto:
-  EOF/`Ctrl+C` en el prompt de confirmación deja la confirmación pendiente en el
-  servidor (arreglo en su propio commit).
+  `TryReadInput` probado y layout con prioridad de retención por umbrales.
+  Correcciones de revisión: prompt visible en modo compacto, `Render` con tamaño
+  vigente, señales observables en el driver falso (530/530). Verificación manual en
+  `docs/evaluations/2026-09-05-terminal-tui-evaluation.md` (T7 pendiente de
+  re-verificación con prompt largo en compacto); hallazgo abierto: EOF/`Ctrl+C` en el
+  prompt de confirmación deja la confirmación pendiente en el servidor (arreglo en su
+  propio commit).
 - Incrementos 4 y 5 — pendientes. El punto 5 de `ROADMAP.md` permanece desmarcado.
 
 ## Supuestos de implementación
