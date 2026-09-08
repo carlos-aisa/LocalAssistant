@@ -139,20 +139,25 @@ en el servidor. Arreglo propuesto en `TerminalClientApplication.ResolveConfirmat
 (EOF → `reject` al servidor; `Ctrl+C` → dejar caducar), en su propio commit por la
 restricción del plan padre sobre `TerminalClientApplication`.
 
-## Comprobación manual incremento 3 — 2026-09-08
+### Correcciones de revisión posteriores al pase manual
 
-- T1 flechas ↑/↓ reservadas (no scroll) — OK
-- T2 PageUp/PageDown desplazan; PageDown responde tras muchos PageUp —OK
-- T3 Backspace acorta la línea; sin efecto con línea vacía — OK
-- T4 Escape vacía la línea sin cerrar el cliente — OK
-- T5 Ctrl+D/Ctrl+Z con texto se ignoran; con línea vacía cierran limpio — OK
-- T6 Ctrl+C durante conexión cancela la ejecución, ExitCode≠0, cursor restaurado — OK
-- FASE 2 entrada anticipada: el texto escrito sin prompt no se asocia al siguiente prompt — OK
-- FASE 3 confirmación: solo approve/reject la resuelven; scroll, flechas, EOF y Ctrl+C no — <OK/FALLA>
-- T7 compacto: confirmación e input se conservan + aviso de ampliar; input al borde inferior — <OK/FALLA>
-- T8 terminal 12×3: sin cuelgue, sin desbordar ancho, sin ANSI — <OK/FALLA>
-- T9 entrada larga: muestra … + extremo activo; Backspace sobre el final — <OK/FALLA>
-- T10 secreto largo + resize: solo asteriscos del extremo, nunca el valor — <OK/FALLA>
+Suite completa tras las correcciones: 527/527. Detectadas en revisión del código
+commiteado:
 
-Nota: la traducción real de Ctrl+Z/Ctrl+D/Ctrl+C por Console.ReadKey en Windows
-se valida aquí; el contrato del adaptador ya está cubierto por pruebas unitarias.
+- **El prompt desaparecía en modo compacto.** `FitInputLine` devolvía una línea vacía
+  cuando el prompt era más largo que el ancho y el buffer estaba vacío (los prompts de
+  client id, desafío de pairing y confirmación superan 30 caracteres). Ahora muestra la
+  cabeza reconocible del prompt con el buffer vacío y el extremo activo del valor al
+  escribir. Pruebas a anchuras 20 y 30, normal y secreto.
+- **Un snapshot prioritario podía renderizarse con el tamaño anterior.** `Render`
+  usaba `_lastSize` cacheado; un snapshot drenado tras un resize y antes de
+  `DetectResize` producía líneas más anchas que la terminal. Ahora `Render` consulta
+  siempre el tamaño vigente. Prueba que reduce el tamaño y publica confirmación y error
+  a la vez.
+- **Las pruebas del host dependían de `Task.Delay`.** El driver falso pasa a ofrecer
+  señales observables (`WaitForFrameAsync`, `WhenInputChangedAsync`) y estructura
+  interna con bloqueo; los timeouts se conservan solo como protección contra cuelgues.
+
+Pendiente de re-verificación manual: **T7** con un prompt más largo que el ancho en
+modo compacto (p. ej. `/admin rotate` a `mode con: cols=30`); en el pase anterior solo
+se probó con `You:`, que no dispara el fallo del prompt invisible.

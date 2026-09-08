@@ -363,10 +363,8 @@ internal sealed class TerminalClientTuiHost
 
     private void DetectResize()
     {
-        var size = _driver.GetSize();
-        if (_lastSize != size)
+        if (_driver.GetSize() != _lastSize)
         {
-            _lastSize = size;
             _dirty = true;
         }
     }
@@ -388,7 +386,10 @@ internal sealed class TerminalClientTuiHost
     private void Render()
     {
         _dirty = false;
-        var size = _lastSize ?? _driver.GetSize();
+        // Always paint against the current size. A priority snapshot drained after a
+        // resize but before DetectResize must not be rendered with the stale cached size.
+        var size = _driver.GetSize();
+        _lastSize = size;
         var width = Math.Max(1, size.Width);
         var height = Math.Max(1, size.Height);
         var lines = width < MinimumWidth || height < MinimumHeight
@@ -490,7 +491,10 @@ internal sealed class TerminalClientTuiHost
 
         if (prompt.Length >= width)
         {
-            return FitTail(value, width);
+            // The prompt alone overflows. Keep a recognizable head of the prompt while
+            // nothing is typed; once the user types, show the active tail of the value so
+            // the editing position stays visible. Never render an empty input line.
+            return value.Length == 0 ? FitHead(prompt, width) : FitTail(value, width);
         }
 
         return FitTail(prompt + value, width);
@@ -504,6 +508,16 @@ internal sealed class TerminalClientTuiHost
         }
 
         return value.Length <= width ? value : value[..width];
+    }
+
+    private static string FitHead(string value, int width)
+    {
+        if (value.Length <= width)
+        {
+            return value;
+        }
+
+        return width == 1 ? "…" : value[..(width - 1)] + "…";
     }
 
     private static string FitTail(string value, int width)
