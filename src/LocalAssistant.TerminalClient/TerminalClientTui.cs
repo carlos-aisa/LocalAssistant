@@ -320,7 +320,7 @@ internal sealed class TerminalClientTuiHost
                 _scrollOffset = Math.Clamp(
                     _scrollOffset + intent.ScrollDelta,
                     0,
-                    TerminalClientTuiTranscript.MaximumWrappedLines);
+                    TerminalClientTuiTranscript.MaximumReferenceLines);
                 _dirty = true;
                 break;
             case TerminalKeyAction.Submit:
@@ -411,12 +411,9 @@ internal sealed class TerminalClientTuiHost
         AddInputLine(priorityLines, width);
 
         var transcriptHeight = Math.Max(0, height - priorityLines.Count);
-        var transcript = _transcript.CreateLines(width);
-        var maxOffset = Math.Max(0, transcript.Count - transcriptHeight);
-        _scrollOffset = Math.Min(_scrollOffset, maxOffset);
-        var first = Math.Max(0, transcript.Count - transcriptHeight - _scrollOffset);
-        var visibleTranscript = transcript.Skip(first).Take(transcriptHeight);
-        return visibleTranscript.Concat(priorityLines).Take(height).ToList();
+        var view = _transcript.CreateView(width, transcriptHeight, _scrollOffset);
+        _scrollOffset = view.ClampedScrollOffset;
+        return view.Lines.Concat(priorityLines).Take(height).ToList();
     }
 
     private List<string> CreateCompactFrame(int width, int height)

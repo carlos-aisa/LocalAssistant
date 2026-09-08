@@ -31,7 +31,17 @@ autenticación, autorización ni OpenAPI.
   re-verificación con prompt largo en compacto); hallazgo abierto: EOF/`Ctrl+C` en el
   prompt de confirmación deja la confirmación pendiente en el servidor (arreglo en su
   propio commit).
-- Incrementos 4 y 5 — pendientes. El punto 5 de `ROADMAP.md` permanece desmarcado.
+- Incremento 4 — **finalizado** (2026-09-08). Diseño y plan de detalle en
+  `docs/specs/2026-09-08-terminal-tui-transcript-budget-design.md` y
+  `docs/plans/2026-09-08-terminal-tui-transcript-budget-implementation-plan.md`.
+  Retención solo en `Add` con presupuestos de caracteres y de líneas de referencia
+  (ancho 40) mantenidos incrementalmente; una entrada sobredimensionada conserva su
+  final con marcador y cumple ambos máximos; `CreateView` sustituye a `CreateLines`
+  como consulta pura que materializa solo la ventana visible y devuelve un
+  `ClampedScrollOffset` que el host adopta. Elimina la expulsión destructiva
+  dependiente del ancho de `CreateLines`. Suite completa 563/563. Verificación manual
+  en `docs/evaluations/2026-09-05-terminal-tui-evaluation.md`.
+- Incremento 5 — pendiente. El punto 5 de `ROADMAP.md` permanece desmarcado.
 
 ## Supuestos de implementación
 
@@ -43,7 +53,8 @@ autenticación, autorización ni OpenAPI.
   distribución conserva el comportamiento aprobado sin introducir estado visual en
   el driver.
 - El tamaño mínimo compatible es 40 columnas por 8 filas.
-- Los límites visuales son 65.536 caracteres normalizados y 2.000 líneas envueltas.
+- Los límites visuales son 65.536 caracteres normalizados y 2.000 líneas de referencia
+  (medidas a ancho 40); ver el incremento 4.
 - Los tests pueden usar timeouts únicamente como protección contra un cuelgue; el
   avance normal se sincroniza mediante señales observables del driver y adaptador.
 
@@ -177,10 +188,16 @@ excepciones internas ni datos de entrada.
 
 ## Incremento 4: transcript con presupuesto acotado
 
+> **Finalizado** (2026-09-08). Diseño y plan de detalle:
+> `docs/specs/2026-09-08-terminal-tui-transcript-budget-design.md` y
+> `docs/plans/2026-09-08-terminal-tui-transcript-budget-implementation-plan.md`. El
+> esquema de abajo queda como referencia; el plan de detalle es la fuente de verdad.
+
 **Archivos:**
 
 - `src/LocalAssistant.TerminalClient/TerminalClientTui.cs`
-- nuevo `src/LocalAssistant.TerminalClient/TerminalClientTuiTranscript.cs`
+- `src/LocalAssistant.TerminalClient/TerminalClientTuiTranscript.cs`
+- `tests/LocalAssistant.Tests/TerminalClient/TerminalClientTuiTranscriptTests.cs` (nuevo)
 - `tests/LocalAssistant.Tests/TerminalClient/TerminalClientTuiTests.cs`
 
 ### Implementación
