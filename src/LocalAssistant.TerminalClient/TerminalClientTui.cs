@@ -476,7 +476,14 @@ internal sealed class TerminalClientTuiHost
     {
         var provider = TerminalTextSanitizer.NormalizeSingleLine(_snapshot.Provider ?? "unavailable");
         var conversation = _snapshot.ConversationId?.ToString("N")[..8] ?? "none";
-        return $"State: {_snapshot.Lifecycle}/{_snapshot.Activity}; Provider: {provider}; Conversation: {conversation}";
+        var spokenOutput = _snapshot.Activity == TerminalClientActivity.PlayingVoice
+            ? "playing"
+            : _snapshot.SpokenOutput.Availability == SpokenOutputAvailability.Unavailable
+                ? "unavailable"
+                : _snapshot.SpokenOutput.IsMuted
+                    ? "muted"
+                    : "ready";
+        return $"State: {_snapshot.Lifecycle}/{_snapshot.Activity}; Provider: {provider}; Conversation: {conversation}; Speech: {spokenOutput}";
     }
 
     private static string FitInputLine(string prompt, string value, int width)

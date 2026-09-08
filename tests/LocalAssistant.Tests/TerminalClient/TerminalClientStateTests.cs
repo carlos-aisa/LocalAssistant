@@ -116,21 +116,166 @@ public sealed class TerminalClientStateTests
     }
 
     [Fact]
-    public void CoordinatorDoesNotAllowPlayingVoiceInThisIncrement()
+    public void CoordinatorAllowsPlayingVoiceOnlyAfterSendingATurn()
     {
         var coordinator = new TerminalClientStateCoordinator(NullTerminalClientStateSink.Instance);
         coordinator.PublishInitial();
         coordinator.TryTransition(Connecting());
         coordinator.TryTransition(Authenticating());
-        coordinator.TryTransition(Ready("fake"));
+        coordinator.TryTransition(Ready("fake") with
+        {
+            SpokenOutput = SpokenOutputReady(),
+        });
 
-        var next = Ready("fake") with
+        var playingVoice = Ready("fake") with
         {
             Activity = TerminalClientActivity.PlayingVoice,
+            SpokenOutput = SpokenOutputReady(),
         };
 
-        Assert.False(coordinator.TryTransition(next));
-        Assert.Equal(TerminalClientActivity.None, coordinator.Current.Activity);
+        Assert.False(coordinator.TryTransition(playingVoice));
+        Assert.True(coordinator.TryTransition(Ready("fake") with
+        {
+            Activity = TerminalClientActivity.SendingTurn,
+            SpokenOutput = SpokenOutputReady(),
+        }));
+        Assert.True(coordinator.TryTransition(playingVoice));
+        Assert.True(coordinator.TryTransition(Ready("fake") with
+        {
+            SpokenOutput = SpokenOutputReady(),
+        }));
+    }
+
+    [Fact]
+    public void CoordinatorAllowsPlayingVoiceAfterResolvingConfirmation()
+    {
+        var coordinator = new TerminalClientStateCoordinator(NullTerminalClientStateSink.Instance);
+        coordinator.PublishInitial();
+        coordinator.TryTransition(Connecting());
+        coordinator.TryTransition(Authenticating());
+        coordinator.TryTransition(Ready("fake") with
+        {
+            SpokenOutput = SpokenOutputReady(),
+        });
+        coordinator.TryTransition(Ready("fake") with
+        {
+            Activity = TerminalClientActivity.SendingTurn,
+            SpokenOutput = SpokenOutputReady(),
+        });
+        coordinator.TryTransition(Ready("fake") with
+        {
+            Activity = TerminalClientActivity.AwaitingConfirmation,
+            PendingConfirmation = PendingConfirmation(),
+            SpokenOutput = SpokenOutputReady(),
+        });
+        coordinator.TryTransition(Ready("fake") with
+        {
+            Activity = TerminalClientActivity.ResolvingConfirmation,
+            SpokenOutput = SpokenOutputReady(),
+        });
+
+        Assert.True(coordinator.TryTransition(Ready("fake") with
+        {
+            Activity = TerminalClientActivity.PlayingVoice,
+            SpokenOutput = SpokenOutputReady(),
+        }));
+    }
+
+    [Fact]
+    public void CoordinatorAllowsPlayingVoiceToCloseCleanly()
+    {
+        var coordinator = new TerminalClientStateCoordinator(NullTerminalClientStateSink.Instance);
+        coordinator.PublishInitial();
+        coordinator.TryTransition(Connecting());
+        coordinator.TryTransition(Authenticating());
+        coordinator.TryTransition(Ready("fake") with
+        {
+            SpokenOutput = SpokenOutputReady(),
+        });
+        coordinator.TryTransition(Ready("fake") with
+        {
+            Activity = TerminalClientActivity.SendingTurn,
+            SpokenOutput = SpokenOutputReady(),
+        });
+        coordinator.TryTransition(Ready("fake") with
+        {
+            Activity = TerminalClientActivity.PlayingVoice,
+            SpokenOutput = SpokenOutputReady(),
+        });
+
+        Assert.True(coordinator.TryTransition(Ready("fake") with
+        {
+            Lifecycle = TerminalClientLifecycle.Closing,
+            SpokenOutput = SpokenOutputReady(),
+        }));
+        Assert.True(coordinator.TryTransition(Ready("fake") with
+        {
+            Lifecycle = TerminalClientLifecycle.Closed,
+            SpokenOutput = SpokenOutputReady(),
+        }));
+    }
+
+    [Fact]
+    public void CoordinatorRejectsPlayingVoiceWhenOutputIsUnavailableOrMuted()
+    {
+        var invalidOutputStates = new[]
+        {
+            TerminalClientSpokenOutputState.Unavailable,
+            new TerminalClientSpokenOutputState(SpokenOutputAvailability.Ready, IsMuted: true),
+        };
+
+        foreach (var outputState in invalidOutputStates)
+        {
+            var coordinator = new TerminalClientStateCoordinator(NullTerminalClientStateSink.Instance);
+            coordinator.PublishInitial();
+            coordinator.TryTransition(Connecting());
+            coordinator.TryTransition(Authenticating());
+            coordinator.TryTransition(Ready("fake") with
+            {
+                SpokenOutput = outputState,
+            });
+            coordinator.TryTransition(Ready("fake") with
+            {
+                Activity = TerminalClientActivity.SendingTurn,
+                SpokenOutput = outputState,
+            });
+
+            Assert.False(coordinator.TryTransition(Ready("fake") with
+            {
+                Activity = TerminalClientActivity.PlayingVoice,
+                SpokenOutput = outputState,
+            }));
+        }
+    }
+
+    [Fact]
+    public void CoordinatorPublishesOutputStateChangesWithoutDuplicateSnapshots()
+    {
+        var sink = new RecordingStateSink();
+        var coordinator = new TerminalClientStateCoordinator(sink);
+        coordinator.PublishInitial();
+        coordinator.TryTransition(Connecting());
+        coordinator.TryTransition(Authenticating());
+        var ready = Ready("fake") with
+        {
+            SpokenOutput = SpokenOutputReady(),
+        };
+        coordinator.TryTransition(ready);
+
+        Assert.True(coordinator.TryTransition(ready with
+        {
+            SpokenOutput = new TerminalClientSpokenOutputState(
+                SpokenOutputAvailability.Ready,
+                IsMuted: true),
+        }));
+        Assert.True(coordinator.TryTransition(ready with
+        {
+            SpokenOutput = new TerminalClientSpokenOutputState(
+                SpokenOutputAvailability.Ready,
+                IsMuted: true),
+        }));
+
+        Assert.Equal(5, sink.Snapshots.Count);
     }
 
     [Fact]
@@ -200,6 +345,9 @@ public sealed class TerminalClientStateTests
         var confirmationProperties = typeof(TerminalClientPendingConfirmation)
             .GetProperties()
             .Select(property => property.Name);
+        var spokenOutputProperties = typeof(TerminalClientSpokenOutputState)
+            .GetProperties()
+            .Select(property => property.Name);
 
         Assert.DoesNotContain(snapshotProperties, name => name.Contains("token", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(snapshotProperties, name => name.Contains("credential", StringComparison.OrdinalIgnoreCase));
@@ -207,6 +355,12 @@ public sealed class TerminalClientStateTests
         Assert.DoesNotContain(snapshotProperties, name => name.Contains("content", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(confirmationProperties, name =>
             name.Contains("argument", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(spokenOutputProperties, name =>
+            name.Contains("content", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(spokenOutputProperties, name =>
+            name.Contains("audio", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(spokenOutputProperties, name =>
+            name.Contains("path", StringComparison.OrdinalIgnoreCase));
     }
 
     private static TerminalClientStateSnapshot Connecting() => TerminalClientStateSnapshot.Initial with
@@ -228,6 +382,10 @@ public sealed class TerminalClientStateTests
     private static TerminalClientPendingConfirmation PendingConfirmation() => new(
         "create_reminder",
         new DateTimeOffset(2026, 9, 2, 10, 0, 0, TimeSpan.Zero));
+
+    private static TerminalClientSpokenOutputState SpokenOutputReady() => new(
+        SpokenOutputAvailability.Ready,
+        IsMuted: false);
 
     private sealed class RecordingStateSink : ITerminalClientStateSink
     {
