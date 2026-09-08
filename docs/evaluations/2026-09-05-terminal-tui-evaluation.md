@@ -98,3 +98,61 @@ Todos con test de regresión; suite completa 478/478.
 Conclusión: incremento 2 verificado manualmente.
 Notas: los motivos de fallback exóticos (`tui_initialization_failed`, `unsupported_terminal`)
 no son reproducibles en Windows Terminal + PowerShell y quedan cubiertos por pruebas unitarias.
+
+## Comprobación manual — 2026-09-08 (incremento 3: interpretación de teclas y layout seguro)
+
+Equipo: Windows 11, Windows Terminal + PowerShell. API local con persistencia y
+`--provider=fake`/`--provider=ollama` según el caso. Suite completa 525/525.
+
+### FASE 1 — Interpretación de teclas
+- T1 flechas `↑`/`↓` no hacen nada (reservadas en el incremento 3) — OK
+- T2 `PageUp`/`PageDown` desplazan el transcript con `You:` y `State:` fijos abajo; `PageDown` responde tras muchos `PageUp` — OK
+- T3 `Backspace` acorta la línea; sin efecto con la línea vacía — OK
+- T4 `Escape` vacía la línea sin cerrar el cliente — OK
+- T5 `Ctrl+D`/`Ctrl+Z` con texto se ignoran; con la línea vacía cierran limpio — OK
+- T6 `Ctrl+C` durante la conexión cancela la ejecución, `ExitCode` ≠ 0, cursor restaurado — OK
+
+### FASE 2 — Entrada anticipada
+- Texto escrito sin una solicitud activa no se asocia al siguiente prompt; el input aparece vacío al publicarse la confirmación — OK
+
+### FASE 3 — La confirmación solo se resuelve con `approve`/`reject`
+- `approve`/`reject` (y `cancel` como rechazo) resuelven; palabras sueltas vuelven a pedir decisión — OK
+- `PageUp`/`PageDown`, flechas, `Ctrl+Z` y `Ctrl+C` con confirmación pendiente **no** la aprueban — OK
+
+### FASE 4 — Layout seguro
+- T7 compacto `30×6` con confirmación pendiente: se conservan `CONFIRM:` e input y aparece el aviso de ampliar; input adyacente al borde inferior — OK
+- T8 terminal `12×3` con un mensaje: sin cuelgue, sin desbordar el ancho, sin secuencias ANSI — OK
+- T9 entrada de ~50 caracteres a `30` de ancho: muestra `…` y el extremo activo; `Backspace` sobre el final — OK
+- T10 secreto largo (`/admin rotate`) con resize arriba/abajo: solo asteriscos del extremo, nunca el valor en claro — OK
+
+Conclusión: incremento 3 verificado manualmente.
+
+### Hallazgo pendiente (cambio aparte)
+
+**EOF/`Ctrl+C` en el prompt de confirmación deja la confirmación pendiente en el
+servidor.** `Ctrl+Z`/`Ctrl+D`/`Ctrl+C` en `Type approve, reject, or cancel:` cierran el
+cliente sin avisar al servidor; la confirmación sigue pendiente ~5 min
+(`ConfirmationTimeout`) y el siguiente mensaje de esa conversación devuelve
+`confirmation_pending`. Recuperación: `/new`, `/exit` o esperar la caducidad. La
+invariante de seguridad es correcta (EOF/`Ctrl+C` nunca aprueban); falta la limpieza
+en el servidor. Arreglo propuesto en `TerminalClientApplication.ResolveConfirmationAsync`
+(EOF → `reject` al servidor; `Ctrl+C` → dejar caducar), en su propio commit por la
+restricción del plan padre sobre `TerminalClientApplication`.
+
+## Comprobación manual incremento 3 — 2026-09-08
+
+- T1 flechas ↑/↓ reservadas (no scroll) — OK
+- T2 PageUp/PageDown desplazan; PageDown responde tras muchos PageUp —OK
+- T3 Backspace acorta la línea; sin efecto con línea vacía — OK
+- T4 Escape vacía la línea sin cerrar el cliente — OK
+- T5 Ctrl+D/Ctrl+Z con texto se ignoran; con línea vacía cierran limpio — OK
+- T6 Ctrl+C durante conexión cancela la ejecución, ExitCode≠0, cursor restaurado — OK
+- FASE 2 entrada anticipada: el texto escrito sin prompt no se asocia al siguiente prompt — OK
+- FASE 3 confirmación: solo approve/reject la resuelven; scroll, flechas, EOF y Ctrl+C no — <OK/FALLA>
+- T7 compacto: confirmación e input se conservan + aviso de ampliar; input al borde inferior — <OK/FALLA>
+- T8 terminal 12×3: sin cuelgue, sin desbordar ancho, sin ANSI — <OK/FALLA>
+- T9 entrada larga: muestra … + extremo activo; Backspace sobre el final — <OK/FALLA>
+- T10 secreto largo + resize: solo asteriscos del extremo, nunca el valor — <OK/FALLA>
+
+Nota: la traducción real de Ctrl+Z/Ctrl+D/Ctrl+C por Console.ReadKey en Windows
+se valida aquí; el contrato del adaptador ya está cubierto por pruebas unitarias.

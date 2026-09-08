@@ -117,6 +117,68 @@ public sealed class TerminalDriverTests
         Assert.Equal(new TerminalSize(80, 20), size);
     }
 
+    [Fact]
+    public void TryReadInputDeliversAnAvailableKeyWithInterceptAndWithoutEndOfInput()
+    {
+        var terminal = new TestSystemTerminal
+        {
+            NextKey = new ConsoleKeyInfo('x', ConsoleKey.X, false, false, false),
+        };
+        var driver = new SystemTerminalDriver(terminal, usesCursorVisibility: false);
+
+        var input = driver.TryReadInput();
+
+        Assert.NotNull(input);
+        Assert.False(input!.IsEndOfInput);
+        Assert.Equal(ConsoleKey.X, input.Key!.Value.Key);
+        Assert.True(terminal.LastReadKeyIntercept);
+        Assert.Empty(terminal.WrittenLines);
+    }
+
+    [Theory]
+    [InlineData(ConsoleKey.C, (char)0x03)]
+    [InlineData(ConsoleKey.D, (char)0x04)]
+    [InlineData(ConsoleKey.Z, (char)0x1A)]
+    public void TryReadInputDeliversControlKeysAsKeyEventsNotEndOfInput(ConsoleKey key, char keyChar)
+    {
+        var terminal = new TestSystemTerminal
+        {
+            NextKey = new ConsoleKeyInfo(keyChar, key, false, false, control: true),
+        };
+        var driver = new SystemTerminalDriver(terminal, usesCursorVisibility: false);
+
+        var input = driver.TryReadInput();
+
+        Assert.NotNull(input);
+        Assert.False(input!.IsEndOfInput);
+        Assert.Equal(key, input.Key!.Value.Key);
+    }
+
+    [Fact]
+    public void TryReadInputReturnsNullWhenNoKeyIsAvailable()
+    {
+        var terminal = new TestSystemTerminal { KeyAvailableResult = false };
+        var driver = new SystemTerminalDriver(terminal, usesCursorVisibility: false);
+
+        Assert.Null(driver.TryReadInput());
+        Assert.Equal(0, terminal.ReadKeyCount);
+    }
+
+    [Theory]
+    [InlineData(FailurePoint.KeyAvailable, typeof(IOException))]
+    [InlineData(FailurePoint.ReadKey, typeof(InvalidOperationException))]
+    public void TryReadInputTranslatesExpectedConsoleFailuresToEndOfInput(FailurePoint failurePoint, Type exceptionType)
+    {
+        var terminal = new TestSystemTerminal
+        {
+            FailurePoint = failurePoint,
+            FailureException = (Exception)Activator.CreateInstance(exceptionType)!,
+        };
+        var driver = new SystemTerminalDriver(terminal, usesCursorVisibility: false);
+
+        Assert.Same(TerminalInputEvent.EndOfInput, driver.TryReadInput());
+    }
+
     public enum FailurePoint
     {
         None,
@@ -126,6 +188,7 @@ public sealed class TerminalDriverTests
         Cursor,
         Clear,
         WriteLine,
+        ReadKey,
     }
 
     private sealed class TestSystemTerminal : ISystemTerminal
@@ -151,6 +214,14 @@ public sealed class TerminalDriverTests
         public int WriteLineAttemptCount { get; private set; }
 
         public List<string> WrittenLines { get; } = [];
+
+        public ConsoleKeyInfo NextKey { get; set; } = new('a', ConsoleKey.A, false, false, false);
+
+        public bool KeyAvailableResult { get; set; } = true;
+
+        public bool? LastReadKeyIntercept { get; private set; }
+
+        public Exception FailureException { get; set; } = new IOException("configured failure");
 
         public int WindowWidth
         {
@@ -178,7 +249,7 @@ public sealed class TerminalDriverTests
             {
                 KeyAvailableReadCount++;
                 ThrowIfConfigured(FailurePoint.KeyAvailable);
-                return true;
+                return KeyAvailableResult;
             }
         }
 
@@ -201,7 +272,9 @@ public sealed class TerminalDriverTests
         public ConsoleKeyInfo ReadKey(bool intercept)
         {
             ReadKeyCount++;
-            return new ConsoleKeyInfo('a', ConsoleKey.A, false, false, false);
+            LastReadKeyIntercept = intercept;
+            ThrowIfConfigured(FailurePoint.ReadKey);
+            return NextKey;
         }
 
         public void Clear()
@@ -221,7 +294,7 @@ public sealed class TerminalDriverTests
         {
             if (FailurePoint == failurePoint)
             {
-                throw new IOException("configured failure");
+                throw FailureException;
             }
         }
     }
