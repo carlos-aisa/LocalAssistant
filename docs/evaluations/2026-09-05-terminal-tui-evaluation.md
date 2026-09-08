@@ -182,17 +182,17 @@ segmentos visitados, y consulta ancho→estrecho→ancho sin pérdida de conteni
 tras sobre-desplazar vuelve al final) y la región de transcript llena exactamente el
 hueco de las filas prioritarias en `40×8`.
 
-### Runbook manual (Windows Terminal + PowerShell)
-
-Pendiente de ejecución por el operador; registrar el resultado de cada paso aquí.
+### Runbook manual (Windows Terminal + PowerShell) — ejecutado 2026-09-08
 
 - M1. Sesión larga con el proveedor falso: encadenar respuestas hasta llenar varias
   pantallas; `PageUp`/`PageDown` recorren el histórico y se detienen en el marcador
-  `[Earlier transcript content truncated]` cuando aplica, sin pasar de él. Esperado:
-  scroll fluido, el histórico nunca se vacía, ninguna línea desborda el ancho.
+  `[Earlier transcript content truncated]` cuando aplica, sin pasar de él. Scroll
+  fluido, el histórico nunca se vacía, ninguna línea desborda el ancho — OK
 - M2. Durante esa sesión, reducir el ancho de la ventana a ~12 columnas y volver a
-  ensancharla varias veces. Esperado: al recuperar el ancho, ninguna línea antigua ha
-  desaparecido de forma permanente (la retención no depende del ancho).
-- M3. Forzar una respuesta muy larga en un solo turno. Esperado: esa entrada aparece
-  encabezada por `[Earlier transcript content truncated]` y su final permanece legible;
-  el marcador no se duplica.
+  ensancharla varias veces. Al recuperar el ancho, ninguna línea antigua ha
+  desaparecido de forma permanente (la retención no depende del ancho) — OK
+- M3. Forzar una respuesta muy larga en un solo turno. Esa entrada aparece encabezada
+  por `[Earlier transcript content truncated]` y su final permanece legible; el
+  marcador no se duplica — OK
+
+Conclusión: incremento 4 verificado manualmente.

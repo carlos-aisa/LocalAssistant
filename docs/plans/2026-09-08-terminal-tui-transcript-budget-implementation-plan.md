@@ -1,10 +1,8 @@
 # Plan de implementación del incremento 4: presupuesto acotado del transcript
 
-> **Estado: implementado; verificación manual M1–M3 pendiente** (2026-09-08; PR #72).
-> Código, docs y suite automatizada (564/564, `dotnet format` y `build -c Release`
-> limpios) listos. El incremento **no** está cerrado hasta que M1–M3 (bloqueantes,
-> ver «Verificación manual») queden registrados en
-> `docs/evaluations/2026-09-05-terminal-tui-evaluation.md`.
+> **Estado: finalizado** (2026-09-08; PR #72). Código, docs y suite automatizada
+> (564/564, `dotnet format` y `build -c Release` limpios). Verificación manual M1–M3
+> ejecutada y registrada en `docs/evaluations/2026-09-05-terminal-tui-evaluation.md`.
 
 ## Objetivo
 
