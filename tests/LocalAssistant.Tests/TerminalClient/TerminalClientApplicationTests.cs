@@ -782,17 +782,19 @@ public sealed class TerminalClientApplicationTests
             _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Final response")),
         ]);
         using var httpClient = CreateHttpClient(handler);
-        using var console = new ScriptedTerminalConsole(
-            ["client-a", "Hello", null],
-            "credential-a");
+        // A deferred console whose read never completes, so only the global cancellation
+        // ends the run (a scripted null would be consumed by the prefetch as EOF first).
+        using var console = new DeferredInputConsole();
+        var store = new TestCredentialStore(new PrivateClientCredential("client-a", "credential-a"));
         using var cancellationSource = new CancellationTokenSource();
-        var application = CreateApplication(httpClient, console, stateSink: sink, spokenOutput: spokenOutput);
+        var application = CreateApplication(httpClient, console, store, stateSink: sink, spokenOutput: spokenOutput);
 
         var runTask = application.RunAsync(cancellationSource.Token);
-        await spokenOutput.WaitForPlaybackAsync();
+        console.Provide("Hello");
+        await spokenOutput.WaitForPlaybackAsync().WaitAsync(TimeSpan.FromSeconds(5));
         cancellationSource.Cancel();
 
-        Assert.Equal(2, await runTask);
+        Assert.Equal(2, await runTask.WaitAsync(TimeSpan.FromSeconds(5)));
         Assert.Contains(sink.Snapshots, snapshot =>
             snapshot.Error?.Operation == "speech_output" &&
             !snapshot.Error.IsUncertain);
