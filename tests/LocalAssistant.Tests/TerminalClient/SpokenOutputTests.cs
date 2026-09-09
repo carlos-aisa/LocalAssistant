@@ -79,6 +79,28 @@ public sealed class SpokenOutputTests
     }
 
     [Fact]
+    public async Task AWaitingPreparationCanBeCancelledWithoutReleasingTheActiveArtifact()
+    {
+        var synthesizer = new RecordingSynthesizer();
+        var player = new RecordingPlayer();
+        await using var coordinator = CreateCoordinator(synthesizer, player);
+        using var cancellationSource = new CancellationTokenSource();
+
+        var first = await coordinator.PrepareAsync("First response.", CancellationToken.None);
+        var firstPrepared = Assert.IsAssignableFrom<IPreparedSpokenOutput>(first.PreparedOutput);
+        var waiting = coordinator.PrepareAsync("Second response.", cancellationSource.Token);
+
+        cancellationSource.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
+        await firstPrepared.DisposeAsync();
+
+        var recovered = await coordinator.PrepareAsync("Third response.", CancellationToken.None);
+        var recoveredPrepared = Assert.IsAssignableFrom<IPreparedSpokenOutput>(recovered.PreparedOutput);
+        await recoveredPrepared.DisposeAsync();
+    }
+
+    [Fact]
     public async Task SynthesisFailureDoesNotInvokePlayback()
     {
         var synthesizer = new RecordingSynthesizer(exception: new InvalidOperationException("Failure."));
@@ -106,6 +128,22 @@ public sealed class SpokenOutputTests
             var playback = await prepared.PlayAsync(CancellationToken.None);
             Assert.Equal(SpokenOutputPlaybackKind.PlaybackFailed, playback.Kind);
         }
+
+        Assert.Equal(1, stream.DisposeCount);
+    }
+
+    [Fact]
+    public async Task DisposingPreparedOutputTwiceDisposesTheArtifactExactlyOnce()
+    {
+        var stream = new TrackingStream();
+        var synthesizer = new RecordingSynthesizer(() => stream);
+        await using var coordinator = CreateCoordinator(synthesizer, new RecordingPlayer());
+
+        var preparation = await coordinator.PrepareAsync("Final response.", CancellationToken.None);
+        var prepared = Assert.IsAssignableFrom<IPreparedSpokenOutput>(preparation.PreparedOutput);
+
+        await prepared.DisposeAsync();
+        await prepared.DisposeAsync();
 
         Assert.Equal(1, stream.DisposeCount);
     }

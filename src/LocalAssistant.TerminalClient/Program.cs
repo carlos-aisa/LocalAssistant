@@ -150,11 +150,14 @@ internal static class TerminalClientProgram
         CancellationToken cancellationToken)
     {
         using var httpClient = CreateHttpClient(options);
+        var console = new SystemTerminalConsole();
         var application = new TerminalClientApplication(
             new PrivateApiClient(httpClient),
-            new SystemTerminalConsole(),
+            console,
             options,
-            new DpapiPrivateClientCredentialStore());
+            new DpapiPrivateClientCredentialStore(),
+            new TerminalClientStateTextSink(console),
+            new UnavailableSpokenOutputCoordinator());
         return await application.RunAsync(cancellationToken);
     }
 
@@ -171,7 +174,8 @@ internal static class TerminalClientProgram
             console,
             options,
             new DpapiPrivateClientCredentialStore(),
-            stateSink);
+            stateSink,
+            new UnavailableSpokenOutputCoordinator());
         return await new TerminalClientTuiHost(console, stateSink, driver)
             .RunAsync(application, cancellationToken);
     }

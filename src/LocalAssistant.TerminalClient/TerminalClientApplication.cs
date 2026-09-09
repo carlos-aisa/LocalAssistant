@@ -130,8 +130,20 @@ public sealed class TerminalClientApplication
         }
         finally
         {
-            Close();
-            await _spokenOutput.DisposeAsync();
+            try
+            {
+                await _spokenOutput.DisposeAsync();
+            }
+            catch (Exception)
+            {
+                // Cleanup is local and must not prevent the guaranteed Closing -> Closed
+                // transition. Prepared-output failures have already been reported at the
+                // operation boundary when the application is still able to continue.
+            }
+            finally
+            {
+                Close();
+            }
         }
     }
 
@@ -1047,6 +1059,7 @@ public sealed class TerminalClientApplication
         }
 
         _spokenOutputCancellationRecorded = false;
+        var playbackStarted = false;
         try
         {
             var preparation = await _spokenOutput.PrepareAsync(response.Content!, cancellationToken);
@@ -1071,6 +1084,7 @@ public sealed class TerminalClientApplication
             }
 
             await using var preparedOutput = preparation.PreparedOutput;
+            playbackStarted = true;
             BeginActivity(TerminalClientActivity.PlayingVoice);
             var playback = await preparedOutput.PlayAsync(cancellationToken);
             return playback.Kind switch
@@ -1097,6 +1111,19 @@ public sealed class TerminalClientApplication
 
             _spokenOutputCancellationRecorded = true;
             throw;
+        }
+        catch (Exception)
+        {
+            // The spoken-output boundary owns local provider, player, and artifact-cleanup
+            // failures. A response has already been displayed, so none of these failures can
+            // invalidate the completed conversational turn or terminate the client.
+            return playbackStarted
+                ? new ClientError(
+                    "speech_playback_failed",
+                    "The response was shown, but spoken output could not be played.")
+                : new ClientError(
+                    "speech_synthesis_failed",
+                    "The response was shown, but spoken output could not be prepared.");
         }
     }
 

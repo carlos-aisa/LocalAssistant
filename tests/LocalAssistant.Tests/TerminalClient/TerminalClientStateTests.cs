@@ -182,6 +182,36 @@ public sealed class TerminalClientStateTests
     }
 
     [Fact]
+    public void CoordinatorRejectsPlayingVoiceWhileAwaitingConfirmation()
+    {
+        var coordinator = new TerminalClientStateCoordinator(NullTerminalClientStateSink.Instance);
+        coordinator.PublishInitial();
+        coordinator.TryTransition(Connecting());
+        coordinator.TryTransition(Authenticating());
+        coordinator.TryTransition(Ready("fake") with
+        {
+            SpokenOutput = SpokenOutputReady(),
+        });
+        coordinator.TryTransition(Ready("fake") with
+        {
+            Activity = TerminalClientActivity.SendingTurn,
+            SpokenOutput = SpokenOutputReady(),
+        });
+        coordinator.TryTransition(Ready("fake") with
+        {
+            Activity = TerminalClientActivity.AwaitingConfirmation,
+            PendingConfirmation = PendingConfirmation(),
+            SpokenOutput = SpokenOutputReady(),
+        });
+
+        Assert.False(coordinator.TryTransition(Ready("fake") with
+        {
+            Activity = TerminalClientActivity.PlayingVoice,
+            SpokenOutput = SpokenOutputReady(),
+        }));
+    }
+
+    [Fact]
     public void CoordinatorAllowsPlayingVoiceToCloseCleanly()
     {
         var coordinator = new TerminalClientStateCoordinator(NullTerminalClientStateSink.Instance);
