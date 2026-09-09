@@ -72,7 +72,7 @@ Implementado:
 - Evaluación local reproducible de decisiones de tool calling por modelo.
 
 No implementado: detección automática de capacidades por modelo, acceso real a
-Internet, proveedores cloud, auditoría durable, gestión de usuarios, TTS real, wake word,
+Internet, proveedores cloud, auditoría durable, gestión de usuarios, wake word,
 RAG, agenda durable o notificaciones, Home Assistant, MQTT, MCP, interfaz gráfica ni
 ejecución de comandos.
 
@@ -562,13 +562,32 @@ La entrada de credenciales y desafíos administrativos se enmascara y no se aña
 transcript, snapshots operacionales ni logs. La confirmación aún no incluye un resumen
 seguro del efecto de la herramienta y no muestra argumentos crudos.
 
-El cliente incorpora contratos locales e intercambiables de síntesis y reproducción
-para probar el ciclo de salida hablada sin un motor real. La composición normal declara
-la salida como no disponible, por lo que continúa mostrando texto. Los dobles de prueba
-pueden recorrer `PlayingVoice`; una respuesta final se muestra antes de esa operación,
-y un fallo local vuelve a texto con un error recuperable conocido. No existen todavía
-TTS real, audio persistido, voz configurable, ni comandos `mute`, `unmute`, `stop` o
-`repeat`.
+En Windows, el cliente usa las voces SAPI habilitadas mediante `System.Speech` para
+sintetizar WAV en memoria y reproducir solo las respuestas finales elegibles. No añade
+audio a HTTP, no inicia procesos externos y no conserva archivos WAV. Si Windows no
+dispone de voces habilitadas, o en cualquier otra plataforma, el cliente sigue siendo
+textual y anuncia que la salida hablada no está disponible.
+
+Antes de sintetizar se limpia el texto: se eliminan emoji, banderas y símbolos que el
+motor leería por su nombre; el transcript conserva la respuesta completa. `/voice` lista
+las voces locales y `/voice <nombre exacto>` selecciona una; `/rate` acepta valores de
+`-10` a `10`, `/volume` de `0` a `100`, y `/mute` o `/unmute` afectan las respuestas
+posteriores. `/stop` solo interrumpe la reproducción local actual y no
+cancela un turno HTTP. `/repeat` vuelve a sintetizar la última respuesta final elegible
+de esta ejecución, sin enviar HTTP ni persistir el texto. La voz, velocidad, volumen y
+silencio se guardan junto con la credencial en el payload DPAPI de usuario actual; el
+bearer, el texto repetible y el audio nunca se guardan.
+
+Si una voz seleccionada deja de estar instalada, el cliente conserva esa preferencia,
+usa temporalmente la voz predeterminada de Windows y muestra una advertencia segura. La
+salida de `/voice` distingue siempre la voz solicitada de la voz efectiva. Las
+dependencias `System.Speech` 8.0.0 y `System.Windows.Extensions` 8.0.0 son paquetes
+Microsoft bajo licencia MIT; Piper continúa fuera de este incremento.
+
+La reproducción de audio real queda pendiente de la comprobación manual en Windows
+documentada en `docs/evaluations/2026-09-09-windows-tts-manual-validation.md`; el punto
+7 del roadmap no se marca hasta completarla. Las pruebas automatizadas usan dobles y no
+requieren altavoces ni voces instaladas.
 
 En la TUI, `Ctrl+C`, EOF, `Ctrl+D` o `Ctrl+Z` con la entrada vacía cierran el canal de
 entrada y terminan el cliente limpiamente. Con texto pendiente, `Ctrl+D` y `Ctrl+Z` se

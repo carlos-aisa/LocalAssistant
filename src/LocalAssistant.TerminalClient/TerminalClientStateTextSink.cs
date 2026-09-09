@@ -38,16 +38,20 @@ internal sealed class TerminalClientStateTextSink : ITerminalClientStateSink
     {
         if (snapshot.Activity == TerminalClientActivity.PlayingVoice)
         {
-            return "Spoken output: playing.";
+            return CreateConfigurationMessage(snapshot, "playing");
         }
 
         if (snapshot.SpokenOutput.Availability == SpokenOutputAvailability.Unavailable)
         {
-            return "Spoken output: unavailable.";
+            return CreateConfigurationMessage(snapshot, "unavailable");
         }
 
-        return snapshot.SpokenOutput.IsMuted
-            ? "Spoken output: muted."
-            : "Spoken output: ready.";
+        return CreateConfigurationMessage(snapshot, snapshot.SpokenOutput.IsMuted ? "muted" : "ready");
     }
+
+    private static string CreateConfigurationMessage(
+        TerminalClientStateSnapshot snapshot,
+        string status) =>
+        $"Spoken output: {status}; voice: {snapshot.SpokenOutput.VoiceId ?? "default"}; " +
+        $"rate: {snapshot.SpokenOutput.Rate}; volume: {snapshot.SpokenOutput.Volume}.";
 }

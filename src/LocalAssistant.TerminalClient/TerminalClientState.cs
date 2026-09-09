@@ -127,6 +127,21 @@ internal sealed class TerminalClientStateCoordinator
 
     private static bool IsSnapshotValid(TerminalClientStateSnapshot snapshot)
     {
+        var spokenOutput = snapshot.SpokenOutput;
+        if (spokenOutput.Rate is < SpokenOutputPreferences.MinimumRate or > SpokenOutputPreferences.MaximumRate ||
+            spokenOutput.Volume is < SpokenOutputPreferences.MinimumVolume or > SpokenOutputPreferences.MaximumVolume ||
+            (spokenOutput.VoiceId is not null &&
+             (string.IsNullOrWhiteSpace(spokenOutput.VoiceId) ||
+              !string.Equals(
+                  spokenOutput.VoiceId,
+                  TerminalTextSanitizer.NormalizeSingleLine(spokenOutput.VoiceId),
+                  StringComparison.Ordinal))) ||
+            (spokenOutput.WarningCode is not null &&
+             !string.Equals(spokenOutput.WarningCode, "speech_voice_unavailable", StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
         if (snapshot.Lifecycle == TerminalClientLifecycle.Ready &&
             string.IsNullOrWhiteSpace(snapshot.Provider))
         {
@@ -250,7 +265,8 @@ internal sealed class TerminalClientStateCoordinator
                 TerminalClientActivity.ResumingConversation or
                 TerminalClientActivity.SelectingConversation or
                 TerminalClientActivity.SendingTurn or
-                TerminalClientActivity.CompletingConversation,
+                TerminalClientActivity.CompletingConversation or
+                TerminalClientActivity.PlayingVoice,
             TerminalClientActivity.ResumingConversation => next.Activity == TerminalClientActivity.None,
             TerminalClientActivity.SelectingConversation => next.Activity is
                 TerminalClientActivity.None or TerminalClientActivity.CompletingConversation,

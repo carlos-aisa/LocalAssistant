@@ -32,7 +32,14 @@ internal interface IStructuredTerminalConsole : ITerminalConsole
     void WriteError(ClientError clientError);
 }
 
-public sealed class SystemTerminalConsole : IStructuredTerminalConsole
+internal interface IAsyncTerminalInputConsole
+{
+    Task<string?> ReadLineAsync(
+        TerminalInputRequest request,
+        CancellationToken cancellationToken);
+}
+
+public sealed class SystemTerminalConsole : IStructuredTerminalConsole, IAsyncTerminalInputConsole
 {
     public string? ReadLine() => Console.ReadLine();
 
@@ -41,6 +48,15 @@ public sealed class SystemTerminalConsole : IStructuredTerminalConsole
         ArgumentNullException.ThrowIfNull(request);
         Console.Write(request.Prompt);
         return Console.ReadLine();
+    }
+
+    async Task<string?> IAsyncTerminalInputConsole.ReadLineAsync(
+        TerminalInputRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        Console.Write(request.Prompt);
+        return await Console.In.ReadLineAsync(cancellationToken);
     }
 
     public string ReadSecret()

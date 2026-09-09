@@ -158,6 +158,476 @@ public sealed class TerminalClientApplicationTests
     }
 
     [Fact]
+    public async Task RateCommandPersistsAndAppliesPreferencesBeforeTheNextResponse()
+    {
+        var conversationId = Guid.Parse("5341758d-0f47-44a3-a93a-dc9d224be5dc");
+        var store = new TestCredentialStore();
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Final response")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "/rate 3", "Hello", null],
+            "credential-a");
+        var application = CreateApplication(httpClient, console, store, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(3, store.Preferences.Rate);
+        Assert.Equal(3, spokenOutput.State.Rate);
+        Assert.Equal(["Final response"], spokenOutput.PreparedTexts);
+    }
+
+    [Fact]
+    public async Task RepeatUsesTheLastEligibleResponseWithoutSendingAnotherHttpRequest()
+    {
+        var conversationId = Guid.Parse("4b6c6af2-61c0-4a0c-9c75-80f17d72a3b6");
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Repeat me")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "Hello", "/repeat", null],
+            "credential-a");
+        var application = CreateApplication(httpClient, console, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.DoesNotContain("Unknown command", console.Output, StringComparison.Ordinal);
+        Assert.Equal(["Repeat me", "Repeat me"], spokenOutput.PreparedTexts);
+        Assert.Equal(2, spokenOutput.PlayCount);
+    }
+
+    [Fact]
+    public async Task SpokenCommandsRejectUnexpectedArgumentsAndStopExplainsWhenNoAudioIsActive()
+    {
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "/stop now", "/repeat later", "/stop", null],
+            "credential-a");
+        var application = CreateApplication(httpClient, console, spokenOutput: new RecordingSpokenOutputCoordinator());
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Usage: /stop", console.Output, StringComparison.Ordinal);
+        Assert.Contains("Usage: /repeat", console.Output, StringComparison.Ordinal);
+        Assert.Contains("There is no spoken output to stop.", console.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StopDuringPlaybackCancelsOnlyTheLocalAudioAndKeepsTheTurnResult()
+    {
+        var conversationId = Guid.Parse("11111111-1111-4111-8111-111111111111");
+        var spokenOutput = new RecordingSpokenOutputCoordinator { BlockPlaybackUntilCancellation = true };
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Spoken response")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new DeferredInputConsole();
+        var store = new TestCredentialStore(new PrivateClientCredential("client-a", "credential-a"));
+        var application = CreateApplication(httpClient, console, store, spokenOutput: spokenOutput);
+
+        console.Provide("Hello");
+        console.Provide("/stop");
+        console.Provide(null);
+        var exitCode = await application.RunAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(1, spokenOutput.StopCount);
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.Equal(["Spoken response"], spokenOutput.PreparedTexts);
+        Assert.DoesNotContain("UNCERTAIN", console.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("cancelled", console.Output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ALineTypedDuringPlaybackIsDeferredAndHandledExactlyOnceAfterwards()
+    {
+        var conversationId = Guid.Parse("22222222-2222-4222-8222-222222222222");
+        var spokenOutput = new RecordingSpokenOutputCoordinator { BlockPlaybackUntilCancellation = true };
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Spoken response")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new DeferredInputConsole();
+        var store = new TestCredentialStore(new PrivateClientCredential("client-a", "credential-a"));
+        var application = CreateApplication(httpClient, console, store, spokenOutput: spokenOutput);
+
+        console.Provide("Hello");
+        console.Provide("/mute");
+        console.Provide(null);
+        var runTask = application.RunAsync(CancellationToken.None);
+        await spokenOutput.WaitForPlaybackAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        spokenOutput.CompletePlayback();
+        var exitCode = await runTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(0, exitCode);
+        Assert.True(store.Preferences.IsMuted);
+        Assert.True(spokenOutput.RequestedPreferences.IsMuted);
+        Assert.Single(spokenOutput.PreparedTexts);
+        Assert.Single(store.SavedPreferences);
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.Equal(3, console.ReadLineCallCount);
+    }
+
+    [Fact]
+    public async Task WhenPlaybackFinishesFirstThePendingReadIsReusedNotReissued()
+    {
+        var conversationId = Guid.Parse("33333333-3333-4333-8333-333333333333");
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "First")),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Second")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new DeferredInputConsole();
+        var store = new TestCredentialStore(new PrivateClientCredential("client-a", "credential-a"));
+        var application = CreateApplication(httpClient, console, store, spokenOutput: spokenOutput);
+
+        console.Provide("Hello");
+        console.Provide("world");
+        console.Provide(null);
+        var exitCode = await application.RunAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(4, handler.Requests.Count);
+        Assert.Equal(["First", "Second"], spokenOutput.PreparedTexts);
+        Assert.Equal(3, console.ReadLineCallCount);
+    }
+
+    [Fact]
+    public async Task EndOfInputDuringPlaybackStopsTheAudioAndClosesCleanly()
+    {
+        var conversationId = Guid.Parse("44444444-4444-4444-8444-444444444444");
+        var spokenOutput = new RecordingSpokenOutputCoordinator { BlockPlaybackUntilCancellation = true };
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Spoken response")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new DeferredInputConsole();
+        var store = new TestCredentialStore(new PrivateClientCredential("client-a", "credential-a"));
+        var application = CreateApplication(httpClient, console, store, spokenOutput: spokenOutput);
+
+        console.Provide("Hello");
+        console.Provide(null);
+        var exitCode = await application.RunAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(1, spokenOutput.StopCount);
+        Assert.Equal(3, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task InvalidSpokenPreferenceValuesShowSafeUsageAndChangeNothing()
+    {
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "/rate 99", "/rate abc", "/volume -1", "/voice Ghost Voice", null],
+            "credential-a");
+        var store = new TestCredentialStore();
+        var application = CreateApplication(httpClient, console, store, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Rate must be between -10 and 10.", console.Output, StringComparison.Ordinal);
+        Assert.Contains("Usage: /rate <value>", console.Output, StringComparison.Ordinal);
+        Assert.Contains("Volume must be between 0 and 100.", console.Output, StringComparison.Ordinal);
+        Assert.Contains("The requested voice is not available.", console.Output, StringComparison.Ordinal);
+        Assert.Equal(SpokenOutputPreferences.Default, spokenOutput.RequestedPreferences);
+        Assert.Equal(SpokenOutputPreferences.Default, store.Preferences);
+    }
+
+    [Fact]
+    public async Task ValidVoiceAndVolumeCommandsPersistSelectAndPublishTheSnapshot()
+    {
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
+        spokenOutput.Voices.Add(new SpokenOutputVoice("Aria"));
+        spokenOutput.Voices.Add(new SpokenOutputVoice("Microsoft Elvira"));
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "/voice Microsoft Elvira", "/volume 55", "/voice", null],
+            "credential-a");
+        var store = new TestCredentialStore();
+        var application = CreateApplication(httpClient, console, store, stateSink: sink, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("Microsoft Elvira", store.Preferences.VoiceId);
+        Assert.Equal(55, store.Preferences.Volume);
+        Assert.Equal("Microsoft Elvira", spokenOutput.RequestedPreferences.VoiceId);
+        Assert.Equal(55, spokenOutput.RequestedPreferences.Volume);
+        Assert.Contains(sink.Snapshots, snapshot =>
+            snapshot.SpokenOutput.VoiceId == "Microsoft Elvira" && snapshot.SpokenOutput.Volume == 55);
+        Assert.Contains("Aria", console.Output, StringComparison.Ordinal);
+        Assert.Contains("Requested voice: Microsoft Elvira", console.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RepeatKeepsItsTextAcrossNewAndOtherNonAudioCommands()
+    {
+        var conversationId = Guid.Parse("bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc");
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Keep me")),
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "Hello", "/help", "/new", "/repeat", null],
+            "credential-a");
+        var application = CreateApplication(httpClient, console, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(["Keep me", "Keep me"], spokenOutput.PreparedTexts);
+        Assert.DoesNotContain("There is no response available to repeat.", console.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AnEmptyContentResponseIsNeitherSpokenNorRetained()
+    {
+        var conversationId = Guid.Parse("99999999-9999-4999-8999-999999999999");
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["client-a", "Hello", "/repeat", null], "credential-a");
+        var application = CreateApplication(httpClient, console, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Empty(spokenOutput.PreparedTexts);
+        Assert.Contains("There is no response available to repeat.", console.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheVoiceFallbackWarningIsPrintedOnlyOncePerSession()
+    {
+        var conversationId = Guid.Parse("abababab-abab-4bab-8bab-abababababab");
+        var spokenOutput = new RecordingSpokenOutputCoordinator { UsedVoiceFallback = true };
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "First")),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Second")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["client-a", "one", "two", null], "credential-a");
+        var application = CreateApplication(httpClient, console, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(2, spokenOutput.PreparedTexts.Count);
+        Assert.Equal(1, CountOccurrences(console.Output, "speech_voice_unavailable"));
+    }
+
+    private static int CountOccurrences(string text, string value) => text.Split(value).Length - 1;
+
+    [Fact]
+    public async Task TheTranscriptKeepsEmojiButTheSpokenTextDropsThem()
+    {
+        var conversationId = Guid.Parse("cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd");
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Todo listo 😊 y correcto")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["client-a", "Hello", null], "credential-a");
+        var application = CreateApplication(httpClient, console, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(["Todo listo y correcto"], spokenOutput.PreparedTexts);
+        Assert.Contains("😊", console.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RepeatWithNoRetainedResponseIsANormalResult()
+    {
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["client-a", "/repeat", null], "credential-a");
+        var application = CreateApplication(httpClient, console, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("There is no response available to repeat.", console.Output, StringComparison.Ordinal);
+        Assert.Empty(spokenOutput.PreparedTexts);
+    }
+
+    [Fact]
+    public async Task AConfirmationOrErrorResponseIsNeitherSpokenNorRetainedForRepeat()
+    {
+        var conversationId = Guid.Parse("55555555-5555-4555-8555-555555555555");
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConfirmationResponseJson(conversationId)),
+            _ => JsonResponse(HttpStatusCode.OK, FailedConversationResponseJson(conversationId, "tool_rejected")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "Create a reminder", "reject", "/repeat", null],
+            "credential-a");
+        var application = CreateApplication(httpClient, console, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Empty(spokenOutput.PreparedTexts);
+        Assert.Contains("There is no response available to repeat.", console.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SynthesisFailureIsShownButKeepsTheConversationAndAllowsTheNextTurn()
+    {
+        var conversationId = Guid.Parse("66666666-6666-4666-8666-666666666666");
+        var spokenOutput = new RecordingSpokenOutputCoordinator
+        {
+            PreparationKind = SpokenOutputPreparationKind.SynthesisFailed,
+        };
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "First")),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Second")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["client-a", "Hello", "Again", null], "credential-a");
+        var application = CreateApplication(httpClient, console, stateSink: sink, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("speech_synthesis_failed", console.Output, StringComparison.Ordinal);
+        Assert.Equal(4, handler.Requests.Count);
+        Assert.Contains(sink.Snapshots, snapshot =>
+            snapshot.ConversationId == conversationId && snapshot.Provider == "fake");
+        Assert.DoesNotContain(sink.Snapshots, snapshot => snapshot.Error?.IsUncertain == true);
+    }
+
+    [Fact]
+    public async Task APreferenceThatCannotBePersistedKeepsTheEffectiveValueAndReportsASafeError()
+    {
+        var conversationId = Guid.Parse("77777777-7777-4777-8777-777777777777");
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Final response")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["client-a", "/rate 4", "Hello", null], "credential-a");
+        var store = new TestCredentialStore { SavePreferencesResult = false };
+        var application = CreateApplication(httpClient, console, store, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("speech_preferences_not_saved", console.Output, StringComparison.Ordinal);
+        Assert.Equal(0, spokenOutput.RequestedPreferences.Rate);
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.Equal(["Final response"], spokenOutput.PreparedTexts);
+    }
+
+    [Fact]
+    public async Task MuteSkipsTheNextSynthesisAndUnmuteReenablesItWithoutReplaying()
+    {
+        var conversationId = Guid.Parse("88888888-8888-4888-8888-888888888888");
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Muted turn")),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Audible turn")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "/mute", "one", "/unmute", "two", null],
+            "credential-a");
+        var store = new TestCredentialStore();
+        var application = CreateApplication(httpClient, console, store, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(["Audible turn"], spokenOutput.PreparedTexts);
+        Assert.Equal(1, spokenOutput.PlayCount);
+        Assert.Equal([true, false], store.SavedPreferences.Select(preference => preference.IsMuted));
+        Assert.False(store.Preferences.IsMuted);
+    }
+
+    [Fact]
     public async Task ProductionCompositionKeepsSpokenOutputUnavailable()
     {
         var conversationId = Guid.Parse("8856053c-10a3-47bc-a689-3a7b070342f7");
@@ -1835,9 +2305,12 @@ public sealed class TerminalClientApplicationTests
 
 internal sealed class RecordingSpokenOutputCoordinator : ISpokenOutputCoordinator
 {
-    public TerminalClientSpokenOutputState State { get; } = new(
+    public TerminalClientSpokenOutputState State { get; private set; } = new(
         SpokenOutputAvailability.Ready,
         IsMuted: false);
+
+    public SpokenOutputPreferences RequestedPreferences { get; private set; } =
+        SpokenOutputPreferences.Default;
 
     public List<string> PreparedTexts { get; } = [];
 
@@ -1855,17 +2328,77 @@ internal sealed class RecordingSpokenOutputCoordinator : ISpokenOutputCoordinato
 
     public bool ThrowOnDispose { get; set; }
 
+    public bool UsedVoiceFallback { get; set; }
+
+    private readonly CancellationTokenSource _localStop = new();
+    private readonly TaskCompletionSource _playbackRelease = new(
+        TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Lets a blocked playback finish naturally with <see cref="PlaybackResult"/>.</summary>
+    public void CompletePlayback() => _playbackRelease.TrySetResult();
+
     private TaskCompletionSource<bool> PlaybackStarted { get; } = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
 
     private TaskCompletionSource<bool> PreparationStarted { get; } = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
 
+    public List<SpokenOutputVoice> Voices { get; } = [];
+
+    public int VoiceEnumerationCount { get; private set; }
+
+    public Task<IReadOnlyList<SpokenOutputVoice>> GetVoicesAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        VoiceEnumerationCount++;
+        return Task.FromResult<IReadOnlyList<SpokenOutputVoice>>(Voices.ToArray());
+    }
+
+    public void UpdatePreferences(SpokenOutputPreferences preferences)
+    {
+        ArgumentNullException.ThrowIfNull(preferences);
+        RequestedPreferences = preferences;
+        State = new TerminalClientSpokenOutputState(
+            SpokenOutputAvailability.Ready,
+            preferences.IsMuted,
+            preferences.VoiceId,
+            preferences.Rate,
+            preferences.Volume);
+    }
+
+    public int StopCount { get; private set; }
+
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        StopCount++;
+        _localStop.Cancel();
+        return Task.CompletedTask;
+    }
+
     public async Task<SpokenOutputPreparation> PrepareAsync(string text, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        // Mirror the real coordinator: an unavailable or muted output short-circuits
+        // before synthesis, so the text is never "prepared".
+        if (State.Availability == SpokenOutputAvailability.Unavailable)
+        {
+            return SpokenOutputPreparation.Unavailable;
+        }
+
+        if (State.IsMuted)
+        {
+            return SpokenOutputPreparation.Muted;
+        }
+
         PreparedTexts.Add(text);
         PreparationStarted.TrySetResult(true);
+        if (UsedVoiceFallback)
+        {
+            State = State with { WarningCode = "speech_voice_unavailable" };
+        }
+
         if (BlockPreparationUntilCancellation)
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
@@ -1873,10 +2406,7 @@ internal sealed class RecordingSpokenOutputCoordinator : ISpokenOutputCoordinato
 
         return PreparationKind switch
         {
-            SpokenOutputPreparationKind.Unavailable => SpokenOutputPreparation.Unavailable,
-            SpokenOutputPreparationKind.Muted => SpokenOutputPreparation.Muted,
             SpokenOutputPreparationKind.SynthesisFailed => SpokenOutputPreparation.SynthesisFailed,
-            SpokenOutputPreparationKind.Cancelled => SpokenOutputPreparation.Cancelled,
             SpokenOutputPreparationKind.Prepared => SpokenOutputPreparation.Prepared(new PreparedOutput(this)),
             _ => throw new InvalidOperationException("The spoken-output preparation kind was not recognized."),
         };
@@ -1904,7 +2434,19 @@ internal sealed class RecordingSpokenOutputCoordinator : ISpokenOutputCoordinato
             _owner.PlaybackStarted.TrySetResult(true);
             if (_owner.BlockPlaybackUntilCancellation)
             {
-                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    _owner._localStop.Token);
+                try
+                {
+                    await _owner._playbackRelease.Task.WaitAsync(linked.Token);
+                }
+                catch (OperationCanceledException) when (_owner._localStop.IsCancellationRequested &&
+                    !cancellationToken.IsCancellationRequested)
+                {
+                    // Local /stop ends the playback without cancelling the caller.
+                    return SpokenOutputPlaybackResult.Cancelled;
+                }
             }
 
             return _owner.PlaybackResult;
@@ -1947,7 +2489,85 @@ internal sealed class ScriptedTerminalConsole : ITerminalConsole, IDisposable
     public void Dispose() => _writer.Dispose();
 }
 
-internal sealed class TestCredentialStore : IPrivateClientCredentialStore
+// A console whose message-loop reads (ReadLineAsync) stay pending until the test
+// provides a value, so playback/read ordering is deterministic without Task.Delay.
+internal sealed class DeferredInputConsole : ITerminalConsole, IAsyncTerminalInputConsole, IDisposable
+{
+    private readonly StringWriter _writer = new();
+    private readonly object _sync = new();
+    private readonly Queue<string?> _ready = new();
+    private readonly Queue<TaskCompletionSource<string?>> _waiting = new();
+    private int _readLineCallCount;
+
+    public string Output
+    {
+        get { lock (_sync) { return _writer.ToString(); } }
+    }
+
+    public int ReadLineCallCount => Volatile.Read(ref _readLineCallCount);
+
+    public void Provide(string? line)
+    {
+        lock (_sync)
+        {
+            if (_waiting.Count > 0)
+            {
+                _waiting.Dequeue().TrySetResult(line);
+                return;
+            }
+
+            _ready.Enqueue(line);
+        }
+    }
+
+    public string? ReadLine() => throw new NotSupportedException("Use ReadLineAsync.");
+
+    public string ReadSecret() => throw new NotSupportedException("Use ReadLineAsync.");
+
+    public void Write(string value)
+    {
+        lock (_sync) { _writer.Write(value); }
+    }
+
+    public void WriteLine(string value)
+    {
+        lock (_sync) { _writer.WriteLine(value); }
+    }
+
+    Task<string?> IAsyncTerminalInputConsole.ReadLineAsync(
+        TerminalInputRequest request,
+        CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _readLineCallCount);
+        TaskCompletionSource<string?> completion;
+        lock (_sync)
+        {
+            if (_ready.Count > 0)
+            {
+                return Task.FromResult(_ready.Dequeue());
+            }
+
+            completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _waiting.Enqueue(completion);
+        }
+
+        return AwaitWithCancellationAsync(completion, cancellationToken);
+    }
+
+    private static async Task<string?> AwaitWithCancellationAsync(
+        TaskCompletionSource<string?> completion,
+        CancellationToken cancellationToken)
+    {
+        await using var registration = cancellationToken.Register(() => completion.TrySetCanceled(cancellationToken));
+        return await completion.Task;
+    }
+
+    public void Dispose() => _writer.Dispose();
+}
+
+internal sealed class TestCredentialStore :
+    IPrivateClientCredentialStore,
+    IPrivateClientSpokenOutputPreferencesStore
 {
     private int _saveCount;
 
@@ -1967,6 +2587,12 @@ internal sealed class TestCredentialStore : IPrivateClientCredentialStore
     public bool DeleteResult { get; set; } = true;
 
     public bool Deleted { get; private set; }
+
+    public SpokenOutputPreferences Preferences { get; private set; } = SpokenOutputPreferences.Default;
+
+    public bool SavePreferencesResult { get; set; } = true;
+
+    public List<SpokenOutputPreferences> SavedPreferences { get; } = [];
 
     public Task<PrivateClientCredential?> LoadAsync(CancellationToken cancellationToken) =>
         Task.FromResult(Credential);
@@ -1993,6 +2619,23 @@ internal sealed class TestCredentialStore : IPrivateClientCredentialStore
         }
 
         return Task.FromResult(DeleteResult);
+    }
+
+    public Task<SpokenOutputPreferences> LoadSpokenOutputPreferencesAsync(
+        CancellationToken cancellationToken) => Task.FromResult(Preferences);
+
+    public Task<bool> SaveSpokenOutputPreferencesAsync(
+        PrivateClientCredential credential,
+        SpokenOutputPreferences preferences,
+        CancellationToken cancellationToken)
+    {
+        SavedPreferences.Add(preferences);
+        if (SavePreferencesResult)
+        {
+            Preferences = preferences;
+        }
+
+        return Task.FromResult(SavePreferencesResult);
     }
 }
 
