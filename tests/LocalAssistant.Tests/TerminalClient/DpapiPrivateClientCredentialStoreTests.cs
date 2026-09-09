@@ -199,7 +199,7 @@ public sealed class DpapiPrivateClientCredentialStoreTests
     {
         var fileSystem = new InMemoryPrivateClientStateFileSystem();
         var protector = new ReversiblePrivateClientStateProtector();
-        const string path = "C:\\state\\private-client.json";
+        const string path = "state/private-client.json";
         var store = new DpapiPrivateClientCredentialStore(path, protector, fileSystem);
         var original = new PrivateClientCredential("client-a", "original-credential", Guid.NewGuid());
         Assert.True(await store.SaveAsync(original, CancellationToken.None));
@@ -222,7 +222,7 @@ public sealed class DpapiPrivateClientCredentialStoreTests
     {
         var fileSystem = new InMemoryPrivateClientStateFileSystem();
         var protector = new ReversiblePrivateClientStateProtector();
-        const string path = "C:\\state\\private-client.json";
+        const string path = "state/private-client.json";
         var store = new DpapiPrivateClientCredentialStore(path, protector, fileSystem);
         var original = new PrivateClientCredential("client-a", "original-credential");
         Assert.True(await store.SaveAsync(original, CancellationToken.None));
@@ -243,7 +243,7 @@ public sealed class DpapiPrivateClientCredentialStoreTests
     {
         var fileSystem = new InMemoryPrivateClientStateFileSystem();
         var protector = new ReversiblePrivateClientStateProtector();
-        const string path = "C:\\state\\private-client.json";
+        const string path = "state/private-client.json";
         var conversationId = Guid.Parse("6f3a2b1c-8d4e-4f5a-9b6c-7d8e9f0a1b2c");
         var legacyState = JsonSerializer.Serialize(new
         {
@@ -278,7 +278,7 @@ public sealed class DpapiPrivateClientCredentialStoreTests
     public async Task AnUndecryptablePayloadIsIgnoredWithoutDeletingTheFile()
     {
         var fileSystem = new InMemoryPrivateClientStateFileSystem();
-        const string path = "C:\\state\\private-client.json";
+        const string path = "state/private-client.json";
         var writable = new ReversiblePrivateClientStateProtector();
         var store = new DpapiPrivateClientCredentialStore(path, writable, fileSystem);
         Assert.True(await store.SaveAsync(new PrivateClientCredential("client-a", "credential-a"), CancellationToken.None));
@@ -296,7 +296,7 @@ public sealed class DpapiPrivateClientCredentialStoreTests
     {
         var fileSystem = new InMemoryPrivateClientStateFileSystem();
         var protector = new ReversiblePrivateClientStateProtector();
-        const string path = "C:\\state\\private-client.json";
+        const string path = "state/private-client.json";
         var store = new DpapiPrivateClientCredentialStore(path, protector, fileSystem);
         var original = new PrivateClientCredential("client-a", "original-credential");
         Assert.True(await store.SaveAsync(original, CancellationToken.None));
@@ -316,7 +316,7 @@ public sealed class DpapiPrivateClientCredentialStoreTests
     {
         var fileSystem = new InMemoryPrivateClientStateFileSystem();
         var protector = new ReversiblePrivateClientStateProtector();
-        const string path = "C:\\state\\private-client.json";
+        const string path = "state/private-client.json";
         var futureState = JsonSerializer.Serialize(new
         {
             schemaVersion = 99,
