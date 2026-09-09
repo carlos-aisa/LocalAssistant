@@ -37,9 +37,10 @@ ensamblados con responsabilidades ejecutables y comprobables:
 No hay worker ni microservicios. Ollama sigue siendo un proceso externo opcional;
 Home Assistant, MQTT, bases vectoriales y Open WebUI son evoluciones futuras. El cliente
 terminal contiene un plano local de salida hablada con contratos de síntesis,
-reproducción y coordinación, pero su composición normal declara esa capacidad como no
-disponible: no incorpora motor TTS, SDK, proceso de audio ni tráfico multimedia hacia
-la API.
+reproducción y coordinación. En Windows compone SAPI mediante `System.Speech`, genera
+WAV en memoria y lo reproduce localmente; en el resto de plataformas o sin voces
+habilitadas declara la capacidad no disponible. No incorpora procesos externos ni
+tráfico multimedia hacia la API.
 
 ## Flujo de una conversación
 
@@ -989,8 +990,8 @@ selector e historial visibles usan listado, detalle e historial paginados de
 conversaciones propias, filtrados por propietario y sin revelar si un identificador
 ajeno existe. El cliente no consulta el almacén para suplir esas rutas.
 
-La salida de voz se ejecutará en el propio cliente y recibirá solo la respuesta textual
-final. Silenciar, detener reproducción y repetir son controles locales del plano de
+La salida de voz se ejecuta en el propio cliente y recibe solo la respuesta textual
+final elegible. Silenciar, detener reproducción y repetir son controles locales del plano de
 salida; no equivalen a cancelar un turno en el plano de conversación. Ningún endpoint
 de conversación transportará audio Base64 como consecuencia de esta fase.
 La frontera y la propiedad local de salida se establecen en el

@@ -64,14 +64,18 @@ cancelación HTTP fiable ni autoriza un reintento automático; ante incertidumbr
 administrativa el cliente conserva sus credenciales locales y se bloquea.
 
 La síntesis y reproducción de fase 5 pertenecen al cliente local y no añaden audio a
-la API ni al orquestador. El incremento actual usa únicamente contratos y dobles
-deterministas: la composición normal declara la salida no disponible y no crea buffers
-ni archivos de audio. Los artefactos de un adaptador futuro se limitarán a la sesión,
-se eliminarán al terminar o fallar la reproducción y no se conservarán por defecto.
-Un adaptador TTS externo requerirá la política de egreso ya definida, proveedor y
-retención explícitos. `mute`, `stop` y `repeat` siguen pendientes; cuando existan,
-controlarán solo la salida local y no deberán presentar una cancelación de turno como
-garantía que el protocolo todavía no da.
+la API ni al orquestador. En Windows usa SAPI instalado para generar WAV exclusivamente
+en memoria y reproducirlo durante la operación; limpia el buffer al liberar el stream
+y no crea archivos temporales. Voz, velocidad, volumen y silencio quedan dentro del
+payload DPAPI de usuario junto con la credencial, mientras que `ClientId` y el último
+identificador de conversación siguen siendo metadatos locales. Bearer, desafíos, texto
+de `/repeat` y audio no se persisten ni se incluyen en snapshots o salida diagnóstica.
+La voz solicitada se conserva dentro de las preferencias protegidas; el snapshot solo
+publica una voz efectiva normalizada y, cuando es necesario, el código seguro
+`speech_voice_unavailable`, sin exponer datos de síntesis ni del sistema.
+Un adaptador TTS externo seguirá requiriendo la política de egreso, proveedor y
+retención explícitos. `mute`, `stop` y `repeat` controlan exclusivamente la salida
+local y no presentan una cancelación de turno como garantía del protocolo.
 
 ## Modelo inicial de herramientas
 

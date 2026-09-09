@@ -290,10 +290,15 @@ La fase se entrega mediante incrementos demostrables y en este orden:
    composición normal declara salida no disponible; `PlayingVoice` solo se activa con
    dobles de prueba durante reproducción efectiva. No hay TTS, audio persistido ni
    comandos de voz hasta el incremento 7.
-7. **TTS real tras una evaluación acotada:** voz, velocidad y volumen, con comandos
-   `mute`, `unmute`, `stop` y `repeat`. La síntesis será local por defecto, no se
-   conservará audio, las métricas no copiarán contenido y un fallo volverá a texto.
-   No incluye entrada de audio ni STT.
+7. [x] **TTS real tras una evaluación acotada:** voz, velocidad y volumen, con comandos
+   `voice`, `rate`, `volume`, `mute`, `unmute`, `stop` y `repeat`. Síntesis SAPI local
+   en Windows (`System.Speech`), WAV solo en memoria, sin audio persistido; fuera de
+   Windows o sin voces habilitadas degrada a texto. Preferencias en el payload DPAPI
+   junto a la credencial, con migración compatible del estado local. El texto hablado se
+   limpia de emoji y símbolos no verbalizables. Diseño y plan en
+   `docs/specs/2026-09-09-phase5-windows-tts-design.md` y su plan; verificación
+   automática y manual en `docs/evaluations/2026-09-09-windows-tts-manual-validation.md`.
+   `System.Speech` 8.0.0 y `System.Windows.Extensions` 8.0.0 (MIT); Piper aplazado.
 8. **Cierre operativo de Windows:** publicación, configuración fuera del binario,
    credencial DPAPI, bearer no persistido, arranque manual de la API, diagnósticos,
    logs y smoke tests reproducibles.

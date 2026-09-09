@@ -30,7 +30,9 @@ internal sealed class TerminalClientTuiStateSink : ITerminalClientStateSink
         Interlocked.Exchange(ref _latestSnapshot, null);
 }
 
-internal sealed class TerminalClientTuiConsoleAdapter : IStructuredTerminalConsole
+internal sealed class TerminalClientTuiConsoleAdapter :
+    IStructuredTerminalConsole,
+    IAsyncTerminalInputConsole
 {
     private readonly ConcurrentQueue<string> _transcript = new();
     private readonly object _inputLock = new();
@@ -46,6 +48,10 @@ internal sealed class TerminalClientTuiConsoleAdapter : IStructuredTerminalConso
     public string? ReadLine(TerminalInputRequest request) => RequestInput(request);
 
     public string ReadSecret(TerminalInputRequest request) => RequestInput(request) ?? string.Empty;
+
+    Task<string?> IAsyncTerminalInputConsole.ReadLineAsync(
+        TerminalInputRequest request,
+        CancellationToken cancellationToken) => RequestInputAsync(request, cancellationToken);
 
     public void Write(string value) => AddTranscript(value);
 
@@ -125,6 +131,13 @@ internal sealed class TerminalClientTuiConsoleAdapter : IStructuredTerminalConso
 
     private string? RequestInput(TerminalInputRequest request)
     {
+        return RequestInputAsync(request, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    private async Task<string?> RequestInputAsync(
+        TerminalInputRequest request,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(request);
         var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_inputLock)
@@ -139,7 +152,27 @@ internal sealed class TerminalClientTuiConsoleAdapter : IStructuredTerminalConso
             _inputPublished.TrySetResult(true);
         }
 
-        return completion.Task.GetAwaiter().GetResult();
+        using var registration = cancellationToken.Register(() => CancelInput(completion, cancellationToken));
+        return await completion.Task;
+    }
+
+    private void CancelInput(
+        TaskCompletionSource<string?> completion,
+        CancellationToken cancellationToken)
+    {
+        lock (_inputLock)
+        {
+            if (!ReferenceEquals(_inputCompletion, completion))
+            {
+                return;
+            }
+
+            _inputCompletion = null;
+            _inputRequest = null;
+            _inputPublished = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        completion.TrySetCanceled(cancellationToken);
     }
 
     private void AddTranscript(string value)
@@ -406,6 +439,7 @@ internal sealed class TerminalClientTuiHost
         // the input line adjacent to the bottom edge. The Take(height) is a defensive cap.
         var priorityLines = new List<string>();
         priorityLines.Add(FitLine(CreateStateLine(), width));
+        AddSpeechLine(priorityLines, width);
         AddErrorLine(priorityLines, width);
         AddConfirmationLine(priorityLines, width);
         AddInputLine(priorityLines, width);
@@ -426,6 +460,7 @@ internal sealed class TerminalClientTuiHost
         lines.Add(FitLine("Terminal too small. Resize to at least 40x8.", width));
         AddErrorLine(lines, width);
         lines.Add(FitLine(CreateStateLine(), width));
+        AddSpeechLine(lines, width);
         return lines.Take(height).ToList();
     }
 
@@ -476,14 +511,34 @@ internal sealed class TerminalClientTuiHost
     {
         var provider = TerminalTextSanitizer.NormalizeSingleLine(_snapshot.Provider ?? "unavailable");
         var conversation = _snapshot.ConversationId?.ToString("N")[..8] ?? "none";
-        var spokenOutput = _snapshot.Activity == TerminalClientActivity.PlayingVoice
-            ? "playing"
-            : _snapshot.SpokenOutput.Availability == SpokenOutputAvailability.Unavailable
-                ? "unavailable"
-                : _snapshot.SpokenOutput.IsMuted
-                    ? "muted"
-                    : "ready";
-        return $"State: {_snapshot.Lifecycle}/{_snapshot.Activity}; Provider: {provider}; Conversation: {conversation}; Speech: {spokenOutput}";
+        return $"State: {_snapshot.Lifecycle}/{_snapshot.Activity}; Provider: {provider}; Conversation: {conversation}; Speech: {SpokenOutputStatus()}";
+    }
+
+    private string SpokenOutputStatus() => _snapshot.Activity == TerminalClientActivity.PlayingVoice
+        ? "playing"
+        : _snapshot.SpokenOutput.Availability == SpokenOutputAvailability.Unavailable
+            ? "unavailable"
+            : _snapshot.SpokenOutput.IsMuted
+                ? "muted"
+                : "ready";
+
+    // A dedicated, lower-priority line so voice/rate/volume stay readable instead of
+    // being truncated off the end of the state line at the minimum viewport. Only shown
+    // when spoken output is actually available.
+    private void AddSpeechLine(List<string> lines, int width)
+    {
+        if (_snapshot.SpokenOutput.Availability != SpokenOutputAvailability.Ready)
+        {
+            return;
+        }
+
+        var voice = TerminalTextSanitizer.NormalizeSingleLine(_snapshot.SpokenOutput.VoiceId ?? "default");
+        var warning = _snapshot.SpokenOutput.WarningCode is null
+            ? string.Empty
+            : $"; Warning: {TerminalTextSanitizer.NormalizeSingleLine(_snapshot.SpokenOutput.WarningCode)}";
+        lines.Add(FitLine(
+            $"Speech: voice {voice}; rate {_snapshot.SpokenOutput.Rate}; volume {_snapshot.SpokenOutput.Volume}{warning}",
+            width));
     }
 
     private static string FitInputLine(string prompt, string value, int width)

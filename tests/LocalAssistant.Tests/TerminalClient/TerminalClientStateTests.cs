@@ -116,7 +116,7 @@ public sealed class TerminalClientStateTests
     }
 
     [Fact]
-    public void CoordinatorAllowsPlayingVoiceOnlyAfterSendingATurn()
+    public void CoordinatorAllowsPlayingVoiceAfterSendingATurn()
     {
         var coordinator = new TerminalClientStateCoordinator(NullTerminalClientStateSink.Instance);
         coordinator.PublishInitial();
@@ -133,7 +133,6 @@ public sealed class TerminalClientStateTests
             SpokenOutput = SpokenOutputReady(),
         };
 
-        Assert.False(coordinator.TryTransition(playingVoice));
         Assert.True(coordinator.TryTransition(Ready("fake") with
         {
             Activity = TerminalClientActivity.SendingTurn,
@@ -142,6 +141,25 @@ public sealed class TerminalClientStateTests
         Assert.True(coordinator.TryTransition(playingVoice));
         Assert.True(coordinator.TryTransition(Ready("fake") with
         {
+            SpokenOutput = SpokenOutputReady(),
+        }));
+    }
+
+    [Fact]
+    public void CoordinatorAllowsLocalRepeatToStartPlayingVoiceFromReady()
+    {
+        var coordinator = new TerminalClientStateCoordinator(NullTerminalClientStateSink.Instance);
+        coordinator.PublishInitial();
+        Assert.True(coordinator.TryTransition(Connecting()));
+        Assert.True(coordinator.TryTransition(Authenticating()));
+        Assert.True(coordinator.TryTransition(Ready("fake") with
+        {
+            SpokenOutput = SpokenOutputReady(),
+        }));
+
+        Assert.True(coordinator.TryTransition(Ready("fake") with
+        {
+            Activity = TerminalClientActivity.PlayingVoice,
             SpokenOutput = SpokenOutputReady(),
         }));
     }
@@ -276,6 +294,67 @@ public sealed class TerminalClientStateTests
                 SpokenOutput = outputState,
             }));
         }
+    }
+
+    [Fact]
+    public void CoordinatorRejectsUnsafeOrOutOfRangeSpokenOutputSnapshotValues()
+    {
+        var coordinator = new TerminalClientStateCoordinator(NullTerminalClientStateSink.Instance);
+        coordinator.PublishInitial();
+        Assert.True(coordinator.TryTransition(Connecting()));
+        Assert.True(coordinator.TryTransition(Authenticating()));
+        Assert.True(coordinator.TryTransition(Ready("fake")));
+
+        var invalidRate = Ready("fake") with
+        {
+            SpokenOutput = new TerminalClientSpokenOutputState(
+                SpokenOutputAvailability.Ready,
+                IsMuted: false,
+                Rate: 11),
+        };
+        var unsafeVoice = Ready("fake") with
+        {
+            SpokenOutput = new TerminalClientSpokenOutputState(
+                SpokenOutputAvailability.Ready,
+                IsMuted: false,
+                VoiceId: "voice\u001b[31m"),
+        };
+
+        var invalidWarning = Ready("fake") with
+        {
+            SpokenOutput = new TerminalClientSpokenOutputState(
+                SpokenOutputAvailability.Ready,
+                IsMuted: false,
+                WarningCode: "speech_boom"),
+        };
+
+        Assert.False(coordinator.TryTransition(invalidRate));
+        Assert.False(coordinator.TryTransition(unsafeVoice));
+        Assert.False(coordinator.TryTransition(invalidWarning));
+    }
+
+    [Fact]
+    public void CoordinatorRejectsPlayingVoiceWhenSpokenOutputIsMutedOrUnavailable()
+    {
+        var coordinator = new TerminalClientStateCoordinator(NullTerminalClientStateSink.Instance);
+        coordinator.PublishInitial();
+        Assert.True(coordinator.TryTransition(Connecting()));
+        Assert.True(coordinator.TryTransition(Authenticating()));
+        Assert.True(coordinator.TryTransition(Ready("fake") with { SpokenOutput = SpokenOutputReady() }));
+
+        var mutedWhilePlaying = Ready("fake") with
+        {
+            Activity = TerminalClientActivity.PlayingVoice,
+            SpokenOutput = new TerminalClientSpokenOutputState(SpokenOutputAvailability.Ready, IsMuted: true),
+        };
+        var unavailableWhilePlaying = Ready("fake") with
+        {
+            Activity = TerminalClientActivity.PlayingVoice,
+            SpokenOutput = TerminalClientSpokenOutputState.Unavailable,
+        };
+
+        Assert.False(coordinator.TryTransition(mutedWhilePlaying));
+        Assert.False(coordinator.TryTransition(unavailableWhilePlaying));
     }
 
     [Fact]

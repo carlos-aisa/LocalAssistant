@@ -157,7 +157,7 @@ internal static class TerminalClientProgram
             options,
             new DpapiPrivateClientCredentialStore(),
             new TerminalClientStateTextSink(console),
-            new UnavailableSpokenOutputCoordinator());
+            WindowsSpokenOutputFactory.Create(SpokenOutputPreferences.Default));
         return await application.RunAsync(cancellationToken);
     }
 
@@ -175,7 +175,7 @@ internal static class TerminalClientProgram
             options,
             new DpapiPrivateClientCredentialStore(),
             stateSink,
-            new UnavailableSpokenOutputCoordinator());
+            WindowsSpokenOutputFactory.Create(SpokenOutputPreferences.Default));
         return await new TerminalClientTuiHost(console, stateSink, driver)
             .RunAsync(application, cancellationToken);
     }

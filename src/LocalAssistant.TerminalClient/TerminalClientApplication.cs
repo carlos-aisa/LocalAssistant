@@ -9,6 +9,9 @@ public sealed class TerminalClientApplication
     private readonly ISpokenOutputCoordinator _spokenOutput;
     private readonly TerminalClientStateCoordinator _stateCoordinator;
     private bool _spokenOutputCancellationRecorded;
+    private bool _voiceFallbackWarningReported;
+    private string? _lastSpokenResponse;
+    private Task<string?>? _pendingMessageInput;
 
     public TerminalClientApplication(
         PrivateApiClient apiClient,
@@ -74,6 +77,8 @@ public sealed class TerminalClientApplication
                 Block(new ClientError("authentication_cancelled", "Authentication was not completed."), "authentication");
                 return 2;
             }
+
+            await LoadSpokenOutputPreferencesAsync(cancellationToken);
 
             var session = await _apiClient.CreateSessionAsync(credential.ClientId, credential.Credential, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
@@ -218,9 +223,7 @@ public sealed class TerminalClientApplication
 
         while (true)
         {
-            var input = ReadLine(new TerminalInputRequest(
-                TerminalInputKind.Line,
-                "You: "));
+            var input = await ReadMessageLineAsync(cancellationToken);
             if (input is null)
             {
                 return 0;
@@ -645,13 +648,80 @@ public sealed class TerminalClientApplication
         var parts = input.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts[0].Equals("/help", StringComparison.OrdinalIgnoreCase))
         {
-            _console.WriteLine("Commands: /new, /conversations, /info, /provider fake|ollama, /admin rotate, /admin revoke, /exit");
+            _console.WriteLine("Commands: /new, /conversations, /info, /provider fake|ollama, /voice, /rate, /volume, /mute, /unmute, /stop, /repeat, /admin rotate, /admin revoke, /exit");
             return new(true, 0, accessToken, provider, conversationId);
         }
 
         if (parts[0].Equals("/info", StringComparison.OrdinalIgnoreCase))
         {
-            _console.WriteLine($"Server: {_options.BaseUri}; Provider: {provider}; Scenario: {scenario}; Conversation active: {conversationId.HasValue}.");
+            var voice = _spokenOutput.State;
+            _console.WriteLine($"Server: {_options.BaseUri}; Provider: {provider}; Scenario: {scenario}; Conversation active: {conversationId.HasValue}; Voice: {voice.VoiceId ?? "default"}; Rate: {voice.Rate}; Volume: {voice.Volume}; Muted: {voice.IsMuted}.");
+            return new(true, 0, accessToken, provider, conversationId);
+        }
+
+        if (parts[0].Equals("/voice", StringComparison.OrdinalIgnoreCase))
+        {
+            return await HandleVoiceCommandAsync(input, credential, accessToken, provider, conversationId, cancellationToken);
+        }
+
+        if (parts[0].Equals("/rate", StringComparison.OrdinalIgnoreCase) ||
+            parts[0].Equals("/volume", StringComparison.OrdinalIgnoreCase) ||
+            parts[0].Equals("/mute", StringComparison.OrdinalIgnoreCase) ||
+            parts[0].Equals("/unmute", StringComparison.OrdinalIgnoreCase))
+        {
+            return await HandleSpokenOutputPreferenceCommandAsync(
+                parts,
+                credential,
+                accessToken,
+                provider,
+                conversationId,
+                cancellationToken);
+        }
+
+        if (parts[0].Equals("/stop", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!IsStopCommand(input))
+            {
+                _console.WriteLine("Usage: /stop");
+                return new(true, 0, accessToken, provider, conversationId);
+            }
+
+            if (_stateCoordinator.Current.Activity != TerminalClientActivity.PlayingVoice)
+            {
+                _console.WriteLine("There is no spoken output to stop.");
+                return new(true, 0, accessToken, provider, conversationId);
+            }
+
+            await _spokenOutput.StopAsync(cancellationToken);
+            return new(true, 0, accessToken, provider, conversationId);
+        }
+
+        if (parts[0].Equals("/repeat", StringComparison.OrdinalIgnoreCase))
+        {
+            if (parts.Length != 1)
+            {
+                _console.WriteLine("Usage: /repeat");
+                return new(true, 0, accessToken, provider, conversationId);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_lastSpokenResponse))
+            {
+                var error = await PlaySpokenTextAsync(_lastSpokenResponse, cancellationToken);
+                if (error is not null)
+                {
+                    RecordError(error, "speech_output", canBeUncertain: false);
+                    WriteError(error);
+                }
+                else
+                {
+                    Ready(provider, conversationId, pendingConfirmation: null, clearError: true);
+                }
+            }
+            else
+            {
+                _console.WriteLine("There is no response available to repeat.");
+            }
+
             return new(true, 0, accessToken, provider, conversationId);
         }
 
@@ -732,6 +802,153 @@ public sealed class TerminalClientApplication
 
         _console.WriteLine("Unknown command. Type /help for available commands.");
         return new(true, 0, accessToken, provider, conversationId);
+    }
+
+    private async Task<CommandResult> HandleVoiceCommandAsync(
+        string input,
+        PrivateClientCredential credential,
+        string accessToken,
+        string provider,
+        Guid? conversationId,
+        CancellationToken cancellationToken)
+    {
+        var voiceId = input.Length == "/voice".Length
+            ? null
+            : input["/voice".Length..].Trim();
+        if (string.IsNullOrEmpty(voiceId))
+        {
+            var voices = await _spokenOutput.GetVoicesAsync(cancellationToken);
+            var requestedVoice = _spokenOutput.RequestedPreferences.VoiceId ?? "default";
+            var effectiveVoice = _spokenOutput.State.VoiceId ?? "default";
+            _console.WriteLine($"Requested voice: {requestedVoice}; effective voice: {effectiveVoice}.");
+            if (voices.Count == 0)
+            {
+                _console.WriteLine("Spoken output is unavailable.");
+            }
+            else
+            {
+                foreach (var voice in voices)
+                {
+                    _console.WriteLine(voice.Id);
+                }
+            }
+
+            return new(true, 0, accessToken, provider, conversationId);
+        }
+
+        var availableVoices = await _spokenOutput.GetVoicesAsync(cancellationToken);
+        if (!availableVoices.Any(voice => string.Equals(voice.Id, voiceId, StringComparison.Ordinal)))
+        {
+            _console.WriteLine("The requested voice is not available.");
+            return new(true, 0, accessToken, provider, conversationId);
+        }
+
+        var current = _spokenOutput.RequestedPreferences;
+        return await ApplySpokenOutputPreferencesAsync(
+            new SpokenOutputPreferences(voiceId, current.Rate, current.Volume, current.IsMuted),
+            credential,
+            accessToken,
+            provider,
+            conversationId,
+            cancellationToken);
+    }
+
+    private async Task<CommandResult> HandleSpokenOutputPreferenceCommandAsync(
+        string[] parts,
+        PrivateClientCredential credential,
+        string accessToken,
+        string provider,
+        Guid? conversationId,
+        CancellationToken cancellationToken)
+    {
+        var current = _spokenOutput.RequestedPreferences;
+        SpokenOutputPreferences preferences;
+        if (parts[0].Equals("/mute", StringComparison.OrdinalIgnoreCase) ||
+            parts[0].Equals("/unmute", StringComparison.OrdinalIgnoreCase))
+        {
+            if (parts.Length != 1)
+            {
+                _console.WriteLine($"Usage: {parts[0]}");
+                return new(true, 0, accessToken, provider, conversationId);
+            }
+
+            preferences = new SpokenOutputPreferences(
+                current.VoiceId,
+                current.Rate,
+                current.Volume,
+                parts[0].Equals("/mute", StringComparison.OrdinalIgnoreCase));
+        }
+        else
+        {
+            if (parts.Length != 2 || !int.TryParse(parts[1], out var value))
+            {
+                _console.WriteLine($"Usage: {parts[0]} <value>");
+                return new(true, 0, accessToken, provider, conversationId);
+            }
+
+            try
+            {
+                preferences = parts[0].Equals("/rate", StringComparison.OrdinalIgnoreCase)
+                    ? new SpokenOutputPreferences(current.VoiceId, value, current.Volume, current.IsMuted)
+                    : new SpokenOutputPreferences(current.VoiceId, current.Rate, value, current.IsMuted);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                _console.WriteLine(parts[0].Equals("/rate", StringComparison.OrdinalIgnoreCase)
+                    ? "Rate must be between -10 and 10."
+                    : "Volume must be between 0 and 100.");
+                return new(true, 0, accessToken, provider, conversationId);
+            }
+        }
+
+        return await ApplySpokenOutputPreferencesAsync(
+            preferences,
+            credential,
+            accessToken,
+            provider,
+            conversationId,
+            cancellationToken);
+    }
+
+    private async Task<CommandResult> ApplySpokenOutputPreferencesAsync(
+        SpokenOutputPreferences preferences,
+        PrivateClientCredential credential,
+        string accessToken,
+        string provider,
+        Guid? conversationId,
+        CancellationToken cancellationToken)
+    {
+        if (_credentialStore is IPrivateClientSpokenOutputPreferencesStore preferenceStore &&
+            !await preferenceStore.SaveSpokenOutputPreferencesAsync(credential, preferences, cancellationToken))
+        {
+            var error = new ClientError(
+                "speech_preferences_not_saved",
+                "The voice preferences could not be saved.");
+            RecordError(error, "speech_preferences", canBeUncertain: false);
+            WriteError(error);
+            return new(true, 0, accessToken, provider, conversationId);
+        }
+
+        _spokenOutput.UpdatePreferences(preferences);
+        Ready(provider, conversationId, pendingConfirmation: null, clearError: true);
+        return new(true, 0, accessToken, provider, conversationId);
+    }
+
+    // Shared so the concurrent playback loop and the ordinary command handler agree on
+    // exactly what counts as a stop request: the whole trimmed line is "/stop", nothing
+    // else. "/stop now" is not a stop and falls through to normal command handling.
+    private static bool IsStopCommand(string? line) =>
+        string.Equals(line?.Trim(), "/stop", StringComparison.OrdinalIgnoreCase);
+
+    private async Task LoadSpokenOutputPreferencesAsync(CancellationToken cancellationToken)
+    {
+        if (_credentialStore is not IPrivateClientSpokenOutputPreferencesStore preferenceStore)
+        {
+            return;
+        }
+
+        var preferences = await preferenceStore.LoadSpokenOutputPreferencesAsync(cancellationToken);
+        _spokenOutput.UpdatePreferences(preferences);
     }
 
     private async Task<(PrivateClientCredential Credential, string AccessToken, Guid? ConversationId)> SelectConversationAsync(
@@ -1058,11 +1275,29 @@ public sealed class TerminalClientApplication
             return null;
         }
 
+        _lastSpokenResponse = response.Content;
+        return await PlaySpokenTextAsync(response.Content!, cancellationToken);
+    }
+
+    private async Task<ClientError?> PlaySpokenTextAsync(
+        string text,
+        CancellationToken cancellationToken)
+    {
         _spokenOutputCancellationRecorded = false;
         var playbackStarted = false;
+
+        // The transcript keeps the response verbatim; the spoken channel drops emoji and
+        // other symbols a TTS engine would read out by name.
+        var speechText = SpokenText.ForSpeech(text);
+        if (string.IsNullOrWhiteSpace(speechText))
+        {
+            return null;
+        }
+
         try
         {
-            var preparation = await _spokenOutput.PrepareAsync(response.Content!, cancellationToken);
+            var preparation = await _spokenOutput.PrepareAsync(speechText, cancellationToken);
+            ReportSpokenOutputWarning();
             if (preparation.Kind == SpokenOutputPreparationKind.SynthesisFailed)
             {
                 return new ClientError(
@@ -1070,32 +1305,47 @@ public sealed class TerminalClientApplication
                     "The response was shown, but spoken output could not be prepared.");
             }
 
-            if (preparation.Kind == SpokenOutputPreparationKind.Cancelled)
-            {
-                return new ClientError(
-                    "speech_output_cancelled",
-                    "The response was shown, but spoken output was cancelled.");
-            }
-
             if (preparation.Kind != SpokenOutputPreparationKind.Prepared ||
                 preparation.PreparedOutput is null)
             {
+                // Unavailable or muted: the response was already shown; nothing to play.
                 return null;
             }
 
             await using var preparedOutput = preparation.PreparedOutput;
             playbackStarted = true;
             BeginActivity(TerminalClientActivity.PlayingVoice);
-            var playback = await preparedOutput.PlayAsync(cancellationToken);
+            var playbackTask = preparedOutput.PlayAsync(cancellationToken);
+            _pendingMessageInput ??= StartMessageInputAsync(cancellationToken);
+            var completed = await Task.WhenAny(playbackTask, _pendingMessageInput);
+            if (ReferenceEquals(completed, _pendingMessageInput) && _pendingMessageInput.IsCompletedSuccessfully)
+            {
+                var prefetched = _pendingMessageInput.Result;
+                if (IsStopCommand(prefetched))
+                {
+                    // A stop request is consumed here, never re-processed by the loop.
+                    _pendingMessageInput = null;
+                    await _spokenOutput.StopAsync(cancellationToken);
+                }
+                else if (prefetched is null)
+                {
+                    // EOF: stop the audio; the completed null read is left in place so the
+                    // loop's next ReadMessageLineAsync returns null and closes cleanly.
+                    await _spokenOutput.StopAsync(cancellationToken);
+                }
+
+                // Any other line stays as the single prefetched entry and is handled once
+                // by the loop after playback returns.
+            }
+
+            var playback = await playbackTask;
             return playback.Kind switch
             {
                 SpokenOutputPlaybackKind.Completed => null,
                 SpokenOutputPlaybackKind.PlaybackFailed => new ClientError(
                     "speech_playback_failed",
                     "The response was shown, but spoken output could not be played."),
-                SpokenOutputPlaybackKind.Cancelled => new ClientError(
-                    "speech_output_cancelled",
-                    "The response was shown, but spoken output was cancelled."),
+                SpokenOutputPlaybackKind.Cancelled => null,
                 _ => throw new InvalidOperationException("The spoken-output playback result was not recognized."),
             };
         }
@@ -1132,6 +1382,21 @@ public sealed class TerminalClientApplication
         response.Confirmation is null &&
         response.Error is null;
 
+    private void ReportSpokenOutputWarning()
+    {
+        if (!string.Equals(
+                _spokenOutput.State.WarningCode,
+                "speech_voice_unavailable",
+                StringComparison.Ordinal) ||
+            _voiceFallbackWarningReported)
+        {
+            return;
+        }
+
+        _voiceFallbackWarningReported = true;
+        _console.WriteLine("Warning (speech_voice_unavailable): The requested voice is unavailable; Windows selected its default voice.");
+    }
+
     private void WriteError(ClientError error)
     {
         if (_console is IStructuredTerminalConsole structuredConsole)
@@ -1154,6 +1419,30 @@ public sealed class TerminalClientApplication
 
         _console.Write(request.Prompt);
         return _console.ReadLine();
+    }
+
+    private async Task<string?> ReadMessageLineAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var pending = _pendingMessageInput;
+        if (pending is null)
+        {
+            return await StartMessageInputAsync(cancellationToken);
+        }
+
+        _pendingMessageInput = null;
+        return await pending.WaitAsync(cancellationToken);
+    }
+
+    private Task<string?> StartMessageInputAsync(CancellationToken cancellationToken)
+    {
+        var request = new TerminalInputRequest(TerminalInputKind.Line, "You: ");
+        if (_console is IAsyncTerminalInputConsole asynchronousConsole)
+        {
+            return asynchronousConsole.ReadLineAsync(request, cancellationToken);
+        }
+
+        return Task.Run(() => ReadLine(request), cancellationToken);
     }
 
     private string ReadSecret(TerminalInputRequest request)

@@ -75,10 +75,14 @@ public sealed class TerminalClientTuiTests
             Provider = "fake",
             SpokenOutput = new TerminalClientSpokenOutputState(
                 SpokenOutputAvailability.Ready,
-                IsMuted: false),
+                IsMuted: false,
+                VoiceId: "Microsoft Elvira",
+                Rate: 2,
+                Volume: 70),
         };
         sink.OnStateChanged(ready);
         await WaitForFrameContainingAsync(driver, "Speech: ready");
+        await WaitForFrameContainingAsync(driver, "voice Microsoft Elvira; rate 2; volume 70");
 
         sink.OnStateChanged(ready with
         {
@@ -119,6 +123,24 @@ public sealed class TerminalClientTuiTests
 
         Assert.Equal(2, await runTask.WaitAsync(TimeSpan.FromSeconds(2)));
         Assert.True(driver.Restored);
+    }
+
+    [Fact]
+    public async Task AsynchronousInputObservesCancellationAndClearsTheActivePrompt()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var console = new TerminalClientTuiConsoleAdapter();
+        var asynchronousConsole = Assert.IsAssignableFrom<IAsyncTerminalInputConsole>(console);
+
+        var read = asynchronousConsole.ReadLineAsync(
+            new TerminalInputRequest(TerminalInputKind.Line, "You: "),
+            cancellation.Token);
+        await console.WaitForInputAsync();
+
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read);
+        Assert.False(console.TryGetInputRequest(out _));
     }
 
     [Fact]
@@ -477,15 +499,22 @@ public sealed class TerminalClientTuiTests
         });
 
         await console.WaitForInputAsync();
-        await WaitForFramesAsync(driver, 2);
+
+        // Wait for a rendered frame that shows all four elements at once, then assert on
+        // that frame. Reading Frames[^1] after CancelInput races the post-cancel repaint,
+        // where the input request is already gone.
+        bool ShowsEverything(IReadOnlyList<string> candidate) =>
+            candidate.Any(line => line.StartsWith("You:", StringComparison.Ordinal)) &&
+            candidate.Any(line => line.Contains("expires 2026-09-06 12:00 UTC", StringComparison.Ordinal)) &&
+            candidate.Any(line => line.Contains("UNCERTAIN", StringComparison.Ordinal)) &&
+            candidate.Any(line => line.StartsWith("State:", StringComparison.Ordinal));
+
+        await WaitForFrameAsync(driver, ShowsEverything);
+        var frame = driver.Frames.First(ShowsEverything);
+
         console.CancelInput();
         await runTask;
 
-        var frame = driver.Frames[^1];
-        Assert.Contains(frame, line => line.StartsWith("You:", StringComparison.Ordinal));
-        Assert.Contains(frame, line => line.Contains("expires 2026-09-06 12:00 UTC", StringComparison.Ordinal));
-        Assert.Contains(frame, line => line.Contains("UNCERTAIN", StringComparison.Ordinal));
-        Assert.Contains(frame, line => line.StartsWith("State:", StringComparison.Ordinal));
         Assert.All(frame, line => Assert.DoesNotContain('\n', line));
         Assert.All(frame, line => Assert.DoesNotContain('\u001B', line));
     }
