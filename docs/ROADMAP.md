@@ -313,6 +313,78 @@ internos del servidor, audio Base64 o transporte multimedia desde el orquestador
 STT, entrada de audio, cancelación fiable de turnos sin idempotencia, y selección
 anticipada de proveedor, motor o ubicación de síntesis.
 
+### Evolución del TTS local hacia un proveedor neuronal (posterior al cierre de la Fase 5)
+
+**Estado:** el TTS real implementado es **SAPI** (`System.Speech`, incremento 7). Lo
+que sigue es evolución **opcional y no bloqueante**: no forma parte del cierre de la
+Fase 5 (el incremento 8 la cierra), no bloquea la Fase 6 y no retira SAPI. El motor
+neuronal concreto **está por decidir**; se usa provisionalmente **Chatterbox
+Multilingual** (~500M parámetros) como candidato principal, sujeto a validación técnica
+y operativa antes de cualquier compromiso.
+
+SAPI seguirá siendo la primera implementación real, un fallback local de bajo coste, la
+opción cuando el proveedor neuronal no esté configurado, no pueda iniciarse o carezca
+de recursos, y la prueba de que el cliente terminal no depende de un motor neuronal
+concreto.
+
+Se distinguen tres momentos:
+
+1. **Validación experimental fuera del producto.** Instalación manual de Chatterbox;
+   generación de audio en español e inglés; evaluación de calidad; medición de primera
+   carga y de síntesis en caliente; consumo de RAM y VRAM; convivencia con Ollama y
+   `qwen3.5:9b` en una RTX 3060 Ti de 8 GB; comportamiento ante falta de VRAM;
+   cancelación y recuperación. Termina con una decisión informada: continuar, aplazar o
+   descartar. **No bloquea la Fase 6.** No añade código, dependencias, proyectos Python,
+   endpoints ni configuración ejecutable al repositorio.
+2. **Primer proveedor neuronal local** (condicional a que el momento 1 decida
+   continuar). Un servicio o proceso local independiente carga el modelo una sola vez y
+   permanece preparado para varias síntesis, expone una frontera local acotada y
+   devuelve audio en un formato conocido, inicialmente WAV. Un `ChatterboxSpeechSynthesizer`
+   .NET lo consume detrás de `ISpeechSynthesizer`/`ISpeechVoiceCatalog`, sin contener el
+   modelo ni ejecutar Python en el proceso .NET. La selección de proveedor es explícita
+   y diagnosticable (configuración conceptual `SpokenOutput.Provider = Sapi | Chatterbox |
+   None`, `SpokenOutput.FallbackProvider`, endpoint local autorizado), con comprobación
+   de disponibilidad o health y fallback controlado a SAPI o a texto. Reutiliza el
+   coordinador, el reproductor, el estado observable y los comandos existentes. La API
+   conversacional sigue siendo estrictamente textual.
+3. **Evolución hacia voz y dispositivos.** El mismo proveedor, o su contrato de
+   servicio, se reutiliza en el canal de voz de un dispositivo (Fase 10) y más adelante
+   desde satélites (Fases 13–16). El transporte de audio usa una frontera específica,
+   no el contrato textual de conversación. Según recursos y latencia, el TTS podrá
+   ejecutarse centralmente en el equipo con GPU o cerca del dispositivo. El protocolo
+   definitivo no está decidido.
+
+Decisiones abiertas, sujetas a medición: mantener ambos modelos cargados, descargar uno
+entre operaciones, mantener parte del LLM en CPU, ejecutar el TTS en CPU, incorporar un
+coordinador de recursos, usar otra GPU con más VRAM o seleccionar un modelo TTS más
+pequeño. La instalación individual de ambos motores no demuestra que quepan cargados a
+la vez en 8 GB de VRAM.
+
+Ciclo de vida: en el primer incremento el servicio se arranca manualmente. El cliente
+terminal no busca entornos Python, no ejecuta scripts, no instala paquetes, no descarga
+modelos, no gestiona drivers CUDA ni inicia procesos en silencio. Un supervisor local
+de arranque, health, reinicio, límites de recursos, diagnóstico, apagado y actualización
+controlada del motor queda como evolución posterior, separado del orquestador
+conversacional.
+
+Idioma: el contrato de síntesis actual no representa el idioma explícitamente. La
+evolución neuronal deberá diferenciar al menos español e inglés; el idioma podrá
+proceder de la configuración de la instalación, del idioma de una conversación, del
+modo activo del tutor de inglés o de metadatos de canal o sesión, y no se inferirá
+siempre del texto.
+
+Voces: para el proveedor neuronal una voz será un perfil previamente registrado y
+autorizado (por ejemplo `jarvis-es`, `jarvis-en`), no una ruta ni un archivo aportado
+por el cliente. El servicio resolverá el perfil hacia recursos autorizados y controlará
+procedencia, licencia y consentimiento para clonación.
+
+Las decisiones estructurales (conversación textual con transporte de audio separado,
+motor neuronal como proceso aislado tras un adaptador, selección explícita de proveedor
+con capacidades y fallback) están en el
+[ADR 0036](adr/0036-textual-conversation-and-adapted-local-neural-tts.md). Las
+condiciones de seguridad están en [SECURITY.md](SECURITY.md) y la arquitectura del plano
+en [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ### Fase 6 — Tools Gateway y meteorología
 
 Primer vertical slice externo: tiempo actual y previsión acotada, con ubicación mínima.
@@ -336,17 +408,26 @@ No incluye voz ni integraciones externas.
 El texto valida inicialmente el núcleo, pero no es un producto "tutor escrito".
 No conoce audio, micrófono, STT, TTS, wake word, habitaciones ni dispositivos.
 Incluye actividad especializada, correcciones, evaluación, informe y perfil temporal.
+El núcleo produce contenido y metadatos de idioma; no depende de un proveedor de TTS
+concreto ni de Chatterbox.
 
 ### Fase 10 — Canal de voz en un único dispositivo
 
 El mismo núcleo funciona por terminal o voz, con STT, captura, TTS y reproducción.
 La voz no autentica al hablante.
 No incluye satélites, multiroom, pronunciación ni micrófono de Nest Hub.
+El canal de voz decide cómo materializar el contenido en audio mediante el proveedor
+de TTS configurado (SAPI o, si se adopta, el proveedor neuronal local), tras la
+frontera de audio separada. Si el proveedor neuronal ya se validó y adaptó, se reutiliza
+aquí; si no, el canal usa el proveedor disponible.
 
 ### Fase 11 — English Coach oral y conversación natural
 
 Integra VAD, barge-in, prevención de eco, cancelación y evaluación posterior.
 Pronunciación precisa y retención de audio por defecto permanecen fuera.
+Un proveedor neuronal local, si se adoptó, puede mejorar la naturalidad de la voz, pero
+no es requisito de la pedagogía, la evaluación, el perfil ni la gestión de sesión, que
+siguen siendo independientes del proveedor de TTS.
 
 ### Fase 12 — Home Assistant
 
@@ -357,6 +438,12 @@ Su desplazamiento es prioridad de producto, no dependencia técnica.
 
 13: primer satélite. 14: Nest Hub solo como salida. 15: routing multiroom.
 16: transferencia explícita con privacidad y auditoría.
+
+Los satélites no dependen de que el cliente terminal esté abierto. El proveedor de TTS
+—SAPI o neuronal local— podrá ejecutarse centralmente en el equipo con GPU y entregar
+el audio al dispositivo de salida mediante un servicio de audio, o localmente en
+dispositivos capaces; la selección dependerá de latencia, recursos, privacidad y
+capacidades. La respuesta de conversación no transporta audio.
 
 ## Plan sustituido — referencia de planificación anterior
 

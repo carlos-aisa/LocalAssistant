@@ -584,10 +584,14 @@ salida de `/voice` distingue siempre la voz solicitada de la voz efectiva. Las
 dependencias `System.Speech` 8.0.0 y `System.Windows.Extensions` 8.0.0 son paquetes
 Microsoft bajo licencia MIT; Piper continúa fuera de este incremento.
 
-La reproducción de audio real queda pendiente de la comprobación manual en Windows
-documentada en `docs/evaluations/2026-09-09-windows-tts-manual-validation.md`; el punto
-7 del roadmap no se marca hasta completarla. Las pruebas automatizadas usan dobles y no
-requieren altavoces ni voces instaladas.
+SAPI es la implementación real actual. Un proveedor neuronal local de TTS —candidato
+Chatterbox Multilingual— es evolución futura, opcional y sujeta a validación técnica y
+operativa; no está adoptada, no retira SAPI y no forma parte del cierre de la Fase 5.
+El detalle está en `docs/ROADMAP.md`, `docs/ARCHITECTURE.md` y `docs/SECURITY.md`.
+
+La reproducción de audio real se comprobó manualmente en Windows y quedó registrada en
+`docs/evaluations/2026-09-09-windows-tts-manual-validation.md`. Las pruebas
+automatizadas usan dobles y no requieren altavoces ni voces instaladas.
 
 En la TUI, `Ctrl+C`, EOF, `Ctrl+D` o `Ctrl+Z` con la entrada vacía cierran el canal de
 entrada y terminan el cliente limpiamente. Con texto pendiente, `Ctrl+D` y `Ctrl+Z` se

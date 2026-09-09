@@ -13,6 +13,11 @@ Windows, permitir configurar voz, velocidad, volumen y silencio, y ofrecer los c
 `/mute`, `/unmute`, `/stop` y `/repeat`. No incluye entrada de audio, STT, wake word,
 audio remoto ni selección de dispositivo de salida.
 
+SAPI (`System.Speech`) es el proveedor de TTS implementado por este incremento. Un
+proveedor neuronal local —candidato Chatterbox Multilingual— es evolución posterior al
+cierre de la Fase 5, descrita en `docs/ROADMAP.md` y `docs/ARCHITECTURE.md`, y no forma
+parte de los criterios de este diseño.
+
 ## Alcance
 
 El incremento incluye:

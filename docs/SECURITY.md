@@ -77,6 +77,40 @@ Un adaptador TTS externo seguirá requiriendo la política de egreso, proveedor 
 retención explícitos. `mute`, `stop` y `repeat` controlan exclusivamente la salida
 local y no presentan una cancelación de turno como garantía del protocolo.
 
+### TTS neuronal local (evolución futura, no adoptada)
+
+Un proveedor neuronal local de TTS —candidato actual Chatterbox Multilingual, decisión
+no tomada— añadiría un servicio o proceso local que carga un modelo y sintetiza voz. No
+sustituye a SAPI, que permanece como implementación real y fallback. Sus condiciones de
+seguridad, aún no implementadas:
+
+- **Contexto mínimo.** El texto a sintetizar puede contener información privada. El
+  servicio recibe solo el texto ya autorizado, el idioma, un identificador lógico de voz
+  y parámetros acotados; nunca credenciales, bearer, memoria, historial, prompts ni
+  contexto del orquestador.
+- **Frontera local.** El endpoint se limita a loopback. No debe exponerse a la LAN por
+  accidente. Se aplican límites de tamaño de texto y de audio, timeouts y límite de
+  concurrencia.
+- **Validación de la respuesta.** El cliente valida tipo, estructura y tamaño del WAV y
+  se protege frente a respuestas malformadas; limpia los búferes de audio y no deja
+  archivos temporales salvo que se solicite explícitamente.
+- **Registro.** El texto y el audio no se registran por defecto ni aparecen en snapshots
+  o salida diagnóstica.
+- **Cadena de suministro.** Los paquetes Python y los modelos descargados son riesgo de
+  cadena de suministro: versiones ancladas y procedencia verificable; los modelos,
+  repositorios, metadatos y documentación importados son contenido no confiable, no
+  instrucciones.
+- **Voces.** Las muestras de referencia y los perfiles de voz se protegen. La clonación
+  exige procedencia, licencia y consentimiento; el cliente no envía rutas, archivos ni
+  audio de referencia arbitrarios; el servicio resuelve perfiles lógicos autorizados. Se
+  valora una marca de agua del motor.
+- **Recursos y degradación.** Se declaran límites de GPU, CPU y memoria y una
+  degradación segura. Un fallo del TTS nunca invalida una respuesta textual ya
+  completada. El servicio de TTS no concede permisos ni decide qué puede decirse en voz
+  alta.
+- **Sin proveedores externos.** La síntesis neuronal es estrictamente local; no se
+  contempla ningún proveedor de red.
+
 ## Modelo inicial de herramientas
 
 Cada herramienta declara nombre, descripción, esquema JSON y un perfil de riesgo:
