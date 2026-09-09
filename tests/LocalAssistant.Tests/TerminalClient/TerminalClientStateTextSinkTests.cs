@@ -30,10 +30,17 @@ public sealed class TerminalClientStateTextSinkTests
                 IsMuted: false),
             Activity = TerminalClientActivity.PlayingVoice,
         });
+        sink.OnStateChanged(ready with
+        {
+            SpokenOutput = new TerminalClientSpokenOutputState(
+                SpokenOutputAvailability.Ready,
+                IsMuted: true),
+        });
 
         Assert.Equal(1, Count(console.Output, "Spoken output: unavailable."));
         Assert.Equal(1, Count(console.Output, "Spoken output: ready."));
         Assert.Equal(1, Count(console.Output, "Spoken output: playing."));
+        Assert.Equal(1, Count(console.Output, "Spoken output: muted."));
     }
 
     private static int Count(string text, string value) => text.Split(value).Length - 1;

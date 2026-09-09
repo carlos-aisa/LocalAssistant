@@ -209,6 +209,30 @@ public sealed class TerminalClientApplicationTests
     }
 
     [Fact]
+    public async Task EmptyFinalResponsesAndOperationalCommandsAreNotSentToSpokenOutput()
+    {
+        var conversationId = Guid.Parse("80147a44-9ecf-42e4-966d-cbab026ceeb2");
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, string.Empty)),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "/help", "Hello", null],
+            "credential-a");
+        var application = CreateApplication(httpClient, console, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Empty(spokenOutput.PreparedTexts);
+        Assert.Equal(0, spokenOutput.PlayCount);
+    }
+
+    [Fact]
     public async Task SpokenOutputFailurePreservesTheTextAndAllowsTheNextTurn()
     {
         var firstConversationId = Guid.Parse("9d8c2574-8345-45ec-9f9f-7b8e430c2e2c");
@@ -301,6 +325,73 @@ public sealed class TerminalClientApplicationTests
         Assert.Equal(2, await runTask);
         Assert.Contains(sink.Snapshots, snapshot =>
             snapshot.Error?.Operation == "speech_output" &&
+            !snapshot.Error.IsUncertain);
+        Assert.Equal(TerminalClientLifecycle.Closed, sink.Snapshots[^1].Lifecycle);
+    }
+
+    [Fact]
+    public async Task CancellationDuringSpokenSynthesisIsKnownAndClosesTheApplication()
+    {
+        var conversationId = Guid.Parse("cb0f5b83-c0c6-4139-90f1-9f68198ce69c");
+        var spokenOutput = new RecordingSpokenOutputCoordinator
+        {
+            BlockPreparationUntilCancellation = true,
+        };
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Final response")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "Hello", null],
+            "credential-a");
+        using var cancellationSource = new CancellationTokenSource();
+        var application = CreateApplication(httpClient, console, stateSink: sink, spokenOutput: spokenOutput);
+
+        var runTask = application.RunAsync(cancellationSource.Token);
+        await spokenOutput.WaitForPreparationAsync();
+        cancellationSource.Cancel();
+
+        Assert.Equal(2, await runTask);
+        Assert.DoesNotContain(sink.Snapshots, snapshot =>
+            snapshot.Activity == TerminalClientActivity.PlayingVoice);
+        Assert.Contains(sink.Snapshots, snapshot =>
+            snapshot.Error?.Operation == "speech_output" &&
+            !snapshot.Error.IsUncertain);
+        Assert.Equal(TerminalClientLifecycle.Closed, sink.Snapshots[^1].Lifecycle);
+    }
+
+    [Fact]
+    public async Task SpokenArtifactCleanupFailureIsRecoverableAndDoesNotCloseTheClient()
+    {
+        var conversationId = Guid.Parse("8a634eb9-df75-43d5-89f1-7cb27ee02c0a");
+        var spokenOutput = new RecordingSpokenOutputCoordinator
+        {
+            ThrowOnDispose = true,
+        };
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Final response")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(
+            ["client-a", "Hello", null],
+            "credential-a");
+        var application = CreateApplication(httpClient, console, stateSink: sink, spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Assistant: Final response", console.Output, StringComparison.Ordinal);
+        Assert.Contains("Error (speech_playback_failed)", console.Output, StringComparison.Ordinal);
+        Assert.Contains(sink.Snapshots, snapshot =>
+            snapshot.Error?.Code == "speech_playback_failed" &&
             !snapshot.Error.IsUncertain);
         Assert.Equal(TerminalClientLifecycle.Closed, sink.Snapshots[^1].Lifecycle);
     }
@@ -580,6 +671,7 @@ public sealed class TerminalClientApplicationTests
     public async Task ResumeLoadsAndDisplaysThePublicHistory()
     {
         var conversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
         var handler = new RecordingHttpMessageHandler(
         [
             _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
@@ -599,7 +691,7 @@ public sealed class TerminalClientApplicationTests
             new PrivateClientCredential("client-a", "credential-a", conversationId));
         using var httpClient = CreateHttpClient(handler);
         using var console = new ScriptedTerminalConsole(["R", null]);
-        var application = CreateApplication(httpClient, console, store);
+        var application = CreateApplication(httpClient, console, store, spokenOutput: spokenOutput);
 
         var exitCode = await application.RunAsync(CancellationToken.None);
 
@@ -607,6 +699,7 @@ public sealed class TerminalClientApplicationTests
         Assert.Equal(conversationId, store.Credential!.LastConversationId);
         Assert.Contains("user: Previous question", console.Output, StringComparison.Ordinal);
         Assert.Contains("assistant: Previous answer", console.Output, StringComparison.Ordinal);
+        Assert.Empty(spokenOutput.PreparedTexts);
     }
 
     [Theory]
@@ -747,6 +840,7 @@ public sealed class TerminalClientApplicationTests
         var currentConversationId = Guid.Parse("a51b02fb-29d0-47ae-87dc-808d5ee29656");
         var selectedConversationId = Guid.Parse("4b384d77-2681-4d55-8d18-cb27f74cdd1b");
         var sink = new RecordingTerminalClientStateSink();
+        var spokenOutput = new RecordingSpokenOutputCoordinator();
         var handler = new RecordingHttpMessageHandler(
         [
             _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
@@ -777,7 +871,7 @@ public sealed class TerminalClientApplicationTests
         var store = new TestCredentialStore(new PrivateClientCredential("client-a", "credential-a"));
         using var httpClient = CreateHttpClient(handler);
         using var console = new ScriptedTerminalConsole(["Hello", "/conversations", "1", null]);
-        var application = CreateApplication(httpClient, console, store, sink);
+        var application = CreateApplication(httpClient, console, store, sink, spokenOutput);
 
         var exitCode = await application.RunAsync(CancellationToken.None);
 
@@ -792,6 +886,7 @@ public sealed class TerminalClientApplicationTests
             snapshot.Activity == TerminalClientActivity.CompletingConversation);
         Assert.True(selectingIndex >= 0);
         Assert.True(completingIndex > selectingIndex);
+        Assert.Equal(["First response"], spokenOutput.PreparedTexts);
     }
 
     [Fact]
@@ -1756,14 +1851,27 @@ internal sealed class RecordingSpokenOutputCoordinator : ISpokenOutputCoordinato
 
     public bool BlockPlaybackUntilCancellation { get; set; }
 
+    public bool BlockPreparationUntilCancellation { get; set; }
+
+    public bool ThrowOnDispose { get; set; }
+
     private TaskCompletionSource<bool> PlaybackStarted { get; } = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public Task<SpokenOutputPreparation> PrepareAsync(string text, CancellationToken cancellationToken)
+    private TaskCompletionSource<bool> PreparationStarted { get; } = new(
+        TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public async Task<SpokenOutputPreparation> PrepareAsync(string text, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         PreparedTexts.Add(text);
-        return Task.FromResult(PreparationKind switch
+        PreparationStarted.TrySetResult(true);
+        if (BlockPreparationUntilCancellation)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+
+        return PreparationKind switch
         {
             SpokenOutputPreparationKind.Unavailable => SpokenOutputPreparation.Unavailable,
             SpokenOutputPreparationKind.Muted => SpokenOutputPreparation.Muted,
@@ -1771,12 +1879,14 @@ internal sealed class RecordingSpokenOutputCoordinator : ISpokenOutputCoordinato
             SpokenOutputPreparationKind.Cancelled => SpokenOutputPreparation.Cancelled,
             SpokenOutputPreparationKind.Prepared => SpokenOutputPreparation.Prepared(new PreparedOutput(this)),
             _ => throw new InvalidOperationException("The spoken-output preparation kind was not recognized."),
-        });
+        };
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     public Task<bool> WaitForPlaybackAsync() => PlaybackStarted.Task;
+
+    public Task<bool> WaitForPreparationAsync() => PreparationStarted.Task;
 
     private sealed class PreparedOutput : IPreparedSpokenOutput
     {
@@ -1800,7 +1910,15 @@ internal sealed class RecordingSpokenOutputCoordinator : ISpokenOutputCoordinato
             return _owner.PlaybackResult;
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            if (_owner.ThrowOnDispose)
+            {
+                throw new InvalidOperationException("Cleanup failed.");
+            }
+
+            return ValueTask.CompletedTask;
+        }
     }
 }
 
