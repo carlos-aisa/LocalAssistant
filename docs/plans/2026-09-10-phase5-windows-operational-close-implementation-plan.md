@@ -21,8 +21,10 @@ neuronal de TTS.
 
 - `TargetFramework` sigue en `net8.0`; la publicación usa `-r win-x64` sin fijar RID en
   `build` para no romper el CI Linux.
-- Configuración con `Microsoft.Extensions.Configuration(.Json/.EnvironmentVariables/.Binder)`
-  8.0.0, fijadas. No se añade `Microsoft.Extensions.Hosting` ni un contenedor DI.
+- Configuración con `Microsoft.Extensions.Configuration(.Json/.EnvironmentVariables)`
+  8.0.0, fijadas, más `System.Text.Json` 8.0.5 fijado para no arrastrar el aviso
+  transitivo de la 8.0.0. No se añade `.Binder` (los valores se leen por indexador),
+  `Microsoft.Extensions.Hosting` ni un contenedor DI.
 - El prefijo de entorno es `LocalAssistant__` (igual que la API); la sección es
   `TerminalClient`.
 - `TerminalClientOptions` permanece como el contrato inmutable validado que consume la
@@ -57,8 +59,9 @@ neuronal de TTS.
 
 **Implementación**
 
-1. Añadir `Microsoft.Extensions.Configuration`, `.Json`, `.EnvironmentVariables` y
-   `.Binder` 8.0.0 al `.csproj`.
+1. Añadir `Microsoft.Extensions.Configuration`, `.Json` y `.EnvironmentVariables`
+   8.0.0 al `.csproj`, más `System.Text.Json` 8.0.5 fijado para cerrar el aviso
+   transitivo que arrastra `.Json` 8.0.0.
 2. Crear `appsettings.json` con la sección `TerminalClient` y los valores por defecto
    actuales (`http://localhost:5100`, `ollama`, `direct`, `00:04:00`).
    `CopyToOutputDirectory=PreserveNewest`.
@@ -68,10 +71,10 @@ neuronal de TTS.
    parseados. Devuelve un `TerminalClientConfigurationResult` con
    `TerminalClientOptions Options` y `IReadOnlyDictionary<string,string> Origins`
    (`BaseUrl`/`Provider`/`Scenario`/`RequestTimeout` → `Default|AppSettings|Environment|CommandLine`).
-4. La validación (loopback, esquema, proveedor, escenario, timeout positivo) se ejecuta
-   una vez sobre el resultado combinado. Los mensajes son los actuales; se añade el
-   sufijo de origen (p. ej. `" (origen: Environment)"`) cuando el valor rechazado no
-   viene de un argumento.
+4. La validación (loopback, esquema, proveedor, escenario, timeout positivo y no
+   mayor de `01:00:00`) se ejecuta una vez sobre el resultado combinado. Los mensajes
+   son los actuales; se añade un sufijo que nombra la fuente (fichero o variable de
+   entorno) cuando el valor rechazado no viene de un argumento.
 5. `RequestTimeout` pasa de constante a propiedad de `TerminalClientOptions` con
    `RequestTimeout` por defecto conservado. `Program.CreateHttpClient` la usa.
 6. `Program.RunAsync` llama al cargador; un `ArgumentException` mantiene el código `2`.
@@ -82,7 +85,8 @@ neuronal de TTS.
 - Cada clave resuelta desde cada fuente y con la precedencia CLI > entorno > fichero >
   defecto; origen reportado correcto en mezclas.
 - `appsettings.json` ausente ⇒ defectos; malformado ⇒ código `2` claro.
-- `RequestTimeout` cero, negativo y no parseable rechazados.
+- `RequestTimeout` cero, negativo, no parseable o mayor de `01:00:00` rechazados;
+  `01:00:00` aceptado.
 - Base URL no loopback / esquema inválido desde entorno menciona el origen.
 - Todos los casos existentes de `TerminalClientOptions.Parse` siguen verdes.
 - `HttpClient` usa el timeout configurado.

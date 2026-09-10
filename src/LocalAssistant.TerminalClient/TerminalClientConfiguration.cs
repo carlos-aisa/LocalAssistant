@@ -32,6 +32,8 @@ internal static class TerminalClientConfiguration
     private const string DefaultProvider = "ollama";
     private const string DefaultScenario = "direct";
 
+    private static readonly TimeSpan MaximumRequestTimeout = TimeSpan.FromHours(1);
+
     public static TerminalClientConfigurationResult Load(string[] args) =>
         Load(args, AppContext.BaseDirectory);
 
@@ -124,7 +126,7 @@ internal static class TerminalClientConfiguration
             (baseUri.Scheme != Uri.UriSchemeHttp && baseUri.Scheme != Uri.UriSchemeHttps) ||
             !baseUri.IsLoopback)
         {
-            throw Invalid(
+            throw InvalidSetting(
                 "Base URL must use HTTP or HTTPS and target a loopback host.",
                 "BaseUrl",
                 baseUrl.Origin);
@@ -133,19 +135,20 @@ internal static class TerminalClientConfiguration
         var normalizedProvider = provider.Value.Trim().ToLowerInvariant();
         if (normalizedProvider is not ("fake" or "ollama"))
         {
-            throw Invalid("Provider must be 'fake' or 'ollama'.", "Provider", provider.Origin);
+            throw InvalidSetting("Provider must be 'fake' or 'ollama'.", "Provider", provider.Origin);
         }
 
         if (string.IsNullOrWhiteSpace(scenario.Value))
         {
-            throw Invalid("Scenario must not be empty.", "Scenario", scenario.Origin);
+            throw InvalidSetting("Scenario must not be empty.", "Scenario", scenario.Origin);
         }
 
         if (!TimeSpan.TryParse(requestTimeout.Value, CultureInfo.InvariantCulture, out var timeout) ||
-            timeout <= TimeSpan.Zero)
+            timeout <= TimeSpan.Zero ||
+            timeout > MaximumRequestTimeout)
         {
-            throw Invalid(
-                "Request timeout must be a positive duration such as '00:04:00'.",
+            throw InvalidSetting(
+                "Request timeout must be a positive duration no greater than '01:00:00', such as '00:04:00'.",
                 "RequestTimeout",
                 requestTimeout.Origin);
         }
@@ -158,7 +161,7 @@ internal static class TerminalClientConfiguration
             forcePlain);
     }
 
-    private static ArgumentException Invalid(
+    private static ArgumentException InvalidSetting(
         string message,
         string key,
         TerminalClientSettingOrigin origin) =>

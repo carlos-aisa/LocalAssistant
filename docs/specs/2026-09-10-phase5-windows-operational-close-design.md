@@ -26,7 +26,8 @@ El incremento incluye:
   comandos, con esta precedencia (mayor gana): **CLI > entorno > `appsettings.json` >
   valores por defecto internos**;
 - validación centralizada e inalterada: base URL solo HTTP(S) en loopback, proveedor
-  `fake` u `ollama`, escenario no vacío, timeout de petición positivo;
+  `fake` u `ollama`, escenario no vacío, timeout de petición positivo y no mayor de
+  una hora;
 - un modo `--diagnostics` de un disparo que imprime un informe de entorno y preparación
   redactado y termina, sin abrir sesión, sin pedir credenciales y sin entrar al chat;
 - `--version` y `--help`;
@@ -250,7 +251,8 @@ real con su fecha y resultado. El punto 8 del roadmap solo se marca tras esa eje
 - Precedencia exacta entre defecto, `appsettings.json`, entorno y CLI para cada clave.
 - Ausencia de `appsettings.json` no es error; JSON malformado produce el código `2` con
   mensaje claro.
-- `RequestTimeout` inválido (cero, negativo, no parseable) se rechaza.
+- `RequestTimeout` inválido (cero, negativo, no parseable o mayor de una hora) se
+  rechaza; `01:00:00` se acepta.
 - Base URL no loopback o de esquema no HTTP(S) se rechaza indicando la fuente.
 - Proveedor y escenario conservan las reglas y mensajes actuales.
 - El origen resuelto por clave es correcto en combinaciones mixtas.
@@ -276,11 +278,12 @@ real con su fecha y resultado. El punto 8 del roadmap solo se marca tras esa eje
 - `--help` enumera todas las opciones y el prefijo de variables de entorno.
 - Un argumento desconocido sigue devolviendo código `2`.
 
-### Publicación
+### Publicación y empaquetado
 
 - El proyecto restaura y compila con `-r win-x64`.
 - `appsettings.json` aparece en la salida de `publish`.
 - La suite completa permanece verde en Linux sin RID.
+- `dotnet list package --vulnerable --include-transitive` sobre el cliente está limpio.
 
 ### Smoke test
 

@@ -120,6 +120,7 @@ public sealed class TerminalClientConfigurationTests
     [InlineData("00:00:00")]
     [InlineData("-00:01:00")]
     [InlineData("half an hour")]
+    [InlineData("2.00:00:00")]
     public void RejectsNonPositiveOrUnparsableRequestTimeoutAndNamesTheSource(string value)
     {
         var environment = Configuration(("TerminalClient:RequestTimeout", value));
@@ -210,6 +211,17 @@ public sealed class TerminalClientConfigurationTests
 
         Assert.True(options.ForcePlain);
         Assert.Equal(TimeSpan.FromSeconds(150), options.RequestTimeout);
+    }
+
+    [Fact]
+    public void AcceptsARequestTimeoutUpToOneHour()
+    {
+        var result = TerminalClientConfiguration.Load(
+            ["--request-timeout=01:00:00", "--provider=fake"],
+            Empty(),
+            Empty());
+
+        Assert.Equal(TimeSpan.FromHours(1), result.Options.RequestTimeout);
     }
 
     [Fact]
