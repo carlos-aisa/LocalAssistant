@@ -192,6 +192,7 @@ public sealed class TerminalPresentationSelectorTests
         new Uri("http://localhost:5100/"),
         "fake",
         "direct",
+        TerminalClientOptions.DefaultRequestTimeout,
         forcePlain);
 
     private sealed class TestCapabilities : ITerminalPresentationCapabilities
