@@ -1,9 +1,22 @@
 using LocalAssistant.TerminalClient;
+using Microsoft.Extensions.Configuration;
 
 namespace LocalAssistant.Tests.TerminalClient;
 
 public sealed class TerminalClientProgramTests
 {
+    [Fact]
+    public void CreatedHttpClientUsesTheConfiguredBaseAddressAndRequestTimeout()
+    {
+        var options = TerminalClientOptions.Parse(
+            ["--provider=fake", "--base-url=http://localhost:5300", "--request-timeout=00:03:00"]);
+
+        using var client = TerminalClientProgram.CreateHttpClient(options);
+
+        Assert.Equal(new Uri("http://localhost:5300/"), client.BaseAddress);
+        Assert.Equal(TimeSpan.FromMinutes(3), client.Timeout);
+    }
+
     [Fact]
     public async Task PlainOptionBuildsAndRunsOnlyThePlainApplication()
     {
@@ -207,10 +220,19 @@ public sealed class TerminalClientProgramTests
         RecordingPlainRunner plain,
         RecordingTuiRunner tui) => TerminalClientProgram.RunAsync(
             args,
+            LoadConfigurationWithoutAmbientSources,
             environment,
             driverFactory.Create,
             plain.RunAsync,
             tui.RunAsync);
+
+    // Keeps the program tests independent of any appsettings.json on disk or
+    // LocalAssistant__ environment variables; command-line parsing still runs.
+    private static TerminalClientConfigurationResult LoadConfigurationWithoutAmbientSources(string[] args)
+    {
+        var empty = new ConfigurationBuilder().Build();
+        return TerminalClientConfiguration.Load(args, empty, empty);
+    }
 
     private sealed class TestProgramEnvironment : ITerminalProgramEnvironment
     {

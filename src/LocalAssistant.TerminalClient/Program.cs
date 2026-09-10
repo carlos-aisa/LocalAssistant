@@ -51,6 +51,7 @@ internal static class TerminalClientProgram
 {
     public static Task<int> Main(string[] args) => RunAsync(
         args,
+        TerminalClientConfiguration.Load,
         new SystemTerminalProgramEnvironment(),
         static () => new SystemTerminalDriver(),
         RunPlainApplicationAsync,
@@ -58,12 +59,14 @@ internal static class TerminalClientProgram
 
     internal static async Task<int> RunAsync(
         string[] args,
+        Func<string[], TerminalClientConfigurationResult> loadConfiguration,
         ITerminalProgramEnvironment environment,
         Func<ITerminalDriver?> driverFactory,
         Func<TerminalClientOptions, CancellationToken, Task<int>> runPlainAsync,
         Func<TerminalClientOptions, ITerminalDriver, CancellationToken, Task<int>> runTuiAsync)
     {
         ArgumentNullException.ThrowIfNull(args);
+        ArgumentNullException.ThrowIfNull(loadConfiguration);
         ArgumentNullException.ThrowIfNull(environment);
         ArgumentNullException.ThrowIfNull(driverFactory);
         ArgumentNullException.ThrowIfNull(runPlainAsync);
@@ -71,7 +74,7 @@ internal static class TerminalClientProgram
 
         try
         {
-            var options = TerminalClientOptions.Parse(args);
+            var options = loadConfiguration(args).Options;
             return await RunConfiguredAsync(
                 options,
                 environment,
@@ -180,9 +183,9 @@ internal static class TerminalClientProgram
             .RunAsync(application, cancellationToken);
     }
 
-    private static HttpClient CreateHttpClient(TerminalClientOptions options) => new()
+    internal static HttpClient CreateHttpClient(TerminalClientOptions options) => new()
     {
         BaseAddress = options.BaseUri,
-        Timeout = TerminalClientOptions.RequestTimeout,
+        Timeout = options.RequestTimeout,
     };
 }
