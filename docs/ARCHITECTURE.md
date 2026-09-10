@@ -37,10 +37,12 @@ ensamblados con responsabilidades ejecutables y comprobables:
 No hay worker ni microservicios. Ollama sigue siendo un proceso externo opcional;
 Home Assistant, MQTT, bases vectoriales y Open WebUI son evoluciones futuras. El cliente
 terminal contiene un plano local de salida hablada con contratos de síntesis,
-reproducción y coordinación. En Windows compone SAPI mediante `System.Speech`, genera
-WAV en memoria y lo reproduce localmente; en el resto de plataformas o sin voces
-habilitadas declara la capacidad no disponible. No incorpora procesos externos ni
-tráfico multimedia hacia la API.
+reproducción y coordinación. La implementación real actual es SAPI en Windows mediante
+`System.Speech`: genera WAV en memoria y lo reproduce localmente; en el resto de
+plataformas o sin voces habilitadas declara la capacidad no disponible. No incorpora
+procesos externos ni tráfico multimedia hacia la API. Un proveedor neuronal local
+—candidato actual Chatterbox Multilingual— es evolución futura sujeta a validación y no
+se ha adoptado; se describe más abajo y en la hoja de ruta.
 
 ## Flujo de una conversación
 
@@ -862,6 +864,9 @@ incluye audio Base64 en la respuesta de conversación. Una política de salida p
 decidirá si materializa esa respuesta con síntesis central o local según capacidades,
 privacidad, disponibilidad, coste, red, proveedor autorizado y preferencias. HTTP
 streaming, WebSocket, gRPC, recursos temporales y otros transportes siguen sin elegir.
+La separación entre conversación textual y transporte de audio, y la integración de un
+motor neuronal local tras un adaptador con selección explícita de proveedor, se fijan en
+el [ADR 0036](adr/0036-textual-conversation-and-adapted-local-neural-tts.md).
 
 ```text
 Respuesta textual de Jarvis
@@ -1000,6 +1005,65 @@ La frontera y la propiedad local de salida se establecen en el
 El núcleo declara particiones de memoria personal, compartida del hogar, de módulo,
 administrativa y efímera. La única persistida y expuesta actualmente es la personal;
 las demás necesitan un flujo autorizado antes de incorporar almacenamiento o API.
+
+#### Proveedor neuronal local de TTS (evolución futura, no adoptada)
+
+El plano de salida hablada ya está estructurado para admitir otro sintetizador sin
+cambiar el plano de conversación. `SpokenOutputCoordinator` depende de `ISpeechSynthesizer`,
+`ISpeechVoiceCatalog` e `ISpeechPlayer`; la implementación SAPI es un adaptador más. Un
+proveedor neuronal local —candidato actual Chatterbox Multilingual, decisión no
+tomada— encajaría como un `ChatterboxSpeechSynthesizer` detrás de esos mismos contratos,
+tras una validación experimental fuera del producto (calidad, latencia, VRAM y
+convivencia con Ollama en 8 GB). La hoja de ruta describe los tres momentos y las
+decisiones abiertas.
+
+El motor neuronal **no** vive en el proceso .NET. Se ejecuta como servicio o proceso
+local independiente que carga el modelo una sola vez, expone una frontera local acotada
+y devuelve audio en un formato conocido (inicialmente WAV completo; streaming aplazado).
+El adaptador .NET solo habla con esa frontera; no contiene el modelo, no ejecuta Python,
+no descarga modelos ni gestiona drivers. En su primer incremento el servicio se arranca
+manualmente; un supervisor local de arranque, health y límites es evolución posterior y
+separada del orquestador.
+
+La selección de proveedor es explícita y diagnosticable, nunca un cambio silencioso.
+Conceptualmente `SpokenOutput.Provider = Sapi | Chatterbox | None`,
+`SpokenOutput.FallbackProvider = Sapi | None` y `SpokenOutput.Chatterbox.Endpoint` como
+dirección local autorizada (nombres no definitivos). Al seleccionar el proveedor neuronal:
+se comprueba la configuración, se hace un health check, se usa el adaptador si responde,
+y si no se informa de forma comprensible y se aplica la política de fallback declarada
+(SAPI o degradación a texto). SAPI permanece disponible como implementación real y
+fallback de bajo coste.
+
+Gaps que la evolución debe cerrar y que hoy el contrato no cubre:
+
+- **Idioma.** `SpeechSynthesisRequest` no representa el idioma. El proveedor neuronal
+  necesita al menos español e inglés; el idioma procederá de configuración de instalación,
+  idioma de conversación, modo del tutor de inglés o metadatos de canal o sesión, no de
+  inferencia automática sobre el texto.
+- **Capacidades por proveedor.** Un adaptador no debe ignorar en silencio una preferencia
+  que no soporta. Se documentarán capacidades conceptuales por proveedor
+  (`SupportsVoiceSelection`, `SupportsLanguageSelection`, `SupportsRate`, `SupportsVolume`,
+  `SupportsStreaming`, `SupportsReferenceVoice`, `SupportsCancellation`; nombres
+  ilustrativos). La aplicación mostrará las capacidades disponibles, rechazará de forma
+  comprensible una preferencia no soportada y solo aplicará una transformación común
+  cuando esté bien definida; no se mapeará arbitrariamente el rango `-10..10` de SAPI a
+  parámetros neuronales distintos.
+- **Perfiles de voz.** Para el proveedor neuronal una voz es un perfil lógico
+  previamente registrado y autorizado (`jarvis-es`, `jarvis-en`). El cliente usa solo
+  identificadores lógicos; no envía rutas, nombres de archivo, audio de referencia,
+  directorios locales ni URLs. El servicio resuelve el perfil internamente.
+
+Frontera local conceptual del servicio (sin rutas ni DTOs fijados): `GET /health`,
+`GET /voices` y `POST /synthesize`. La síntesis recibe únicamente el texto ya
+seleccionado, el idioma, el identificador lógico de voz, parámetros autorizados y
+acotados y un identificador técnico opcional de operación para cancelación. La respuesta
+lleva audio en un tipo permitido, la voz y el idioma efectivos, avisos seguros y
+diagnóstico mínimo. Esta frontera de audio es independiente del contrato textual de
+conversación descrito en «Planos futuros de conversación y multimedia»; el mismo
+proveedor se reutilizará en el canal de voz de un dispositivo (Fase 10) y en satélites
+(Fases 13–16). El detalle de seguridad está en [SECURITY.md](SECURITY.md) y las
+decisiones firmes en el
+[ADR 0036](adr/0036-textual-conversation-and-adapted-local-neural-tts.md).
 
 ## Evaluación de Microsoft.Extensions.AI
 

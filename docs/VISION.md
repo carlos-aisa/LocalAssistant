@@ -144,6 +144,10 @@ cancelar una petición de conversación no se confundirá con una garantía de q
 turno no se haya persistido. La evolución prioriza texto accesible y degradable antes
 de seleccionar una biblioteca de TUI o un motor de síntesis.
 
+La salida hablada local podrá evolucionar más adelante desde las voces del sistema
+hacia un proveedor neuronal local, tras validarlo, conservando la degradación honesta y
+sin acoplar el orquestador a un motor concreto.
+
 ## Conversational English Coach
 
 Jarvis podrá actuar como tutor personal de inglés para conversación cotidiana y
