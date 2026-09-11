@@ -299,9 +299,17 @@ La fase se entrega mediante incrementos demostrables y en este orden:
    `docs/specs/2026-09-09-phase5-windows-tts-design.md` y su plan; verificación
    automática y manual en `docs/evaluations/2026-09-09-windows-tts-manual-validation.md`.
    `System.Speech` 8.0.0 y `System.Windows.Extensions` 8.0.0 (MIT); Piper aplazado.
-8. **Cierre operativo de Windows:** publicación, configuración fuera del binario,
-   credencial DPAPI, bearer no persistido, arranque manual de la API, diagnósticos,
-   logs y smoke tests reproducibles.
+8. [x] **Cierre operativo de Windows:** publicación dependiente de framework para
+   `win-x64` (`dotnet publish -r win-x64 --self-contained false`); configuración fuera
+   del binario (`appsettings.json` junto al ejecutable, variables
+   `LocalAssistant__TerminalClient__*` y argumentos, con precedencia CLI > entorno >
+   fichero > defecto sobre cuatro valores no secretos); modo `--diagnostics` de un
+   disparo y de solo lectura que nunca abre sesión, pide credenciales, entra al chat ni
+   descifra el estado DPAPI; `--version` y `--help`. La credencial DPAPI sigue fuera de
+   la publicación y el bearer sin persistirse. Script de smoke test reproducible en
+   `scripts/Invoke-TerminalClientSmoke.ps1` y ejecución real registrada en
+   `docs/evaluations/2026-09-10-windows-operational-close.md`. Diseño y plan en
+   `docs/specs/2026-09-10-phase5-windows-operational-close-design.md` y su plan.
 
 **Criterio de finalización:** los incrementos entregados tienen una demostración y
 pruebas proporcionales. El cliente textual, la TUI y la voz se distinguen con claridad;

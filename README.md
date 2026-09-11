@@ -609,6 +609,41 @@ nunca se aprueba, pero queda pendiente en el servidor hasta que caduca (unos cin
 minutos); el siguiente mensaje de esa conversación se rechaza con `confirmation_pending`
 hasta entonces. Recuperación: `/new`, `/exit` o esperar la caducidad.
 
+### Publicación, configuración y diagnóstico del cliente terminal
+
+El incremento 8 cierra la fase 5 dejando el cliente publicable y operable en Windows
+sin recompilar. Publica de forma dependiente de framework para `win-x64` (el equipo
+necesita el runtime .NET 8, ya presente si ahí corre la API):
+
+```powershell
+dotnet publish src/LocalAssistant.TerminalClient -c Release -r win-x64 --self-contained false -o publish/terminal-client
+```
+
+La salida incluye `LocalAssistant.TerminalClient.exe` y `appsettings.json` con los
+valores por defecto actuales (`BaseUrl`, `Provider`, `Scenario`, `RequestTimeout`; sin
+secretos ni preferencias de voz). La configuración se resuelve, en precedencia
+creciente, desde esos valores por defecto, el `appsettings.json` publicado, variables
+de entorno `LocalAssistant__TerminalClient__*` (por ejemplo
+`LocalAssistant__TerminalClient__BaseUrl`) y los argumentos `--base-url=`,
+`--provider=`, `--scenario=` y `--request-timeout=` ya existentes; un valor rechazado
+indica su origen cuando no viene de un argumento. `--version` imprime la versión del
+cliente y `--help` enumera todas las opciones.
+
+`--diagnostics` imprime un informe de solo lectura y termina: versión, entorno,
+configuración efectiva con su origen, alcanzabilidad de `/health` (con una nota para
+arrancar la API manualmente si no responde; el cliente nunca la inicia), ruta y
+metadatos legibles del estado DPAPI sin descifrar nunca su payload, confirmación de que
+el bearer no se persiste, qué presentación se usaría y, en Windows, el recuento (nunca
+los nombres) de voces habilitadas. No abre sesión, no pide credenciales, no entra al
+chat ni reproduce audio.
+
+`scripts/Invoke-TerminalClientSmoke.ps1` publica (o reutiliza con `-PublishDir`) el
+cliente, comprueba `--version` y `--diagnostics`, y afirma que no aparece ningún
+archivo `.wav` ni una clave sensible en la parte legible del estado local; con
+`-SkipManual` se omite la sección guiada que pide completar a mano el emparejamiento,
+un turno real, la voz y los cierres. La ejecución real queda registrada en
+`docs/evaluations/2026-09-10-windows-operational-close.md`.
+
 ## Evolución prevista, no implementada
 
 ```mermaid
