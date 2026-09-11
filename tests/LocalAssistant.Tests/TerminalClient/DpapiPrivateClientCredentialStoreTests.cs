@@ -334,6 +334,111 @@ public sealed class DpapiPrivateClientCredentialStoreTests
                 .LoadSpokenOutputPreferencesAsync(CancellationToken.None));
     }
 
+    [Fact]
+    public async Task ReadLocalStateSectionAsyncReportsMissingFileWithoutSchemaOrIdentity()
+    {
+        var fileSystem = new InMemoryPrivateClientStateFileSystem();
+        const string path = "state/private-client.json";
+        var store = new DpapiPrivateClientCredentialStore(path, new ThrowingPrivateClientStateProtector(), fileSystem);
+
+        var section = await store.ReadLocalStateSectionAsync(CancellationToken.None);
+
+        Assert.Equal(path, section.Path);
+        Assert.False(section.FileExists);
+        Assert.False(section.IsReadable);
+        Assert.Null(section.SchemaVersion);
+        Assert.Null(section.ClientId);
+        Assert.False(section.HasLastConversationId);
+    }
+
+    [Fact]
+    public async Task ReadLocalStateSectionAsyncNeverUnprotectsThePayload()
+    {
+        var fileSystem = new InMemoryPrivateClientStateFileSystem();
+        const string path = "state/private-client.json";
+        var state = JsonSerializer.Serialize(new
+        {
+            schemaVersion = 2,
+            clientId = "client-a",
+            lastConversationId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            protectedPayload = "not-a-real-payload",
+        });
+        fileSystem.SetFile(path, state);
+
+        // A protector whose Unprotect throws proves this method never decrypts: if it did,
+        // the call below would fail with a CryptographicException instead of asserting.
+        var store = new DpapiPrivateClientCredentialStore(path, new ThrowingPrivateClientStateProtector(), fileSystem);
+
+        var section = await store.ReadLocalStateSectionAsync(CancellationToken.None);
+
+        Assert.True(section.FileExists);
+        Assert.True(section.IsReadable);
+        Assert.Equal(2, section.SchemaVersion);
+        Assert.Equal("client-a", section.ClientId);
+        Assert.True(section.HasLastConversationId);
+    }
+
+    [Fact]
+    public async Task ReadLocalStateSectionAsyncReportsLegacyFormatAndAbsentLastConversationId()
+    {
+        var fileSystem = new InMemoryPrivateClientStateFileSystem();
+        const string path = "state/private-client.json";
+        var state = JsonSerializer.Serialize(new
+        {
+            clientId = "client-legacy",
+            protectedCredential = "legacy-protected-value",
+        });
+        fileSystem.SetFile(path, state);
+        var store = new DpapiPrivateClientCredentialStore(path, new ThrowingPrivateClientStateProtector(), fileSystem);
+
+        var section = await store.ReadLocalStateSectionAsync(CancellationToken.None);
+
+        Assert.True(section.IsReadable);
+        Assert.Null(section.SchemaVersion);
+        Assert.Equal("client-legacy", section.ClientId);
+        Assert.False(section.HasLastConversationId);
+    }
+
+    [Fact]
+    public async Task ReadLocalStateSectionAsyncReportsUnreadableForCorruptJson()
+    {
+        var fileSystem = new InMemoryPrivateClientStateFileSystem();
+        const string path = "state/private-client.json";
+        fileSystem.SetFile(path, "{ not valid json");
+        var store = new DpapiPrivateClientCredentialStore(path, new ThrowingPrivateClientStateProtector(), fileSystem);
+
+        var section = await store.ReadLocalStateSectionAsync(CancellationToken.None);
+
+        Assert.True(section.FileExists);
+        Assert.False(section.IsReadable);
+        Assert.Null(section.SchemaVersion);
+        Assert.Null(section.ClientId);
+    }
+
+    [Fact]
+    public async Task ReadLocalStateSectionAsyncReportsUnreadableWhenClientIdIsBlank()
+    {
+        var fileSystem = new InMemoryPrivateClientStateFileSystem();
+        const string path = "state/private-client.json";
+        var state = JsonSerializer.Serialize(new { schemaVersion = 2, clientId = "   ", protectedPayload = "x" });
+        fileSystem.SetFile(path, state);
+        var store = new DpapiPrivateClientCredentialStore(path, new ThrowingPrivateClientStateProtector(), fileSystem);
+
+        var section = await store.ReadLocalStateSectionAsync(CancellationToken.None);
+
+        Assert.False(section.IsReadable);
+        Assert.Null(section.ClientId);
+        Assert.Equal(2, section.SchemaVersion);
+    }
+
+    [Fact]
+    public void StatePathExposesTheConfiguredPath()
+    {
+        var store = new DpapiPrivateClientCredentialStore("state/private-client.json");
+
+        Assert.Equal("state/private-client.json", store.StatePath);
+    }
+
     private static string CreateTemporaryDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), "LocalAssistant.Tests", Guid.NewGuid().ToString("N"));

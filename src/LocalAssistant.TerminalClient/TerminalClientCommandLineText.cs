@@ -11,16 +11,18 @@ namespace LocalAssistant.TerminalClient;
 /// </summary>
 internal static class TerminalClientCommandLineText
 {
-    public static string Version()
+    public const string ClientName = "LocalAssistant.TerminalClient";
+
+    public static string InformationalVersion()
     {
         var informationalVersion = typeof(TerminalClientCommandLineText).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
             .InformationalVersion;
 
-        return string.IsNullOrWhiteSpace(informationalVersion)
-            ? "LocalAssistant.TerminalClient"
-            : $"LocalAssistant.TerminalClient {informationalVersion}";
+        return string.IsNullOrWhiteSpace(informationalVersion) ? "unknown" : informationalVersion;
     }
+
+    public static string Version() => $"{ClientName} {InformationalVersion()}";
 
     public static string Help()
     {
@@ -41,6 +43,8 @@ internal static class TerminalClientCommandLineText
                 $"to {FormatTimeout(TerminalClientConfiguration.MaximumRequestTimeout)} " +
                 $"(default: {FormatTimeout(TerminalClientOptions.DefaultRequestTimeout)}).",
             "  --plain                       Force the plain text presentation instead of the TUI.",
+            "  --diagnostics                 Print a read-only environment and readiness " +
+                "report and exit.",
             "  --version                     Print the client version and exit.",
             "  --help                        Print this help text and exit.",
             string.Empty,

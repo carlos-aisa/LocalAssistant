@@ -14,6 +14,20 @@ public sealed class TerminalClientCommandLineTextTests
     }
 
     [Fact]
+    public void VersionCombinesTheClientNameAndTheInformationalVersion()
+    {
+        Assert.Equal(
+            $"{TerminalClientCommandLineText.ClientName} {TerminalClientCommandLineText.InformationalVersion()}",
+            TerminalClientCommandLineText.Version());
+    }
+
+    [Fact]
+    public void InformationalVersionIsNeverBlank()
+    {
+        Assert.False(string.IsNullOrWhiteSpace(TerminalClientCommandLineText.InformationalVersion()));
+    }
+
+    [Fact]
     public void HelpDescribesEveryOptionAndTheEnvironmentPrefix()
     {
         var help = TerminalClientCommandLineText.Help();
@@ -23,18 +37,11 @@ public sealed class TerminalClientCommandLineTextTests
         Assert.Contains("--scenario=", help, StringComparison.Ordinal);
         Assert.Contains("--request-timeout=", help, StringComparison.Ordinal);
         Assert.Contains("--plain", help, StringComparison.Ordinal);
+        Assert.Contains("--diagnostics", help, StringComparison.Ordinal);
         Assert.Contains("--version", help, StringComparison.Ordinal);
         Assert.Contains("--help", help, StringComparison.Ordinal);
         Assert.Contains("LocalAssistant__TerminalClient__", help, StringComparison.Ordinal);
         Assert.Contains("appsettings.json", help, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void HelpDoesNotMentionADiagnosticsFlagThatDoesNotExistYet()
-    {
-        var help = TerminalClientCommandLineText.Help();
-
-        Assert.DoesNotContain("--diagnostics", help, StringComparison.Ordinal);
     }
 
     public static TheoryData<string[], bool> HelpDetectionCases => new()
@@ -65,5 +72,45 @@ public sealed class TerminalClientCommandLineTextTests
     public void RequestsVersionDetectsTheFlagAnywhereInTheArguments(string[] args, bool expected)
     {
         Assert.Equal(expected, TerminalClientCommandLine.RequestsVersion(args));
+    }
+
+    public static TheoryData<string[], bool> DiagnosticsDetectionCases => new()
+    {
+        { ["--diagnostics"], true },
+        { ["--provider=fake", "--diagnostics"], true },
+        { [], false },
+        { ["--help"], false },
+    };
+
+    [Theory]
+    [MemberData(nameof(DiagnosticsDetectionCases))]
+    public void RequestsDiagnosticsDetectsTheFlagAnywhereInTheArguments(string[] args, bool expected)
+    {
+        Assert.Equal(expected, TerminalClientCommandLine.RequestsDiagnostics(args));
+    }
+
+    [Fact]
+    public void DiagnosticsIsRecognizedByParseAndDoesNotChangeAnySetting()
+    {
+        var commandLine = TerminalClientCommandLine.Parse(["--diagnostics", "--provider=fake"]);
+
+        Assert.Null(commandLine.BaseUrl);
+        Assert.Equal("fake", commandLine.Provider);
+        Assert.Null(commandLine.Scenario);
+        Assert.Null(commandLine.RequestTimeout);
+        Assert.False(commandLine.ForcePlain);
+    }
+
+    [Fact]
+    public void HelpAndVersionAreAlsoRecognizedByParseEvenThoughTheRealDispatchNeverReachesIt()
+    {
+        // --help and --version always return before TerminalClientProgram loads
+        // configuration, so Parse never actually sees them in the real dispatch order.
+        // They are recognized here anyway, defensively, so Parse never fails on them.
+        var withHelp = TerminalClientCommandLine.Parse(["--help", "--provider=fake"]);
+        var withVersion = TerminalClientCommandLine.Parse(["--version", "--scenario=time"]);
+
+        Assert.Equal("fake", withHelp.Provider);
+        Assert.Equal("time", withVersion.Scenario);
     }
 }

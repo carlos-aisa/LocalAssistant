@@ -137,8 +137,9 @@ bucle de chat y no reproduce audio.
   se elegiría (`tui` o `plain` con su motivo), reutilizando `TerminalPresentationSelector`.
 - **Salida hablada**: si el proceso corre en Windows; si el subsistema de síntesis
   inicializa; número de voces habilitadas (**solo el recuento**, nunca los nombres) y si
-  la disponibilidad sería `Ready` o `Unavailable`; velocidad, volumen y silencio
-  efectivos del estado DPAPI.
+  la disponibilidad sería `Ready` o `Unavailable`. No incluye voz, velocidad, volumen ni
+  silencio efectivos: leerlos exigiría descifrar el payload DPAPI, y el informe nunca lo
+  descifra. Esos valores siguen visibles con `/info` durante una sesión real.
 
 ### Código de salida
 

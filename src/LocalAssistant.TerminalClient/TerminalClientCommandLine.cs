@@ -54,6 +54,16 @@ internal sealed record TerminalClientCommandLine(
                 continue;
             }
 
+            if (argument is "--diagnostics" or "--help" or "--version")
+            {
+                // Top-level run modes dispatched by TerminalClientProgram before this
+                // configuration is used (--help and --version never even reach this parser
+                // in the real dispatch order, since they return before configuration loads).
+                // Recognized here too, defensively, so none of the three can ever fail as an
+                // unsupported argument when combined with real configuration overrides.
+                continue;
+            }
+
             throw new ArgumentException("An unsupported command-line argument was supplied.");
         }
 
@@ -72,6 +82,14 @@ internal sealed record TerminalClientCommandLine(
     /// <see cref="Parse"/> as <see cref="RequestsHelp"/>.
     /// </summary>
     public static bool RequestsVersion(string[] args) => Contains(args, "--version");
+
+    /// <summary>
+    /// Whether <paramref name="args"/> requests the diagnostics report. Checked
+    /// independently of <see cref="Parse"/> for the same reason as
+    /// <see cref="RequestsHelp"/>, but unlike help and version this mode still needs a
+    /// valid configuration, so the caller loads it after this check succeeds.
+    /// </summary>
+    public static bool RequestsDiagnostics(string[] args) => Contains(args, "--diagnostics");
 
     private static bool Contains(string[] args, string flag)
     {
