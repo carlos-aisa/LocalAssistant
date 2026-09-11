@@ -54,10 +54,12 @@ internal sealed record TerminalClientCommandLine(
                 continue;
             }
 
-            if (argument.Equals("--diagnostics", StringComparison.Ordinal))
+            if (argument is "--diagnostics" or "--help" or "--version")
             {
-                // A top-level run mode dispatched by TerminalClientProgram before this
-                // configuration is used; recognized here only so it does not fail as an
+                // Top-level run modes dispatched by TerminalClientProgram before this
+                // configuration is used (--help and --version never even reach this parser
+                // in the real dispatch order, since they return before configuration loads).
+                // Recognized here too, defensively, so none of the three can ever fail as an
                 // unsupported argument when combined with real configuration overrides.
                 continue;
             }

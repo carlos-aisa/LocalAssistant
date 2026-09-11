@@ -100,4 +100,17 @@ public sealed class TerminalClientCommandLineTextTests
         Assert.Null(commandLine.RequestTimeout);
         Assert.False(commandLine.ForcePlain);
     }
+
+    [Fact]
+    public void HelpAndVersionAreAlsoRecognizedByParseEvenThoughTheRealDispatchNeverReachesIt()
+    {
+        // --help and --version always return before TerminalClientProgram loads
+        // configuration, so Parse never actually sees them in the real dispatch order.
+        // They are recognized here anyway, defensively, so Parse never fails on them.
+        var withHelp = TerminalClientCommandLine.Parse(["--help", "--provider=fake"]);
+        var withVersion = TerminalClientCommandLine.Parse(["--version", "--scenario=time"]);
+
+        Assert.Equal("fake", withHelp.Provider);
+        Assert.Equal("time", withVersion.Scenario);
+    }
 }
