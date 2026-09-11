@@ -60,6 +60,25 @@ internal sealed record TerminalClientCommandLine(
         return new TerminalClientCommandLine(baseUrl, provider, scenario, requestTimeout, forcePlain);
     }
 
+    /// <summary>
+    /// Whether <paramref name="args"/> requests the help text. Checked independently of
+    /// <see cref="Parse"/> so it takes effect even alongside an otherwise invalid or
+    /// unrecognized argument, and before any configuration source is read.
+    /// </summary>
+    public static bool RequestsHelp(string[] args) => Contains(args, "--help");
+
+    /// <summary>
+    /// Whether <paramref name="args"/> requests the version text. Same independence from
+    /// <see cref="Parse"/> as <see cref="RequestsHelp"/>.
+    /// </summary>
+    public static bool RequestsVersion(string[] args) => Contains(args, "--version");
+
+    private static bool Contains(string[] args, string flag)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+        return Array.Exists(args, argument => argument.Equals(flag, StringComparison.Ordinal));
+    }
+
     private static bool TryReadOption(string argument, string prefix, out string? value)
     {
         if (argument.StartsWith(prefix, StringComparison.Ordinal))

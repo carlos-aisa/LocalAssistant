@@ -18,6 +18,89 @@ public sealed class TerminalClientProgramTests
     }
 
     [Fact]
+    public async Task VersionOptionPrintsTheVersionAndBuildsNothing()
+    {
+        var environment = new TestProgramEnvironment();
+        var driverFactory = new RecordingDriverFactory();
+        var plain = new RecordingPlainRunner();
+        var tui = new RecordingTuiRunner();
+
+        var exitCode = await RunAsync(["--version"], environment, driverFactory, plain, tui);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(0, driverFactory.CreateCount);
+        Assert.Equal(0, plain.RunCount);
+        Assert.Equal(0, tui.RunCount);
+        Assert.Empty(environment.Errors);
+        var line = Assert.Single(environment.Lines);
+        Assert.StartsWith("LocalAssistant.TerminalClient", line, StringComparison.Ordinal);
+        Assert.Equal(0, environment.RegisterCount);
+    }
+
+    [Fact]
+    public async Task HelpOptionPrintsTheHelpTextAndBuildsNothing()
+    {
+        var environment = new TestProgramEnvironment();
+        var driverFactory = new RecordingDriverFactory();
+        var plain = new RecordingPlainRunner();
+        var tui = new RecordingTuiRunner();
+
+        var exitCode = await RunAsync(["--help"], environment, driverFactory, plain, tui);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(0, driverFactory.CreateCount);
+        Assert.Equal(0, plain.RunCount);
+        Assert.Equal(0, tui.RunCount);
+        Assert.Empty(environment.Errors);
+        var text = Assert.Single(environment.Lines);
+        Assert.Contains("--base-url=", text, StringComparison.Ordinal);
+        Assert.Contains("--provider=", text, StringComparison.Ordinal);
+        Assert.Contains("--scenario=", text, StringComparison.Ordinal);
+        Assert.Contains("--request-timeout=", text, StringComparison.Ordinal);
+        Assert.Contains("--plain", text, StringComparison.Ordinal);
+        Assert.Contains("--version", text, StringComparison.Ordinal);
+        Assert.Contains("--help", text, StringComparison.Ordinal);
+        Assert.Contains("LocalAssistant__TerminalClient__", text, StringComparison.Ordinal);
+        Assert.Contains("appsettings.json", text, StringComparison.Ordinal);
+        Assert.Equal(0, environment.RegisterCount);
+    }
+
+    [Fact]
+    public async Task HelpTakesPrecedenceOverVersionWhenBothAreRequested()
+    {
+        var environment = new TestProgramEnvironment();
+        var driverFactory = new RecordingDriverFactory();
+        var plain = new RecordingPlainRunner();
+        var tui = new RecordingTuiRunner();
+
+        var exitCode = await RunAsync(["--version", "--help"], environment, driverFactory, plain, tui);
+
+        Assert.Equal(0, exitCode);
+        var text = Assert.Single(environment.Lines);
+        Assert.Contains("Usage:", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task HelpIsPrintedEvenAlongsideAnUnsupportedArgument()
+    {
+        var environment = new TestProgramEnvironment();
+        var driverFactory = new RecordingDriverFactory();
+        var plain = new RecordingPlainRunner();
+        var tui = new RecordingTuiRunner();
+
+        var exitCode = await RunAsync(
+            ["--help", "--this-flag-does-not-exist"],
+            environment,
+            driverFactory,
+            plain,
+            tui);
+
+        Assert.Equal(0, exitCode);
+        Assert.Empty(environment.Errors);
+        Assert.Single(environment.Lines);
+    }
+
+    [Fact]
     public async Task PlainOptionBuildsAndRunsOnlyThePlainApplication()
     {
         var environment = new TestProgramEnvironment();
@@ -260,6 +343,8 @@ public sealed class TerminalClientProgramTests
 
         public List<string> Errors { get; } = [];
 
+        public List<string> Lines { get; } = [];
+
         public void RegisterCancellation(Action cancellationHandler)
         {
             RegisterCount++;
@@ -276,6 +361,11 @@ public sealed class TerminalClientProgramTests
         public void WriteError(string value)
         {
             Errors.Add(value);
+        }
+
+        public void WriteLine(string value)
+        {
+            Lines.Add(value);
         }
 
         public void RaiseCancel()
