@@ -101,6 +101,83 @@ public sealed class TerminalClientProgramTests
     }
 
     [Fact]
+    public async Task DiagnosticsOptionInvokesTheDiagnosticsRunnerAndBuildsNoApplication()
+    {
+        var environment = new TestProgramEnvironment();
+        var driverFactory = new RecordingDriverFactory();
+        var plain = new RecordingPlainRunner();
+        var tui = new RecordingTuiRunner();
+        var diagnostics = new RecordingDiagnosticsRunner();
+
+        var exitCode = await RunAsync(["--diagnostics"], environment, driverFactory, plain, tui, diagnostics);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(1, diagnostics.RunCount);
+        Assert.Equal(0, plain.RunCount);
+        Assert.Equal(0, tui.RunCount);
+        Assert.NotNull(diagnostics.ReceivedConfiguration);
+    }
+
+    [Fact]
+    public async Task DiagnosticsOptionPropagatesTheRunnersExitCode()
+    {
+        var environment = new TestProgramEnvironment();
+        var driverFactory = new RecordingDriverFactory();
+        var plain = new RecordingPlainRunner();
+        var tui = new RecordingTuiRunner();
+        var diagnostics = new RecordingDiagnosticsRunner(exitCode: 0);
+
+        var exitCode = await RunAsync(
+            ["--diagnostics", "--provider=fake"],
+            environment,
+            driverFactory,
+            plain,
+            tui,
+            diagnostics);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("fake", diagnostics.ReceivedConfiguration?.Options.Provider);
+    }
+
+    [Fact]
+    public async Task InvalidConfigurationFailsBeforeDiagnosticsRunsEvenWhenRequested()
+    {
+        var environment = new TestProgramEnvironment();
+        var driverFactory = new RecordingDriverFactory();
+        var plain = new RecordingPlainRunner();
+        var tui = new RecordingTuiRunner();
+        var diagnostics = new RecordingDiagnosticsRunner();
+
+        var exitCode = await RunAsync(
+            ["--diagnostics", "--provider=not-a-real-provider"],
+            environment,
+            driverFactory,
+            plain,
+            tui,
+            diagnostics);
+
+        Assert.Equal(2, exitCode);
+        Assert.Equal(0, diagnostics.RunCount);
+        Assert.Contains(environment.Errors, error => error.StartsWith("Configuration error:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AFailedDiagnosticsProbeIsReportedAsAClientError()
+    {
+        var environment = new TestProgramEnvironment();
+        var driverFactory = new RecordingDriverFactory();
+        var plain = new RecordingPlainRunner();
+        var tui = new RecordingTuiRunner();
+        var diagnostics = new RecordingDiagnosticsRunner(
+            exception: new InvalidOperationException("probe failed"));
+
+        var exitCode = await RunAsync(["--diagnostics"], environment, driverFactory, plain, tui, diagnostics);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains(environment.Errors, error => error.Contains("probe failed", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task PlainOptionBuildsAndRunsOnlyThePlainApplication()
     {
         var environment = new TestProgramEnvironment();
@@ -301,11 +378,13 @@ public sealed class TerminalClientProgramTests
         TestProgramEnvironment environment,
         RecordingDriverFactory driverFactory,
         RecordingPlainRunner plain,
-        RecordingTuiRunner tui) => TerminalClientProgram.RunAsync(
+        RecordingTuiRunner tui,
+        RecordingDiagnosticsRunner? diagnostics = null) => TerminalClientProgram.RunAsync(
             args,
             LoadConfigurationWithoutAmbientSources,
             environment,
             driverFactory.Create,
+            (diagnostics ?? new RecordingDiagnosticsRunner()).RunAsync,
             plain.RunAsync,
             tui.RunAsync);
 
@@ -397,6 +476,34 @@ public sealed class TerminalClientProgramTests
             }
 
             return _driver;
+        }
+    }
+
+    private sealed class RecordingDiagnosticsRunner
+    {
+        private readonly int _exitCode;
+        private readonly Exception? _exception;
+
+        public RecordingDiagnosticsRunner(int exitCode = 0, Exception? exception = null)
+        {
+            _exitCode = exitCode;
+            _exception = exception;
+        }
+
+        public int RunCount { get; private set; }
+
+        public TerminalClientConfigurationResult? ReceivedConfiguration { get; private set; }
+
+        public Task<int> RunAsync(
+            TerminalClientConfigurationResult configuration,
+            ITerminalProgramEnvironment environment,
+            Func<ITerminalDriver?> driverFactory)
+        {
+            RunCount++;
+            ReceivedConfiguration = configuration;
+            return _exception is not null
+                ? Task.FromException<int>(_exception)
+                : Task.FromResult(_exitCode);
         }
     }
 

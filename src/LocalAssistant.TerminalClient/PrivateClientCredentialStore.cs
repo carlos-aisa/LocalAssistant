@@ -155,6 +155,62 @@ public sealed class DpapiPrivateClientCredentialStore :
         _statePath = statePath;
     }
 
+    /// <summary>
+    /// The local state file path. Not a secret: it is a path on the user's own machine,
+    /// already documented, and useful for diagnostics.
+    /// </summary>
+    internal string StatePath => _statePath;
+
+    /// <summary>
+    /// Reads the state file's readable envelope without ever unprotecting the DPAPI
+    /// payload, so it never has the credential or the voice preferences stored inside
+    /// it in memory. For <c>--diagnostics</c>: schema version, <c>ClientId</c> (an
+    /// identifier, not a secret) and whether a last conversation id is present.
+    /// </summary>
+    internal async Task<TerminalDiagnosticsLocalStateSection> ReadLocalStateSectionAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!_fileSystem.FileExists(_statePath))
+        {
+            return TerminalDiagnosticsLocalStateSection.Missing(_statePath);
+        }
+
+        try
+        {
+            var stateJson = await _fileSystem.ReadAllTextAsync(_statePath, cancellationToken);
+            var state = JsonSerializer.Deserialize<StoredCredentialState>(stateJson, JsonOptions);
+            if (state is null || string.IsNullOrWhiteSpace(state.ClientId))
+            {
+                return new TerminalDiagnosticsLocalStateSection(
+                    _statePath,
+                    FileExists: true,
+                    IsReadable: false,
+                    SchemaVersion: state?.SchemaVersion,
+                    ClientId: null,
+                    HasLastConversationId: false);
+            }
+
+            return new TerminalDiagnosticsLocalStateSection(
+                _statePath,
+                FileExists: true,
+                IsReadable: true,
+                SchemaVersion: state.SchemaVersion,
+                ClientId: state.ClientId,
+                HasLastConversationId: state.LastConversationId.HasValue);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+            JsonException or FormatException)
+        {
+            return new TerminalDiagnosticsLocalStateSection(
+                _statePath,
+                FileExists: true,
+                IsReadable: false,
+                SchemaVersion: null,
+                ClientId: null,
+                HasLastConversationId: false);
+        }
+    }
+
     public async Task<PrivateClientCredential?> LoadAsync(CancellationToken cancellationToken)
     {
         var state = await LoadStateAsync(cancellationToken);

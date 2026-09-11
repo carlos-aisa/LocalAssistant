@@ -169,8 +169,9 @@ ni caso de prueba.
 4. La sección de estado local nunca descifra: solo versión de formato, `ClientId`
    textual y `LastConversationId` como sí/no. Si el archivo no existe, se indica.
 5. La sección de voz: en Windows sondea inicialización y recuenta voces habilitadas
-   (**recuento, no nombres**); fuera de Windows informa no disponible sin sondear.
-   Añade velocidad/volumen/silencio efectivos del estado DPAPI.
+   (**recuento, no nombres**); fuera de Windows informa no disponible sin sondear. No
+   añade voz, velocidad, volumen ni silencio efectivos: exigiría descifrar el payload
+   DPAPI, coherente con el punto 4; siguen visibles con `/info` en una sesión real.
 6. `Program`: si `--diagnostics`, construye el informe, lo escribe, y devuelve `0`
    (informe generado), `2` (configuración inválida) o `1` (fallo inesperado). No abre
    sesión, no pide credenciales, no entra al bucle, no reproduce audio.

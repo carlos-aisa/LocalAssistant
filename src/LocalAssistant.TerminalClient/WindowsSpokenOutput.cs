@@ -69,6 +69,13 @@ internal sealed class WindowsSpeechSynthesizer : ISpeechSynthesizer, ISpeechVoic
 
     public static bool HasEnabledVoices() => GetVoices().Count > 0;
 
+    /// <summary>
+    /// The number of enabled installed voices, for <c>--diagnostics</c>. Only the
+    /// count: enumerating names there would duplicate <c>/voice</c>, the one listing the
+    /// user explicitly requests.
+    /// </summary>
+    public static int CountEnabledVoices() => GetVoices().Count;
+
     private static IReadOnlyList<SpokenOutputVoice> GetVoices()
     {
         using var synthesizer = new SpeechSynthesizer();

@@ -1,3 +1,5 @@
+using System.Runtime.Versioning;
+
 namespace LocalAssistant.TerminalClient;
 
 internal interface ITerminalProgramEnvironment : ITerminalPresentationCapabilities
@@ -62,6 +64,7 @@ internal static class TerminalClientProgram
         TerminalClientConfiguration.Load,
         new SystemTerminalProgramEnvironment(),
         static () => new SystemTerminalDriver(),
+        RunDiagnosticsAsync,
         RunPlainApplicationAsync,
         RunTuiApplicationAsync);
 
@@ -70,6 +73,8 @@ internal static class TerminalClientProgram
         Func<string[], TerminalClientConfigurationResult> loadConfiguration,
         ITerminalProgramEnvironment environment,
         Func<ITerminalDriver?> driverFactory,
+        Func<TerminalClientConfigurationResult, ITerminalProgramEnvironment, Func<ITerminalDriver?>, Task<int>>
+            runDiagnosticsAsync,
         Func<TerminalClientOptions, CancellationToken, Task<int>> runPlainAsync,
         Func<TerminalClientOptions, ITerminalDriver, CancellationToken, Task<int>> runTuiAsync)
     {
@@ -77,6 +82,7 @@ internal static class TerminalClientProgram
         ArgumentNullException.ThrowIfNull(loadConfiguration);
         ArgumentNullException.ThrowIfNull(environment);
         ArgumentNullException.ThrowIfNull(driverFactory);
+        ArgumentNullException.ThrowIfNull(runDiagnosticsAsync);
         ArgumentNullException.ThrowIfNull(runPlainAsync);
         ArgumentNullException.ThrowIfNull(runTuiAsync);
 
@@ -94,9 +100,14 @@ internal static class TerminalClientProgram
                 return 0;
             }
 
-            var options = loadConfiguration(args).Options;
+            var configuration = loadConfiguration(args);
+            if (TerminalClientCommandLine.RequestsDiagnostics(args))
+            {
+                return await runDiagnosticsAsync(configuration, environment, driverFactory);
+            }
+
             return await RunConfiguredAsync(
-                options,
+                configuration.Options,
                 environment,
                 driverFactory,
                 runPlainAsync,
@@ -166,6 +177,99 @@ internal static class TerminalClientProgram
         }
 
         environment.WriteError($"TUI unavailable ({reason}); using plain mode.");
+    }
+
+    private static async Task<int> RunDiagnosticsAsync(
+        TerminalClientConfigurationResult configuration,
+        ITerminalProgramEnvironment environment,
+        Func<ITerminalDriver?> driverFactory)
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        Action cancellationHandler = cancellationSource.Cancel;
+        environment.RegisterCancellation(cancellationHandler);
+
+        try
+        {
+            var appSettingsPath = Path.Combine(
+                AppContext.BaseDirectory,
+                TerminalClientConfiguration.AppSettingsFileName);
+            var credentialStore = new DpapiPrivateClientCredentialStore();
+
+            var report = await TerminalDiagnosticsProbe.BuildAsync(
+                configuration,
+                appSettingsPath,
+                File.Exists(appSettingsPath),
+                cancellationToken => ProbeApiHealthAsync(configuration.Options.BaseUri, cancellationToken),
+                credentialStore.ReadLocalStateSectionAsync,
+                environment,
+                driverFactory,
+                ProbeSpokenOutputForDiagnostics,
+                cancellationSource.Token);
+            environment.WriteLine(report.ToText());
+            return 0;
+        }
+        finally
+        {
+            environment.UnregisterCancellation(cancellationHandler);
+        }
+    }
+
+    private static async Task<TerminalDiagnosticsApiProbeResult> ProbeApiHealthAsync(
+        Uri baseUri,
+        CancellationToken cancellationToken)
+    {
+        using var httpClient = new HttpClient
+        {
+            BaseAddress = baseUri,
+            Timeout = TerminalDiagnosticsProbe.ApiProbeTimeout,
+        };
+
+        try
+        {
+            using var response = await httpClient.GetAsync("health", cancellationToken);
+            return new TerminalDiagnosticsApiProbeResult(
+                response.IsSuccessStatusCode
+                    ? TerminalDiagnosticsApiHealth.Reachable
+                    : TerminalDiagnosticsApiHealth.UnexpectedStatus,
+                (int)response.StatusCode);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // HttpClient.Timeout expired; distinguished from a caller-requested cancellation,
+            // which instead propagates so Ctrl+C still ends the run.
+            return new TerminalDiagnosticsApiProbeResult(TerminalDiagnosticsApiHealth.Timeout, null);
+        }
+        catch (HttpRequestException)
+        {
+            return new TerminalDiagnosticsApiProbeResult(TerminalDiagnosticsApiHealth.Unreachable, null);
+        }
+    }
+
+    private static TerminalDiagnosticsSpokenOutputSection ProbeSpokenOutputForDiagnostics() =>
+        OperatingSystem.IsWindows()
+            ? ProbeWindowsSpokenOutputForDiagnostics()
+            : TerminalDiagnosticsSpokenOutputSection.NotWindows;
+
+    [SupportedOSPlatform("windows")]
+    private static TerminalDiagnosticsSpokenOutputSection ProbeWindowsSpokenOutputForDiagnostics()
+    {
+        try
+        {
+            var count = WindowsSpeechSynthesizer.CountEnabledVoices();
+            return new TerminalDiagnosticsSpokenOutputSection(
+                IsWindows: true,
+                SubsystemInitializes: true,
+                EnabledVoiceCount: count,
+                IsAvailable: count > 0);
+        }
+        catch (Exception)
+        {
+            return new TerminalDiagnosticsSpokenOutputSection(
+                IsWindows: true,
+                SubsystemInitializes: false,
+                EnabledVoiceCount: null,
+                IsAvailable: false);
+        }
     }
 
     private static async Task<int> RunPlainApplicationAsync(
