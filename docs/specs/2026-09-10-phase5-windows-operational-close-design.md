@@ -2,7 +2,7 @@
 
 ## Estado y propósito
 
-Diseño **propuesto** (incremento 8 de la fase 5, 2026-09-10). Cierra la fase 5 haciendo
+Diseño **implementado y verificado** (incremento 8 de la fase 5, 2026-09-10). Cierra la fase 5 haciendo
 que el cliente terminal .NET sea *desplegable y operable* en el equipo Windows objetivo
 sin recompilar y sin incrustar rutas personales ni secretos: publicación reproducible,
 configuración fuera del binario, un modo de diagnóstico de un disparo y un smoke test

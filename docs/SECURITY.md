@@ -77,6 +77,30 @@ Un adaptador TTS externo seguirá requiriendo la política de egreso, proveedor 
 retención explícitos. `mute`, `stop` y `repeat` controlan exclusivamente la salida
 local y no presentan una cancelación de turno como garantía del protocolo.
 
+### Publicación, configuración y diagnóstico del cliente terminal
+
+El incremento 8 de la fase 5 publica el cliente de forma dependiente de framework para
+`win-x64` y lo configura fuera del binario: `appsettings.json` junto al ejecutable y
+variables `LocalAssistant__TerminalClient__*` solo aportan base URL, proveedor,
+escenario y timeout de petición; ninguno de los dos admite secretos, credenciales ni
+rutas personales, y las variables de entorno se limitan a esos valores no sensibles
+porque otros procesos del usuario pueden leerlas. Las preferencias de voz siguen sin
+ser configuración: continúan solo en el payload DPAPI descrito arriba. La publicación
+no incluye el estado local; este se crea con permisos del usuario en
+`%LOCALAPPDATA%` en la primera sesión válida.
+
+`--diagnostics` es de solo lectura: un único `GET /health` acotado a unos segundos,
+inspección no destructiva del archivo local (versión de formato, `ClientId`
+legible y si hay último identificador de conversación, sin descifrar nunca el
+payload DPAPI) y un sondeo del subsistema de voz que informa solo el **recuento** de
+voces habilitadas, nunca sus nombres. No abre sesión, no pide credenciales, no entra
+al bucle de chat y no reproduce audio; un fallo de sonda no se convierte en un error de
+configuración. El cliente sigue sin poder arrancar, alojar ni supervisar la API: ante
+inalcanzabilidad solo orienta a arrancarla manualmente. El script de smoke test
+(`scripts/Invoke-TerminalClientSmoke.ps1`) no hace egreso fuera de loopback y afirma la
+ausencia de archivos de audio y de claves sensibles en la parte legible del estado
+local antes de considerarse superado.
+
 ### TTS neuronal local (evolución futura, no adoptada)
 
 Un proveedor neuronal local de TTS —candidato actual Chatterbox Multilingual, decisión

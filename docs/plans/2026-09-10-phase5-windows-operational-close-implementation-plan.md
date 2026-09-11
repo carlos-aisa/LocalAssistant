@@ -1,9 +1,15 @@
 # Plan de implementación: incremento 8 de fase 5 — cierre operativo de Windows
 
-> **Estado: propuesto** (2026-09-10). Implementa
-> `docs/specs/2026-09-10-phase5-windows-operational-close-design.md`. Cinco tandas:
-> configuración fuera del binario, publicación y `--version`/`--help`, modo
-> `--diagnostics`, script de smoke test, y documentación con cierre de la fase 5.
+> **Estado: finalizado** (2026-09-11). Implementa
+> `docs/specs/2026-09-10-phase5-windows-operational-close-design.md` en cinco tandas:
+> configuración fuera del binario (PR #79), publicación y `--version`/`--help`
+> (PR #80), modo `--diagnostics` (PR #81), script de smoke test y documentación con
+> cierre de la fase 5. `dotnet format`, `build -c Release` y la suite completa
+> (**725/725**) limpios; `dotnet list package --vulnerable` limpio. Verificación manual
+> ejecutada y superada
+> (`docs/evaluations/2026-09-10-windows-operational-close.md`), incluidos los tres
+> modos de fallo probados a mano en `scripts/Invoke-TerminalClientSmoke.ps1` sin dañar
+> el estado DPAPI real del equipo. `ROADMAP.md` punto 8 marcado; fase 5 cerrada.
 
 ## Alcance confirmado
 

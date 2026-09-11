@@ -1006,6 +1006,29 @@ El núcleo declara particiones de memoria personal, compartida del hogar, de mó
 administrativa y efímera. La única persistida y expuesta actualmente es la personal;
 las demás necesitan un flujo autorizado antes de incorporar almacenamiento o API.
 
+#### Publicación, configuración y diagnóstico (incremento 8)
+
+El cliente se publica de forma dependiente de framework para `win-x64`
+(`dotnet publish -r win-x64 --self-contained false`); el `TargetFramework` sigue en
+`net8.0` para que el CI Linux siga compilando y ejecutando la suite. `appsettings.json`
+se copia junto al ejecutable con los valores por defecto actuales.
+
+La configuración se resuelve, en precedencia creciente, desde valores por defecto
+internos, `appsettings.json`, variables de entorno `LocalAssistant__TerminalClient__*`
+y argumentos de línea de comandos; la validación es única sobre el resultado combinado
+y el origen de cada valor se conserva para el diagnóstico. Solo cuatro valores no
+secretos son configurables así (base URL, proveedor, escenario, timeout de petición);
+las preferencias de voz siguen siendo estado de usuario en el payload DPAPI, no
+configuración.
+
+Un modo `--diagnostics` de un disparo compone un informe de solo lectura reutilizando
+`TerminalPresentationSelector` para predecir `tui`/`plain` con las mismas capacidades y
+factoría de driver que la ejecución real, un sondeo acotado (unos segundos) del mismo
+endpoint `/health`, y una lectura no destructiva del estado local que nunca descifra el
+payload DPAPI. No construye `TerminalClientApplication` ni abre sesión. `--version` y
+`--help` completan el cierre operativo. El cliente sigue sin poder arrancar, alojar ni
+supervisar la API.
+
 #### Proveedor neuronal local de TTS (evolución futura, no adoptada)
 
 El plano de salida hablada ya está estructurado para admitir otro sintetizador sin
