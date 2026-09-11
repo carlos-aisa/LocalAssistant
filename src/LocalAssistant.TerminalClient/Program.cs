@@ -100,6 +100,12 @@ internal static class TerminalClientProgram
                 return 0;
             }
 
+            if (TerminalClientCommandLine.RequestsKokoroSecretProvision(args) ||
+                TerminalClientCommandLine.RequestsKokoroSecretRotation(args))
+            {
+                return RunKokoroSecretCommand(args, environment);
+            }
+
             var configuration = loadConfiguration(args);
             if (TerminalClientCommandLine.RequestsDiagnostics(args))
             {
@@ -177,6 +183,32 @@ internal static class TerminalClientProgram
         }
 
         environment.WriteError($"TUI unavailable ({reason}); using plain mode.");
+    }
+
+    private static int RunKokoroSecretCommand(string[] args, ITerminalProgramEnvironment environment)
+    {
+        var provision = TerminalClientCommandLine.RequestsKokoroSecretProvision(args);
+        var rotate = TerminalClientCommandLine.RequestsKokoroSecretRotation(args);
+        if (provision == rotate || args.Length != 1)
+        {
+            environment.WriteError("Kokoro secret commands must be used alone.");
+            return 2;
+        }
+
+        var store = new KokoroSharedSecretStore();
+        var success = provision ? store.Provision() : store.Rotate();
+        if (!success)
+        {
+            environment.WriteError(provision
+                ? "Kokoro shared-secret provisioning failed."
+                : "Kokoro shared-secret rotation failed; ensure the Kokoro service is stopped.");
+            return 1;
+        }
+
+        environment.WriteLine(provision
+            ? "Kokoro shared secret provisioned."
+            : "Kokoro shared secret rotated.");
+        return 0;
     }
 
     private static async Task<int> RunDiagnosticsAsync(
