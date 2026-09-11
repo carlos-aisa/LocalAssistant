@@ -1022,11 +1022,12 @@ las preferencias de voz siguen siendo estado de usuario en el payload DPAPI, no
 configuración.
 
 Un modo `--diagnostics` de un disparo compone un informe de solo lectura reutilizando
-los mismos contratos que la ejecución real: `TerminalPresentationSelector` para
-predecir `tui`/`plain`, la misma comprobación de `/health`, y una lectura no
-destructiva del estado local que nunca descifra el payload DPAPI. No construye
-`TerminalClientApplication` ni abre sesión. `--version` y `--help` completan el
-cierre operativo. El cliente sigue sin poder arrancar, alojar ni supervisar la API.
+`TerminalPresentationSelector` para predecir `tui`/`plain` con las mismas capacidades y
+factoría de driver que la ejecución real, un sondeo acotado (unos segundos) del mismo
+endpoint `/health`, y una lectura no destructiva del estado local que nunca descifra el
+payload DPAPI. No construye `TerminalClientApplication` ni abre sesión. `--version` y
+`--help` completan el cierre operativo. El cliente sigue sin poder arrancar, alojar ni
+supervisar la API.
 
 #### Proveedor neuronal local de TTS (evolución futura, no adoptada)
 
