@@ -28,11 +28,11 @@ internal static class TerminalClientConfiguration
     internal const string EnvironmentPrefix = "LocalAssistant__";
     internal const string AppSettingsFileName = "appsettings.json";
 
-    private const string DefaultBaseUrl = "http://localhost:5100";
-    private const string DefaultProvider = "ollama";
-    private const string DefaultScenario = "direct";
+    internal const string DefaultBaseUrl = "http://localhost:5100";
+    internal const string DefaultProvider = "ollama";
+    internal const string DefaultScenario = "direct";
 
-    private static readonly TimeSpan MaximumRequestTimeout = TimeSpan.FromHours(1);
+    internal static readonly TimeSpan MaximumRequestTimeout = TimeSpan.FromHours(1);
 
     public static TerminalClientConfigurationResult Load(string[] args) =>
         Load(args, AppContext.BaseDirectory);

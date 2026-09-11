@@ -7,6 +7,8 @@ internal interface ITerminalProgramEnvironment : ITerminalPresentationCapabiliti
     void UnregisterCancellation(Action cancellationHandler);
 
     void WriteError(string value);
+
+    void WriteLine(string value);
 }
 
 internal sealed class SystemTerminalProgramEnvironment : ITerminalProgramEnvironment
@@ -45,6 +47,12 @@ internal sealed class SystemTerminalProgramEnvironment : ITerminalProgramEnviron
         ArgumentNullException.ThrowIfNull(value);
         Console.Error.WriteLine(value);
     }
+
+    public void WriteLine(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        Console.WriteLine(value);
+    }
 }
 
 internal static class TerminalClientProgram
@@ -74,6 +82,18 @@ internal static class TerminalClientProgram
 
         try
         {
+            if (TerminalClientCommandLine.RequestsHelp(args))
+            {
+                environment.WriteLine(TerminalClientCommandLineText.Help());
+                return 0;
+            }
+
+            if (TerminalClientCommandLine.RequestsVersion(args))
+            {
+                environment.WriteLine(TerminalClientCommandLineText.Version());
+                return 0;
+            }
+
             var options = loadConfiguration(args).Options;
             return await RunConfiguredAsync(
                 options,
