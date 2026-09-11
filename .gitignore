@@ -27,6 +27,13 @@ appsettings.*.local.json
 appsettings.Development.json
 secrets.json
 
+## Local Kokoro TTS service state and generated audio
+services/kokoro-tts/config.toml
+services/kokoro-tts/.venv/
+services/kokoro-tts/.pytest_cache/
+services/kokoro-tts/**/*.wav
+services/kokoro-tts/**/*.pyc
+
 ## OS files
 .DS_Store
 Thumbs.db
