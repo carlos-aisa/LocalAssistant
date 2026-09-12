@@ -437,6 +437,11 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
         await _operationGate.WaitAsync(cancellationToken);
         try
         {
+            if (_synthesizer is KokoroSpeechSynthesizer)
+            {
+                return await PrepareKokoroSegmentsAsync(text, cancellationToken);
+            }
+
             var speech = await _synthesizer.SynthesizeAsync(
                 new SpeechSynthesisRequest(text, _preferences),
                 cancellationToken);
@@ -462,6 +467,29 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
             _operationGate.Release();
             return SpokenOutputPreparation.SynthesisFailed;
         }
+    }
+
+    private async Task<SpokenOutputPreparation> PrepareKokoroSegmentsAsync(
+        string text,
+        CancellationToken cancellationToken)
+    {
+        var segments = SpokenTextSegmenter.Segment(text).ToArray();
+        var first = await _synthesizer.SynthesizeAsync(
+            new SpeechSynthesisRequest(segments[0], _preferences),
+            cancellationToken);
+        State = State with
+        {
+            VoiceId = NormalizeVoiceId(first.EffectiveVoiceId ?? _preferences.KokoroProfileId),
+            WarningCode = null,
+        };
+        return SpokenOutputPreparation.Prepared(new SegmentedPreparedSpokenOutput(
+            first,
+            segments,
+            _synthesizer,
+            _player,
+            _operationGate,
+            PlayAsync,
+            _preferences));
     }
 
     public ValueTask DisposeAsync()
@@ -558,6 +586,102 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
             try
             {
                 await _speech.DisposeAsync();
+            }
+            finally
+            {
+                _operationGate.Release();
+            }
+        }
+    }
+
+    private sealed class SegmentedPreparedSpokenOutput : IPreparedSpokenOutput
+    {
+        private readonly string[] _segments;
+        private readonly ISpeechSynthesizer _synthesizer;
+        private readonly ISpeechPlayer _player;
+        private readonly SemaphoreSlim _operationGate;
+        private readonly Func<SynthesizedSpeech, CancellationToken, Task<SpokenOutputPlaybackResult>> _play;
+        private readonly SpokenOutputPreferences _preferences;
+        private SynthesizedSpeech? _first;
+        private int _disposed;
+
+        public SegmentedPreparedSpokenOutput(
+            SynthesizedSpeech first,
+            string[] segments,
+            ISpeechSynthesizer synthesizer,
+            ISpeechPlayer player,
+            SemaphoreSlim operationGate,
+            Func<SynthesizedSpeech, CancellationToken, Task<SpokenOutputPlaybackResult>> play,
+            SpokenOutputPreferences preferences)
+        {
+            _first = first;
+            _segments = segments;
+            _synthesizer = synthesizer;
+            _player = player;
+            _operationGate = operationGate;
+            _play = play;
+            _preferences = preferences;
+        }
+
+        public async Task<SpokenOutputPlaybackResult> PlayAsync(CancellationToken cancellationToken)
+        {
+            var current = _first ?? throw new ObjectDisposedException(nameof(SegmentedPreparedSpokenOutput));
+            _first = null;
+            for (var index = 0; index < _segments.Length; index++)
+            {
+                Task<SynthesizedSpeech>? next = index + 1 < _segments.Length
+                    ? _synthesizer.SynthesizeAsync(
+                        new SpeechSynthesisRequest(_segments[index + 1], _preferences),
+                        cancellationToken)
+                    : null;
+                try
+                {
+                    var played = await _play(current, cancellationToken);
+                    if (played.Kind != SpokenOutputPlaybackKind.Completed)
+                    {
+                        return played;
+                    }
+                }
+                finally
+                {
+                    await current.DisposeAsync();
+                }
+
+                if (next is null)
+                {
+                    return SpokenOutputPlaybackResult.Completed;
+                }
+
+                try
+                {
+                    current = await next;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    return SpokenOutputPlaybackResult.PlaybackFailed;
+                }
+            }
+
+            return SpokenOutputPlaybackResult.Completed;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 1)
+            {
+                return;
+            }
+
+            try
+            {
+                if (_first is not null)
+                {
+                    await _first.DisposeAsync();
+                }
             }
             finally
             {
