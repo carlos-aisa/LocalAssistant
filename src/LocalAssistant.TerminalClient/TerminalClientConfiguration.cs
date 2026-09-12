@@ -75,8 +75,9 @@ internal static class TerminalClientConfiguration
             file,
             environment,
             commandLine.RequestTimeout);
+        var kokoroEndpoint = ResolveOptional("KokoroEndpoint", file, environment);
 
-        var options = Build(baseUrl, provider, scenario, requestTimeout, commandLine.ForcePlain);
+        var options = Build(baseUrl, provider, scenario, requestTimeout, kokoroEndpoint, commandLine.ForcePlain);
         var origins = new Dictionary<string, TerminalClientSettingOrigin>(StringComparer.Ordinal)
         {
             ["BaseUrl"] = baseUrl.Origin,
@@ -84,6 +85,10 @@ internal static class TerminalClientConfiguration
             ["Scenario"] = scenario.Origin,
             ["RequestTimeout"] = requestTimeout.Origin,
         };
+        if (kokoroEndpoint is not null)
+        {
+            origins["KokoroEndpoint"] = kokoroEndpoint.Value.Origin;
+        }
 
         return new TerminalClientConfigurationResult(options, origins);
     }
@@ -115,11 +120,29 @@ internal static class TerminalClientConfiguration
         return new TerminalClientSetting(defaultValue, TerminalClientSettingOrigin.Default);
     }
 
+    private static TerminalClientSetting? ResolveOptional(
+        string key,
+        IConfiguration file,
+        IConfiguration environment)
+    {
+        var environmentValue = environment[key];
+        if (!string.IsNullOrWhiteSpace(environmentValue))
+        {
+            return new TerminalClientSetting(environmentValue, TerminalClientSettingOrigin.EnvironmentVariable);
+        }
+
+        var fileValue = file[key];
+        return string.IsNullOrWhiteSpace(fileValue)
+            ? null
+            : new TerminalClientSetting(fileValue, TerminalClientSettingOrigin.AppSettings);
+    }
+
     private static TerminalClientOptions Build(
         TerminalClientSetting baseUrl,
         TerminalClientSetting provider,
         TerminalClientSetting scenario,
         TerminalClientSetting requestTimeout,
+        TerminalClientSetting? kokoroEndpoint,
         bool forcePlain)
     {
         if (!Uri.TryCreate(baseUrl.Value, UriKind.Absolute, out var baseUri) ||
@@ -153,12 +176,27 @@ internal static class TerminalClientConfiguration
                 requestTimeout.Origin);
         }
 
+        Uri? parsedKokoroEndpoint = null;
+        if (kokoroEndpoint is not null &&
+            (!Uri.TryCreate(kokoroEndpoint.Value.Value, UriKind.Absolute, out parsedKokoroEndpoint) ||
+             parsedKokoroEndpoint.Scheme != Uri.UriSchemeHttp ||
+             !parsedKokoroEndpoint.IsLoopback))
+        {
+            throw InvalidSetting(
+                "Kokoro endpoint must use HTTP and target a loopback host.",
+                "KokoroEndpoint",
+                kokoroEndpoint.Value.Origin);
+        }
+
         return new TerminalClientOptions(
             new Uri(baseUri.AbsoluteUri.TrimEnd('/') + "/", UriKind.Absolute),
             normalizedProvider,
             scenario.Value.Trim(),
             timeout,
-            forcePlain);
+            forcePlain,
+            parsedKokoroEndpoint is null
+                ? null
+                : new Uri(parsedKokoroEndpoint.AbsoluteUri.TrimEnd('/') + "/", UriKind.Absolute));
     }
 
     private static ArgumentException InvalidSetting(

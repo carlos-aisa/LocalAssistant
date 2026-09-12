@@ -5,7 +5,8 @@ public sealed record TerminalClientOptions(
     string Provider,
     string Scenario,
     TimeSpan RequestTimeout,
-    bool ForcePlain = false)
+    bool ForcePlain = false,
+    Uri? KokoroEndpoint = null)
 {
     public static readonly TimeSpan DefaultRequestTimeout = TimeSpan.FromMinutes(4);
 

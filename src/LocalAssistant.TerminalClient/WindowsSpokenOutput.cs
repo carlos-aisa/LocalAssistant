@@ -309,6 +309,15 @@ internal static class SpokenOutputVoiceProjection
 
 internal sealed class SensitiveMemoryStream : MemoryStream
 {
+    public SensitiveMemoryStream()
+    {
+    }
+
+    public SensitiveMemoryStream(byte[] buffer)
+        : base(buffer, writable: true)
+    {
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing && TryGetBuffer(out var buffer))

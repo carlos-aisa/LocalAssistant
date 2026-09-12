@@ -15,7 +15,27 @@ public sealed class TerminalClientConfigurationTests
         Assert.Equal("direct", result.Options.Scenario);
         Assert.Equal(TimeSpan.FromMinutes(4), result.Options.RequestTimeout);
         Assert.False(result.Options.ForcePlain);
+        Assert.Null(result.Options.KokoroEndpoint);
         Assert.All(result.Origins.Values, origin => Assert.Equal(TerminalClientSettingOrigin.Default, origin));
+    }
+
+    [Fact]
+    public void LoadsAnOptionalLoopbackKokoroEndpointFromConfiguration()
+    {
+        var file = Configuration(("TerminalClient:KokoroEndpoint", "http://127.0.0.1:57321"));
+
+        var result = TerminalClientConfiguration.Load([], file, Empty());
+
+        Assert.Equal("http://127.0.0.1:57321/", result.Options.KokoroEndpoint?.ToString());
+        Assert.Equal(TerminalClientSettingOrigin.AppSettings, result.Origins["KokoroEndpoint"]);
+    }
+
+    [Fact]
+    public void RejectsANonLoopbackKokoroEndpoint()
+    {
+        var file = Configuration(("TerminalClient:KokoroEndpoint", "http://example.test:57321"));
+
+        Assert.Throws<ArgumentException>(() => TerminalClientConfiguration.Load([], file, Empty()));
     }
 
     [Fact]

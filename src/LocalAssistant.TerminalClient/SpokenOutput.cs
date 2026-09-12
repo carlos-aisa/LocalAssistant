@@ -91,6 +91,13 @@ internal enum SpokenOutputAvailability
     Ready,
 }
 
+internal enum SpokenOutputProvider
+{
+    Sapi,
+    Kokoro,
+    None,
+}
+
 internal sealed record SpokenOutputPreferences
 {
     public const int MinimumRate = -10;
@@ -102,7 +109,12 @@ internal sealed record SpokenOutputPreferences
         string? voiceId = null,
         int rate = 0,
         int volume = 100,
-        bool isMuted = false)
+        bool isMuted = false,
+        SpokenOutputProvider requestedProvider = SpokenOutputProvider.Sapi,
+        string? kokoroProfileId = "jarvis-es",
+        string kokoroLanguage = "es",
+        int kokoroVolume = 100,
+        bool useSapiFallback = true)
     {
         if (voiceId is not null && string.IsNullOrWhiteSpace(voiceId))
         {
@@ -119,10 +131,23 @@ internal sealed record SpokenOutputPreferences
             throw new ArgumentOutOfRangeException(nameof(volume));
         }
 
+        if (!Enum.IsDefined(requestedProvider) ||
+            (kokoroProfileId is not null && string.IsNullOrWhiteSpace(kokoroProfileId)) ||
+            kokoroLanguage is not ("es" or "en") ||
+            kokoroVolume < MinimumVolume || kokoroVolume > MaximumVolume)
+        {
+            throw new ArgumentException("The Kokoro spoken-output preferences are invalid.");
+        }
+
         VoiceId = voiceId;
         Rate = rate;
         Volume = volume;
         IsMuted = isMuted;
+        RequestedProvider = requestedProvider;
+        KokoroProfileId = kokoroProfileId;
+        KokoroLanguage = kokoroLanguage;
+        KokoroVolume = kokoroVolume;
+        UseSapiFallback = useSapiFallback;
     }
 
     public string? VoiceId { get; }
@@ -132,6 +157,16 @@ internal sealed record SpokenOutputPreferences
     public int Volume { get; }
 
     public bool IsMuted { get; }
+
+    public SpokenOutputProvider RequestedProvider { get; }
+
+    public string? KokoroProfileId { get; }
+
+    public string KokoroLanguage { get; }
+
+    public int KokoroVolume { get; }
+
+    public bool UseSapiFallback { get; }
 
     public static SpokenOutputPreferences Default { get; } = new();
 }

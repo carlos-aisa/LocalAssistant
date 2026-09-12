@@ -121,7 +121,7 @@ public sealed class DpapiPrivateClientCredentialStore :
     IPrivateClientCredentialStore,
     IPrivateClientSpokenOutputPreferencesStore
 {
-    private const int CurrentSchemaVersion = 2;
+    private const int CurrentSchemaVersion = 3;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly string _statePath;
     private readonly IPrivateClientStateProtector _protector;
@@ -299,7 +299,7 @@ public sealed class DpapiPrivateClientCredentialStore :
                         SpokenOutputPreferences.Default);
             }
 
-            if (state.SchemaVersion != CurrentSchemaVersion ||
+            if (state.SchemaVersion is not (2 or CurrentSchemaVersion) ||
                 string.IsNullOrWhiteSpace(state.ProtectedPayload))
             {
                 return null;
@@ -316,7 +316,14 @@ public sealed class DpapiPrivateClientCredentialStore :
                 payload.VoiceId,
                 payload.Rate,
                 payload.Volume,
-                payload.IsMuted);
+                payload.IsMuted,
+                state.SchemaVersion == CurrentSchemaVersion
+                    ? payload.RequestedProvider ?? SpokenOutputProvider.Sapi
+                    : SpokenOutputProvider.Sapi,
+                payload.KokoroProfileId ?? "jarvis-es",
+                payload.KokoroLanguage ?? "es",
+                payload.KokoroVolume ?? SpokenOutputPreferences.MaximumVolume,
+                payload.UseSapiFallback ?? true);
             return new StoredState(
                 new PrivateClientCredential(state.ClientId, payload.Credential, state.LastConversationId),
                 preferences);
@@ -351,7 +358,12 @@ public sealed class DpapiPrivateClientCredentialStore :
                     preferences.VoiceId,
                     preferences.Rate,
                     preferences.Volume,
-                    preferences.IsMuted),
+                    preferences.IsMuted,
+                    preferences.RequestedProvider,
+                    preferences.KokoroProfileId,
+                    preferences.KokoroLanguage,
+                    preferences.KokoroVolume,
+                    preferences.UseSapiFallback),
                 JsonOptions);
             payloadBytes = Encoding.UTF8.GetBytes(payloadJson);
             protectedBytes = _protector.Protect(payloadBytes);
@@ -442,7 +454,12 @@ public sealed class DpapiPrivateClientCredentialStore :
         string? VoiceId,
         int Rate,
         int Volume,
-        bool IsMuted);
+        bool IsMuted,
+        SpokenOutputProvider? RequestedProvider = null,
+        string? KokoroProfileId = null,
+        string? KokoroLanguage = null,
+        int? KokoroVolume = null,
+        bool? UseSapiFallback = null);
 
     private sealed record StoredState(
         PrivateClientCredential Credential,
