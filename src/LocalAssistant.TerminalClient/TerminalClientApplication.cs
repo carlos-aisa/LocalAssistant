@@ -648,7 +648,7 @@ public sealed class TerminalClientApplication
         var parts = input.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts[0].Equals("/help", StringComparison.OrdinalIgnoreCase))
         {
-            _console.WriteLine("Commands: /new, /conversations, /info, /provider fake|ollama, /voice, /rate, /volume, /mute, /unmute, /stop, /repeat, /admin rotate, /admin revoke, /exit");
+            _console.WriteLine("Commands: /new, /conversations, /info, /provider fake|ollama, /speech-provider sapi|kokoro|none, /voice, /rate, /volume, /mute, /unmute, /stop, /repeat, /admin rotate, /admin revoke, /exit");
             return new(true, 0, accessToken, provider, conversationId);
         }
 
@@ -662,6 +662,33 @@ public sealed class TerminalClientApplication
         if (parts[0].Equals("/voice", StringComparison.OrdinalIgnoreCase))
         {
             return await HandleVoiceCommandAsync(input, credential, accessToken, provider, conversationId, cancellationToken);
+        }
+
+        if (parts[0].Equals("/speech-provider", StringComparison.OrdinalIgnoreCase))
+        {
+            if (parts.Length != 2 || !Enum.TryParse<SpokenOutputProvider>(parts[1], true, out var requestedProvider))
+            {
+                _console.WriteLine("Usage: /speech-provider sapi|kokoro|none");
+                return new(true, 0, accessToken, provider, conversationId);
+            }
+
+            var current = _spokenOutput.RequestedPreferences;
+            return await ApplySpokenOutputPreferencesAsync(
+                new SpokenOutputPreferences(
+                    current.VoiceId,
+                    current.Rate,
+                    current.Volume,
+                    current.IsMuted,
+                    requestedProvider,
+                    current.KokoroProfileId,
+                    current.KokoroLanguage,
+                    current.KokoroVolume,
+                    current.UseSapiFallback),
+                credential,
+                accessToken,
+                provider,
+                conversationId,
+                cancellationToken);
         }
 
         if (parts[0].Equals("/rate", StringComparison.OrdinalIgnoreCase) ||

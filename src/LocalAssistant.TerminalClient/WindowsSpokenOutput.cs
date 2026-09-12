@@ -7,11 +7,13 @@ namespace LocalAssistant.TerminalClient;
 
 internal static class WindowsSpokenOutputFactory
 {
-    public static ISpokenOutputCoordinator Create(SpokenOutputPreferences preferences)
+    public static ISpokenOutputCoordinator Create(
+        SpokenOutputPreferences preferences,
+        KokoroSpeechClient? kokoroClient = null)
     {
         ArgumentNullException.ThrowIfNull(preferences);
         return OperatingSystem.IsWindows()
-            ? CreateForWindows(preferences)
+            ? CreateForWindows(preferences, kokoroClient)
             : new UnavailableSpokenOutputCoordinator(preferences);
     }
 
@@ -46,13 +48,17 @@ internal static class WindowsSpokenOutputFactory
     }
 
     [SupportedOSPlatform("windows")]
-    private static ISpokenOutputCoordinator CreateForWindows(SpokenOutputPreferences preferences) =>
+    private static ISpokenOutputCoordinator CreateForWindows(
+        SpokenOutputPreferences preferences,
+        KokoroSpeechClient? kokoroClient) =>
         Select(
             preferences,
             isWindows: true,
             WindowsSpeechSynthesizer.HasEnabledVoices,
             () => new SpokenOutputCoordinator(
-                new WindowsSpeechSynthesizer(),
+                new ProviderSelectingSpeechSynthesizer(
+                    new WindowsSpeechSynthesizer(),
+                    kokoroClient is null ? null : new KokoroSpeechSynthesizer(kokoroClient)),
                 new WindowsSpeechPlayer(),
                 SpokenOutputAvailability.Ready,
                 preferences));

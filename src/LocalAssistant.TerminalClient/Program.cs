@@ -309,6 +309,9 @@ internal static class TerminalClientProgram
         CancellationToken cancellationToken)
     {
         using var httpClient = CreateHttpClient(options);
+        using var kokoroHttpClient = options.KokoroEndpoint is null
+            ? null
+            : CreateKokoroHttpClient(options.KokoroEndpoint);
         var console = new SystemTerminalConsole();
         var application = new TerminalClientApplication(
             new PrivateApiClient(httpClient),
@@ -316,7 +319,7 @@ internal static class TerminalClientProgram
             options,
             new DpapiPrivateClientCredentialStore(),
             new TerminalClientStateTextSink(console),
-            WindowsSpokenOutputFactory.Create(SpokenOutputPreferences.Default));
+            CreateSpokenOutput(options, kokoroHttpClient));
         return await application.RunAsync(cancellationToken);
     }
 
@@ -326,6 +329,9 @@ internal static class TerminalClientProgram
         CancellationToken cancellationToken)
     {
         using var httpClient = CreateHttpClient(options);
+        using var kokoroHttpClient = options.KokoroEndpoint is null
+            ? null
+            : CreateKokoroHttpClient(options.KokoroEndpoint);
         var console = new TerminalClientTuiConsoleAdapter();
         var stateSink = new TerminalClientTuiStateSink();
         var application = new TerminalClientApplication(
@@ -334,7 +340,7 @@ internal static class TerminalClientProgram
             options,
             new DpapiPrivateClientCredentialStore(),
             stateSink,
-            WindowsSpokenOutputFactory.Create(SpokenOutputPreferences.Default));
+            CreateSpokenOutput(options, kokoroHttpClient));
         return await new TerminalClientTuiHost(console, stateSink, driver)
             .RunAsync(application, cancellationToken);
     }
@@ -344,4 +350,30 @@ internal static class TerminalClientProgram
         BaseAddress = options.BaseUri,
         Timeout = options.RequestTimeout,
     };
+
+    internal static HttpClient CreateKokoroHttpClient(Uri endpoint) => new(new HttpClientHandler
+    {
+        AllowAutoRedirect = false,
+    })
+    {
+        BaseAddress = endpoint,
+        Timeout = Timeout.InfiniteTimeSpan,
+    };
+
+    private static ISpokenOutputCoordinator CreateSpokenOutput(
+        TerminalClientOptions options,
+        HttpClient? kokoroHttpClient)
+    {
+        if (options.KokoroEndpoint is null || kokoroHttpClient is null)
+        {
+            return WindowsSpokenOutputFactory.Create(SpokenOutputPreferences.Default);
+        }
+
+        var secretStore = new KokoroSharedSecretStore();
+        var client = new KokoroSpeechClient(
+            kokoroHttpClient,
+            secretStore.Read,
+            KokoroServiceOptions.Create(options.KokoroEndpoint));
+        return WindowsSpokenOutputFactory.Create(SpokenOutputPreferences.Default, client);
+    }
 }
