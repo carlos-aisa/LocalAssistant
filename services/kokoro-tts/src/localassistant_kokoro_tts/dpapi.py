@@ -50,6 +50,17 @@ def decode_secret_envelope(data: bytes, unprotect: Callable[[bytes], bytes]) -> 
     return secret
 
 
+def encode_secret_envelope(secret: bytes, protect: Callable[[bytes], bytes]) -> bytes:
+    if len(secret) != 32:
+        raise ValueError("The Kokoro shared secret must have exactly 32 bytes.")
+
+    protected = protect(secret)
+    if not protected or len(protected) > 1_048_576:
+        raise ValueError("The protected Kokoro shared secret is invalid.")
+
+    return _MAGIC + struct.pack("<HBI", _VERSION, _CURRENT_USER_SCOPE, len(protected)) + protected
+
+
 def _unprotect_current_user(protected: bytes) -> bytes:
     if os.name != "nt":
         raise RuntimeError("The shared DPAPI secret is available only on Windows.")
@@ -82,6 +93,47 @@ def _unprotect_current_user(protected: bytes) -> bytes:
         ctypes.byref(output_blob),
     ):
         raise OSError(ctypes.get_last_error(), "CryptUnprotectData failed.")
+
+    try:
+        return ctypes.string_at(output_blob.pbData, output_blob.cbData)
+    finally:
+        ctypes.memset(output_blob.pbData, 0, output_blob.cbData)
+        assert _LOCAL_FREE is not None
+        _LOCAL_FREE(output_blob.pbData)
+
+
+def protect_current_user(secret: bytes) -> bytes:
+    if os.name != "nt":
+        raise RuntimeError("The shared DPAPI secret is available only on Windows.")
+
+    class DataBlob(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_byte))]
+
+    crypt_protect_data = ctypes.windll.crypt32.CryptProtectData
+    crypt_protect_data.argtypes = [
+        ctypes.POINTER(DataBlob),
+        wintypes.LPCWSTR,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(DataBlob),
+    ]
+    crypt_protect_data.restype = wintypes.BOOL
+
+    source = (ctypes.c_byte * len(secret)).from_buffer_copy(secret)
+    input_blob = DataBlob(len(secret), source)
+    output_blob = DataBlob()
+    if not crypt_protect_data(
+        ctypes.byref(input_blob),
+        None,
+        None,
+        None,
+        None,
+        _CRYPTPROTECT_UI_FORBIDDEN,
+        ctypes.byref(output_blob),
+    ):
+        raise OSError(ctypes.get_last_error(), "CryptProtectData failed.")
 
     try:
         return ctypes.string_at(output_blob.pbData, output_blob.cbData)

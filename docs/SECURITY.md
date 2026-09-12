@@ -101,12 +101,11 @@ inalcanzabilidad solo orienta a arrancarla manualmente. El script de smoke test
 ausencia de archivos de audio y de claves sensibles en la parte legible del estado
 local antes de considerarse superado.
 
-### TTS neuronal local (evolución futura, no adoptada)
+### TTS neuronal local (Kokoro CPU, validación operativa pendiente)
 
-Un proveedor neuronal local de TTS —candidato actual Chatterbox Multilingual, decisión
-no tomada— añadiría un servicio o proceso local que carga un modelo y sintetiza voz. No
-sustituye a SAPI, que permanece como implementación real y fallback. Sus condiciones de
-seguridad, aún no implementadas:
+Kokoro CPU se ejecuta como servicio Python manual y exclusivo de loopback. No sustituye
+a SAPI, que permanece como fallback explícito. La aceptación operativa requiere el
+smoke offline y el runbook Windows antes de declararlo listo.
 
 - **Contexto mínimo.** El texto a sintetizar puede contener información privada. El
   servicio recibe solo el texto ya autorizado, el idioma, un identificador lógico de voz

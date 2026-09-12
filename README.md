@@ -584,10 +584,11 @@ salida de `/voice` distingue siempre la voz solicitada de la voz efectiva. Las
 dependencias `System.Speech` 8.0.0 y `System.Windows.Extensions` 8.0.0 son paquetes
 Microsoft bajo licencia MIT; Piper continúa fuera de este incremento.
 
-SAPI es la implementación real actual. Un proveedor neuronal local de TTS —candidato
-Chatterbox Multilingual— es evolución futura, opcional y sujeta a validación técnica y
-operativa; no está adoptada, no retira SAPI y no forma parte del cierre de la Fase 5.
-El detalle está en `docs/ROADMAP.md`, `docs/ARCHITECTURE.md` y `docs/SECURITY.md`.
+SAPI permanece como fallback explícito. Kokoro CPU está implementado como proveedor
+neuronal local opcional mediante un proceso Python manual de loopback, con pesos ya
+preparados, eSpeak NG y un secreto DPAPI distinto del bearer del cliente. No modifica
+la API conversacional ni inicia, instala o reinicia procesos automáticamente. Su
+aceptación operativa sigue pendiente del smoke offline y del runbook Windows.
 
 La reproducción de audio real se comprobó manualmente en Windows y quedó registrada en
 `docs/evaluations/2026-09-09-windows-tts-manual-validation.md`. Las pruebas

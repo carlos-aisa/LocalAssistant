@@ -4,7 +4,7 @@ import struct
 
 import pytest
 
-from localassistant_kokoro_tts.dpapi import decode_secret_envelope
+from localassistant_kokoro_tts.dpapi import decode_secret_envelope, encode_secret_envelope
 
 
 def test_strict_envelope_passes_only_the_protected_payload_to_dpapi() -> None:
@@ -37,3 +37,19 @@ def test_strict_envelope_rejects_unprotected_secret_with_wrong_length() -> None:
 
     with pytest.raises(ValueError):
         decode_secret_envelope(envelope, lambda _: b"wrong")
+
+
+def test_encode_and_decode_share_the_strict_binary_envelope() -> None:
+    secret = bytes(range(32))
+
+    envelope = encode_secret_envelope(secret, lambda value: value[::-1])
+
+    assert decode_secret_envelope(envelope, lambda value: value[::-1]) == secret
+
+
+def test_encode_rejects_an_invalid_clear_or_protected_secret() -> None:
+    with pytest.raises(ValueError):
+        encode_secret_envelope(b"too short", lambda value: value)
+
+    with pytest.raises(ValueError):
+        encode_secret_envelope(bytes(range(32)), lambda _: b"")

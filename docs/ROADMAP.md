@@ -323,7 +323,7 @@ anticipada de proveedor, motor o ubicación de síntesis.
 
 ### Evolución del TTS local hacia un proveedor neuronal (posterior al cierre de la Fase 5)
 
-**Estado:** el TTS real implementado es **SAPI** (`System.Speech`, incremento 7). Lo
+**Estado:** el TTS real implementado es **SAPI** (`System.Speech`, incremento 7). Kokoro CPU está implementado como proveedor opcional, pero su aceptación operativa sigue pendiente del smoke offline y del runbook Windows. Lo
 que sigue es evolución **opcional y no bloqueante**: no forma parte del cierre de la
 Fase 5 (el incremento 8 la cierra), no bloquea la Fase 6 y no retira SAPI. El motor
 neuronal concreto **está por decidir**; se usa provisionalmente **Chatterbox

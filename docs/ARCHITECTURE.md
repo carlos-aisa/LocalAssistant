@@ -1029,7 +1029,7 @@ payload DPAPI. No construye `TerminalClientApplication` ni abre sesión. `--vers
 `--help` completan el cierre operativo. El cliente sigue sin poder arrancar, alojar ni
 supervisar la API.
 
-#### Proveedor neuronal local de TTS (evolución futura, no adoptada)
+#### Proveedor neuronal local de TTS (Kokoro CPU, validación operativa pendiente)
 
 El plano de salida hablada ya está estructurado para admitir otro sintetizador sin
 cambiar el plano de conversación. `SpokenOutputCoordinator` depende de `ISpeechSynthesizer`,

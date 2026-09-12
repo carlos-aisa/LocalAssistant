@@ -7,7 +7,9 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import hmac
 import logging
+import os
 import re
+import shutil
 import subprocess
 import uuid
 
@@ -276,8 +278,12 @@ def _validate_speech_request(
 
 
 def _get_espeak_version() -> str:
+    executable = _find_espeak_executable()
+    if executable is None:
+        return ""
+
     result = subprocess.run(
-        ["espeak-ng", "--version"],
+        [executable, "--version"],
         capture_output=True,
         check=False,
         text=True,
@@ -286,6 +292,30 @@ def _get_espeak_version() -> str:
     if result.returncode != 0:
         return ""
     return result.stdout.strip()
+
+
+def _find_espeak_executable() -> str | None:
+    from_path = shutil.which("espeak-ng")
+    if from_path is not None:
+        return from_path
+
+    if os.name != "nt":
+        return None
+
+    program_files_directories = (
+        os.environ.get("ProgramW6432"),
+        os.environ.get("ProgramFiles"),
+        os.environ.get("ProgramFiles(x86)"),
+    )
+    for program_files_directory in program_files_directories:
+        if not program_files_directory:
+            continue
+
+        candidate = os.path.join(program_files_directory, "eSpeak NG", "espeak-ng.exe")
+        if os.path.isfile(candidate):
+            return candidate
+
+    return None
 
 
 def _is_supported_espeak_version(version: str) -> bool:

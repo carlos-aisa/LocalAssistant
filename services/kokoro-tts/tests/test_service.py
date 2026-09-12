@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+from pathlib import Path
+import subprocess
 import threading
 import wave
 
@@ -11,6 +13,7 @@ from aiohttp.test_utils import TestServer
 import pytest
 
 from localassistant_kokoro_tts.config import ServiceConfig
+from localassistant_kokoro_tts import service
 from localassistant_kokoro_tts.service import KokoroTtsService, StaticSecretProvider
 
 
@@ -265,6 +268,33 @@ async def test_unsupported_espeak_version_degrades_service() -> None:
     finally:
         engine.allow_load.set()
         await _close(session, server)
+
+
+def test_espeak_probe_uses_default_windows_installation_when_not_on_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    program_files = tmp_path / "Program Files"
+    executable = program_files / "eSpeak NG" / "espeak-ng.exe"
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+
+    monkeypatch.setattr(service.os, "name", "nt")
+    monkeypatch.setenv("ProgramW6432", str(program_files))
+    monkeypatch.delenv("ProgramFiles", raising=False)
+    monkeypatch.delenv("ProgramFiles(x86)", raising=False)
+    monkeypatch.setattr(service.shutil, "which", lambda _: None)
+
+    captured_command: list[str] = []
+
+    def run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        captured_command.extend(command)
+        return subprocess.CompletedProcess(command, 0, stdout="eSpeak NG 1.52.0")
+
+    monkeypatch.setattr(service.subprocess, "run", run)
+
+    assert service._get_espeak_version() == "eSpeak NG 1.52.0"
+    assert captured_command == [str(executable), "--version"]
 
 
 async def test_load_timeout_is_degraded_without_waiting_for_the_worker() -> None:
