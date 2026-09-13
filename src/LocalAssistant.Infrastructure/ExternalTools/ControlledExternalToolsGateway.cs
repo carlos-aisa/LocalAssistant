@@ -13,6 +13,7 @@ public sealed class ControlledExternalToolsGateway : IExternalToolsGateway, IDis
     private readonly IEgressPolicy _egressPolicy;
     private readonly ILogger<ControlledExternalToolsGateway> _logger;
     private readonly ExternalToolsGatewayOptions _options;
+    private readonly IExternalToolsGatewayDeadlineFactory _deadlineFactory;
     private readonly SemaphoreSlim _concurrency;
     private int _disposed;
 
@@ -20,15 +21,18 @@ public sealed class ControlledExternalToolsGateway : IExternalToolsGateway, IDis
         IEnumerable<IExternalToolAdapter> adapters,
         IEgressPolicy egressPolicy,
         ILogger<ControlledExternalToolsGateway> logger,
-        IOptions<ExternalToolsGatewayOptions> options)
+        IOptions<ExternalToolsGatewayOptions> options,
+        IExternalToolsGatewayDeadlineFactory deadlineFactory)
     {
         ArgumentNullException.ThrowIfNull(adapters);
         ArgumentNullException.ThrowIfNull(egressPolicy);
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(deadlineFactory);
         _egressPolicy = egressPolicy;
         _logger = logger;
         _options = options.Value;
+        _deadlineFactory = deadlineFactory;
         if (_options.TotalTimeout <= TimeSpan.Zero ||
             _options.MaximumConcurrentOperations <= 0 ||
             _options.MaximumNormalizedResultBytes <= 0)
@@ -105,19 +109,29 @@ public sealed class ControlledExternalToolsGateway : IExternalToolsGateway, IDis
                 field => field.Value.Clone(),
                 StringComparer.Ordinal);
 
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(_options.TotalTimeout);
+            using var deadline = _deadlineFactory.Create(_options.TotalTimeout);
+            using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                deadline.Token);
 
             Task<ExternalToolAdapterResult> execution;
             try
             {
                 execution = adapter.ExecuteAsync(
                     new ExternalToolPayload(request.Operation, payloadFields),
-                    timeout.Token).AsTask();
+                    operationCancellation.Token).AsTask();
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested)
             {
                 return Failure(request, "external_gateway_timeout", start, decision);
+            }
+            catch (OperationCanceledException)
+            {
+                return AdapterFailed(request, adapter, start, decision, "OperationCanceledException");
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -132,17 +146,21 @@ public sealed class ControlledExternalToolsGateway : IExternalToolsGateway, IDis
             ExternalToolAdapterResult adapterResult;
             try
             {
-                adapterResult = await execution.WaitAsync(timeout.Token);
+                adapterResult = await execution.WaitAsync(operationCancellation.Token);
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                RetainConcurrencyUntilCompleted(execution, ref releaseConcurrency);
+                throw;
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested)
             {
                 RetainConcurrencyUntilCompleted(execution, ref releaseConcurrency);
                 return Failure(request, "external_gateway_timeout", start, decision);
             }
             catch (OperationCanceledException)
             {
-                RetainConcurrencyUntilCompleted(execution, ref releaseConcurrency);
-                throw;
+                return AdapterFailed(request, adapter, start, decision, "OperationCanceledException");
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -168,8 +186,19 @@ public sealed class ControlledExternalToolsGateway : IExternalToolsGateway, IDis
                 return Failure(request, "external_adapter_failed", start, decision);
             }
 
-            var normalizedContent = adapterResult.Content.Value.Clone();
-            var normalizedBytes = JsonSerializer.SerializeToUtf8Bytes(normalizedContent);
+            JsonElement normalizedContent;
+            byte[] normalizedBytes;
+            try
+            {
+                normalizedContent = adapterResult.Content.Value.Clone();
+                normalizedBytes = JsonSerializer.SerializeToUtf8Bytes(normalizedContent);
+            }
+            catch (Exception exception) when (
+                exception is ArgumentException or InvalidOperationException or JsonException)
+            {
+                return AdapterFailed(request, adapter, start, decision, exception.GetType().Name);
+            }
+
             if (normalizedBytes.Length > _options.MaximumNormalizedResultBytes)
             {
                 return Failure(request, "external_result_too_large", start, decision);
@@ -203,6 +232,21 @@ public sealed class ControlledExternalToolsGateway : IExternalToolsGateway, IDis
     {
         LogOutcome(request, errorCode, start);
         return new ExternalToolGatewayResult(false, null, errorCode, decision);
+    }
+
+    private ExternalToolGatewayResult AdapterFailed(
+        ExternalToolRequest request,
+        IExternalToolAdapter adapter,
+        long start,
+        EgressDecision decision,
+        string exceptionType)
+    {
+        ExternalToolsGatewayLog.AdapterFailed(
+            _logger,
+            adapter.Name,
+            request.Operation,
+            exceptionType);
+        return Failure(request, "external_adapter_failed", start, decision);
     }
 
     private void LogOutcome(ExternalToolRequest request, string resultCode, long start)
@@ -275,13 +319,27 @@ public sealed class ControlledExternalToolsGateway : IExternalToolsGateway, IDis
     private static void ValidateAdapter(IExternalToolAdapter adapter)
     {
         ArgumentNullException.ThrowIfNull(adapter);
-        if (string.IsNullOrWhiteSpace(adapter.Name) ||
-            string.IsNullOrWhiteSpace(adapter.Destination) ||
+        if (!IsSafeMetadataValue(adapter.Name, 64, requireIdentifier: true) ||
+            !IsSafeMetadataValue(adapter.Destination, 512, requireIdentifier: false) ||
             adapter.SupportedOperations.Count == 0 ||
-            adapter.SupportedOperations.Any(string.IsNullOrWhiteSpace))
+            adapter.SupportedOperations.Any(operation => !IsSafeMetadataValue(operation, 64, requireIdentifier: true)))
         {
             throw new ArgumentException("External tool adapter metadata is invalid.", nameof(adapter));
         }
+    }
+
+    private static bool IsSafeMetadataValue(string? value, int maximumLength, bool requireIdentifier)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > maximumLength ||
+            value.Any(char.IsControl))
+        {
+            return false;
+        }
+
+        return !requireIdentifier || value.All(character =>
+            char.IsAsciiLetterLower(character) ||
+            char.IsAsciiDigit(character) ||
+            character is '_' or '-');
     }
 }
 

@@ -56,9 +56,12 @@ tipadas solo si tienen consumidor, pruebas de composición y gateway.
 
 1. Añadir y validar al arranque las opciones consumidas por el gateway: timeout total
    (100 ms a 30 s), límite de concurrencia (1 a 4) y tamaño máximo del resultado
-   normalizado (1 KiB a 128 KiB). Registrar
+   normalizado (1 KiB a 128 KiB). Validar además que el timeout del gateway sea
+   estrictamente menor que `Orchestration.ToolTimeout`; la configuración predeterminada
+   será ocho segundos frente a diez. Registrar
    `DefaultEgressPolicy` e `IExternalToolsGateway` en DI con allowlist vacía.
-2. Endurecer validación de metadatos de adaptador y preservar política antes de payload.
+2. Endurecer validación de metadatos de adaptador (longitud acotada, sin controles y
+   formato seguro para nombre y operaciones) y preservar política antes de payload.
    Solo podrán seleccionarse adaptadores registrados y operaciones declaradas; la
    petición no contiene destino.
 3. No registrar `HttpClient`, transporte genérico ni adaptador HTTP de producción.
@@ -66,9 +69,12 @@ tipadas solo si tienen consumidor, pruebas de composición y gateway.
    expresamente para 6.2.
 4. Aplicar concurrencia sin cola ilimitada: si no se obtiene permiso, devolver
    `external_gateway_busy`; aplicar el timeout total con un token enlazado y propagar la
-   cancelación solicitada. Si un adaptador ignora su token, conservar el permiso hasta
+   cancelación solicitada. Distinguir el CTS propio de deadline: solo su vencimiento
+   devuelve `external_gateway_timeout`; una cancelación propia del adaptador es
+   `external_adapter_failed`. Si un adaptador ignora su token, conservar el permiso hasta
    que termine aunque ya se haya devuelto timeout. Normalizar y medir el resultado antes
-   de devolverlo, con `external_result_too_large` al superar el límite.
+   de devolverlo, con `external_result_too_large` al superar el límite y
+   `external_adapter_failed` para una forma de éxito inconsistente.
 5. Implementar auditoría segura de decisión, duración y resultado sin valores ni
    mensajes completos de excepción.
 
@@ -77,7 +83,8 @@ adaptador; política denegada no llama al adaptador; campos duplicados, adaptado
 registrado y operación no declarada se rechazan; timeout total propio devuelve su código,
 la cancelación del solicitante se propaga, el exceso de concurrencia no se encola, el
 tamaño del resultado normalizado se limita y los errores/auditoría son seguros. Todo se
-prueba mediante dobles deterministas.
+prueba mediante dobles deterministas. Una prueba de integración por el orquestador
+demuestra que el deadline del gateway se observa antes del timeout exterior.
 
 ## Lote 4 — Integración controlada de demostración
 

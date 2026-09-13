@@ -65,14 +65,20 @@ El gateway recibe unas opciones tipadas y validadas que sí tienen consumidor en
 tiempo máximo total de operación, máximo de operaciones simultáneas y máximo de bytes
 del resultado normalizado. La composición de producción acepta respectivamente de 100 ms
 a 30 s, de 1 a 4 operaciones y de 1 KiB a 128 KiB; todos se validan al arrancar. El
+timeout del gateway debe ser estrictamente menor que `Orchestration.ToolTimeout` para
+que una operación externa lenta conserve el código `external_gateway_timeout` en vez de
+competir con el límite exterior del orquestador. La configuración predeterminada usa
+ocho segundos frente a los diez del orquestador.
 gateway toma un permiso sin espera; si no hay uno disponible devuelve
 `external_gateway_busy`, por lo que no introduce una cola ilimitada. Con el permiso,
 crea un token enlazado con vencimiento total y lo propaga al adaptador. Una cancelación
-del solicitante se propaga sin traducirse; un vencimiento propio se traduce a
-`external_gateway_timeout`. Si un adaptador ignora el token, el gateway devuelve ese
+del solicitante se propaga sin traducirse; solo el vencimiento de su CTS de deadline se
+traduce a `external_gateway_timeout`; una cancelación autónoma del adaptador se traduce
+a `external_adapter_failed`. Si un adaptador ignora el token, el gateway devuelve ese
 timeout pero conserva su permiso de concurrencia hasta que el adaptador termina; no se
 permite exceder el límite real. Antes de devolver el resultado, serializa su forma
-normalizada en UTF-8 y rechaza un exceso con `external_result_too_large`.
+normalizada en UTF-8 y rechaza un exceso con `external_result_too_large`; una forma de
+éxito inconsistente o no serializable se traduce también a `external_adapter_failed`.
 
 La configuración tipada del futuro adaptador HTTP se reservará para 6.2; no se crean
 opciones muertas ni clientes HTTP sin consumidor. Host fijo, redirecciones, límites de

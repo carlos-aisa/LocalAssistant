@@ -111,6 +111,7 @@ builder.Services.AddSingleton<IToolAuditSink, InMemoryToolAuditSink>();
 builder.Services.AddSingleton<IReminderStore, InMemoryReminderStore>();
 builder.Services.AddSingleton<IToolRiskPolicy, DefaultToolRiskPolicy>();
 builder.Services.AddSingleton<IEgressPolicy, DefaultEgressPolicy>();
+builder.Services.AddSingleton<IExternalToolsGatewayDeadlineFactory, TimeProviderExternalToolsGatewayDeadlineFactory>();
 builder.Services.AddSingleton<IExternalToolsGateway, ControlledExternalToolsGateway>();
 builder.Services.AddSingleton<IInstallationIdentityStore, FileInstallationIdentityStore>();
 builder.Services.AddSingleton<IPrivateClientAuthenticationStore>(services =>
@@ -176,6 +177,9 @@ builder.Services.AddOptions<ExternalToolsGatewayOptions>()
                    options.MaximumConcurrentOperations is > 0 and <= 4 &&
                    options.MaximumNormalizedResultBytes is >= 1_024 and <= 128 * 1_024,
         "External tools gateway limits must be within their supported ranges.")
+    .Validate<IOptions<OrchestrationOptions>>(
+        (gateway, orchestration) => gateway.TotalTimeout < orchestration.Value.ToolTimeout,
+        "External tools gateway timeout must be less than the orchestration tool timeout.")
     .ValidateOnStart();
 builder.Services.AddOptions<OllamaOptions>()
     .Bind(builder.Configuration.GetSection("LocalAssistant:Ollama"))

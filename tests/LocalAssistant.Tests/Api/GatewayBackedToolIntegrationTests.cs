@@ -8,6 +8,7 @@ using LocalAssistant.Infrastructure.ExternalTools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace LocalAssistant.Tests.Api;
 
@@ -25,6 +26,17 @@ public sealed class GatewayBackedToolIntegrationTests
         Assert.IsType<ControlledExternalToolsGateway>(gateway);
         Assert.Empty(adapters);
         Assert.DoesNotContain(tools.Tools, tool => tool is GatewayBackedTool);
+    }
+
+    [Fact]
+    public void ProductionCompositionRejectsAGatewayTimeoutThatCanRaceTheToolTimeout()
+    {
+        using var factory = new LocalAssistantApiFactory().WithWebHostBuilder(builder =>
+            builder.UseSetting("LocalAssistant:ExternalToolsGateway:TotalTimeout", "00:00:10"));
+
+        var exception = Assert.Throws<OptionsValidationException>(() => _ = factory.Services);
+
+        Assert.Contains("must be less than the orchestration tool timeout", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -46,7 +58,8 @@ public sealed class GatewayBackedToolIntegrationTests
                         serviceProvider.GetRequiredService<IEgressPolicy>(),
                         NullLogger<ControlledExternalToolsGateway>.Instance,
                         Microsoft.Extensions.Options.Options.Create(
-                            new ExternalToolsGatewayOptions())));
+                            new ExternalToolsGatewayOptions()),
+                        serviceProvider.GetRequiredService<IExternalToolsGatewayDeadlineFactory>()));
                 services.AddSingleton<ITool>(serviceProvider => new GatewayBackedTool(
                     new GatewayTimeOperation(),
                     serviceProvider.GetRequiredService<IExternalToolsGateway>()));
@@ -78,6 +91,69 @@ public sealed class GatewayBackedToolIntegrationTests
             body.RootElement.GetProperty("content").GetString());
     }
 
+    [Fact]
+    public async Task GatewayDeadlineWinsBeforeTheOuterToolTimeoutForABlockedAdapter()
+    {
+        using var deadlineFactory = new ManualDeadlineFactory();
+        var adapter = new BlockingGatewayTestAdapter();
+        using var factory = new LocalAssistantApiFactory().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<ITool>();
+                services.RemoveAll<IToolRegistry>();
+                services.RemoveAll<IExternalToolAdapter>();
+                services.RemoveAll<IExternalToolsGateway>();
+                services.RemoveAll<IExternalToolsGatewayDeadlineFactory>();
+
+                services.AddSingleton<IExternalToolAdapter>(adapter);
+                services.AddSingleton<IExternalToolsGatewayDeadlineFactory>(deadlineFactory);
+                services.AddSingleton<IExternalToolsGateway>(serviceProvider =>
+                    new ControlledExternalToolsGateway(
+                        serviceProvider.GetServices<IExternalToolAdapter>(),
+                        serviceProvider.GetRequiredService<IEgressPolicy>(),
+                        NullLogger<ControlledExternalToolsGateway>.Instance,
+                        Microsoft.Extensions.Options.Options.Create(
+                            new ExternalToolsGatewayOptions { TotalTimeout = TimeSpan.FromSeconds(8) }),
+                        serviceProvider.GetRequiredService<IExternalToolsGatewayDeadlineFactory>()));
+                services.AddSingleton<ITool>(serviceProvider => new GatewayBackedTool(
+                    new GatewayTimeOperation(adapter.Name),
+                    serviceProvider.GetRequiredService<IExternalToolsGateway>()));
+                services.AddSingleton<IToolRegistry>(serviceProvider =>
+                    new ToolRegistry(serviceProvider.GetServices<ITool>()));
+            });
+        });
+        using var client = factory.CreateClient();
+
+        var request = client.PostAsJsonAsync(
+            "/api/conversations/messages",
+            new
+            {
+                message = "Run the time scenario.",
+                provider = "fake",
+                scenario = "time",
+            },
+            CancellationToken.None);
+        await adapter.Started.Task;
+        deadlineFactory.CancelCurrentDeadline();
+
+        try
+        {
+            using var response = await request;
+            using var body = await JsonDocument.ParseAsync(
+                await response.Content.ReadAsStreamAsync(CancellationToken.None),
+                cancellationToken: CancellationToken.None);
+            var tool = Assert.Single(body.RootElement.GetProperty("tools").EnumerateArray());
+
+            Assert.Equal("external_gateway_timeout", tool.GetProperty("errorCode").GetString());
+            Assert.NotEqual("tool_timeout", tool.GetProperty("errorCode").GetString());
+        }
+        finally
+        {
+            adapter.Release();
+        }
+    }
+
     private sealed class GatewayTimeOperation : IGatewayToolOperation
     {
         private static readonly ToolDefinition ToolDefinition = new(
@@ -97,6 +173,13 @@ public sealed class GatewayBackedToolIntegrationTests
                 additionalProperties = false,
             }));
 
+        private readonly string _adapterName;
+
+        public GatewayTimeOperation(string adapterName = "gateway-time-test")
+        {
+            _adapterName = adapterName;
+        }
+
         public ToolDefinition Definition => ToolDefinition;
 
         public ValueTask<ExternalToolRequest?> CreateRequestAsync(
@@ -109,7 +192,7 @@ public sealed class GatewayBackedToolIntegrationTests
             }
 
             return ValueTask.FromResult<ExternalToolRequest?>(new ExternalToolRequest(
-                "gateway-time-test",
+                _adapterName,
                 "get-utc-time",
                 "integration-test",
                 [new ExternalToolField(
@@ -144,5 +227,52 @@ public sealed class GatewayBackedToolIntegrationTests
             CancellationToken cancellationToken) =>
             ValueTask.FromResult(ExternalToolAdapterResult.Success(
                 JsonSerializer.SerializeToElement(new { utc = "2026-08-17T14:30:00Z" })));
+    }
+
+    private sealed class BlockingGatewayTestAdapter : IExternalToolAdapter
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public string Name => "gateway-time-blocked";
+
+        public string Destination => "test://gateway-time";
+
+        public IReadOnlySet<string> SupportedOperations { get; } =
+            new HashSet<string>(["get-utc-time"], StringComparer.Ordinal);
+
+        public async ValueTask<ExternalToolAdapterResult> ExecuteAsync(
+            ExternalToolPayload payload,
+            CancellationToken cancellationToken)
+        {
+            Started.TrySetResult();
+            await _release.Task.ConfigureAwait(false);
+            return ExternalToolAdapterResult.Success(JsonSerializer.SerializeToElement(new { utc = "unused" }));
+        }
+
+        public void Release() => _release.TrySetResult();
+    }
+
+    private sealed class ManualDeadlineFactory : IExternalToolsGatewayDeadlineFactory, IDisposable
+    {
+        private CancellationTokenSource? _deadline;
+
+        public CancellationTokenSource Create(TimeSpan timeout)
+        {
+            _deadline = new CancellationTokenSource();
+            return _deadline;
+        }
+
+        public void CancelCurrentDeadline()
+        {
+            Assert.NotNull(_deadline);
+            _deadline!.Cancel();
+        }
+
+        public void Dispose()
+        {
+            _deadline?.Dispose();
+        }
     }
 }

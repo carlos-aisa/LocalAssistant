@@ -150,19 +150,27 @@ public sealed class ControlledExternalToolsGatewayTests
     [Fact]
     public async Task AppliesTheGatewayTotalTimeoutToAnAdapter()
     {
+        using var deadlineFactory = new ManualDeadlineFactory();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var adapter = new DelegateAdapter(async (_, cancellationToken) =>
         {
+            started.TrySetResult();
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             return ExternalToolAdapterResult.Failure("unreachable");
         });
         var sut = CreateGateway(
             NullLogger<ControlledExternalToolsGateway>.Instance,
-            new ExternalToolsGatewayOptions { TotalTimeout = TimeSpan.FromMilliseconds(50) },
+            new ExternalToolsGatewayOptions(),
+            deadlineFactory,
             adapter);
 
-        var result = await sut.ExecuteAsync(
+        var execution = sut.ExecuteAsync(
             Request(Field("query", "weather", [DataCategory.PublicData])),
-            CancellationToken.None);
+            CancellationToken.None).AsTask();
+        await started.Task;
+        deadlineFactory.CancelCurrentDeadline();
+
+        var result = await execution;
 
         Assert.Equal("external_gateway_timeout", result.ErrorCode);
         Assert.Equal(1, adapter.ExecutionCount);
@@ -171,6 +179,7 @@ public sealed class ControlledExternalToolsGatewayTests
     [Fact]
     public async Task RetainsConcurrencyWhenATimedOutAdapterIgnoresCancellation()
     {
+        using var deadlineFactory = new ManualDeadlineFactory();
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var adapter = new DelegateAdapter(async (_, _) =>
@@ -181,13 +190,15 @@ public sealed class ControlledExternalToolsGatewayTests
         });
         var sut = CreateGateway(
             NullLogger<ControlledExternalToolsGateway>.Instance,
-            new ExternalToolsGatewayOptions { TotalTimeout = TimeSpan.FromMilliseconds(50) },
+            new ExternalToolsGatewayOptions(),
+            deadlineFactory,
             adapter);
 
         var first = sut.ExecuteAsync(
             Request(Field("query", "first", [DataCategory.PublicData])),
             CancellationToken.None).AsTask();
         await started.Task;
+        deadlineFactory.CancelCurrentDeadline();
 
         var timedOut = await first;
         var rejected = await sut.ExecuteAsync(
@@ -315,6 +326,71 @@ public sealed class ControlledExternalToolsGatewayTests
             entry => entry.Contains("sensitive.example.test", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task ConvertsAdapterOwnedCancellationToASafeAdapterFailure()
+    {
+        var adapter = new DelegateAdapter(static (_, _) =>
+            ValueTask.FromCanceled<ExternalToolAdapterResult>(new CancellationToken(canceled: true)));
+        var sut = CreateGateway(adapter);
+
+        var result = await sut.ExecuteAsync(
+            Request(Field("query", "weather", [DataCategory.PublicData])),
+            CancellationToken.None);
+
+        Assert.Equal("external_adapter_failed", result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task ConvertsAnInvalidSuccessfulAdapterResultToASafeAdapterFailure()
+    {
+        var adapter = new DelegateAdapter(static (_, _) => ValueTask.FromResult(
+            new ExternalToolAdapterResult(true, default(JsonElement))));
+        var sut = CreateGateway(adapter);
+
+        var result = await sut.ExecuteAsync(
+            Request(Field("query", "weather", [DataCategory.PublicData])),
+            CancellationToken.None);
+
+        Assert.Equal("external_adapter_failed", result.ErrorCode);
+    }
+
+    [Theory]
+    [InlineData("bad name")]
+    [InlineData("bad\nname")]
+    [InlineData("UPPERCASE")]
+    public void RejectsUnsafeAdapterNames(string name)
+    {
+        Assert.Throws<ArgumentException>(() => CreateGateway(new MetadataAdapter(name, "search")));
+    }
+
+    [Theory]
+    [InlineData("bad operation")]
+    [InlineData("bad\noperation")]
+    [InlineData("UPPERCASE")]
+    public void RejectsUnsafeAdapterOperations(string operation)
+    {
+        Assert.Throws<ArgumentException>(() => CreateGateway(new MetadataAdapter("fake_search", operation)));
+    }
+
+    [Fact]
+    public void RejectsAdapterMetadataContainingControlCharactersOrExcessiveLengths()
+    {
+        Assert.Throws<ArgumentException>(() => CreateGateway(new MetadataAdapter(
+            "fake_search",
+            "search",
+            destination: "https://example.test\u001b")));
+        Assert.Throws<ArgumentException>(() => CreateGateway(new MetadataAdapter(
+            new string('a', 65),
+            "search")));
+        Assert.Throws<ArgumentException>(() => CreateGateway(new MetadataAdapter(
+            "fake_search",
+            new string('a', 65))));
+        Assert.Throws<ArgumentException>(() => CreateGateway(new MetadataAdapter(
+            "fake_search",
+            "search",
+            destination: new string('x', 513))));
+    }
+
     private static ControlledExternalToolsGateway CreateGateway(params IExternalToolAdapter[] adapters) =>
         CreateGateway(
             NullLogger<ControlledExternalToolsGateway>.Instance,
@@ -325,11 +401,19 @@ public sealed class ControlledExternalToolsGatewayTests
         ILogger<ControlledExternalToolsGateway> logger,
         ExternalToolsGatewayOptions options,
         params IExternalToolAdapter[] adapters) =>
+        CreateGateway(logger, options, new TimeProviderExternalToolsGatewayDeadlineFactory(TimeProvider.System), adapters);
+
+    private static ControlledExternalToolsGateway CreateGateway(
+        ILogger<ControlledExternalToolsGateway> logger,
+        ExternalToolsGatewayOptions options,
+        IExternalToolsGatewayDeadlineFactory deadlineFactory,
+        params IExternalToolAdapter[] adapters) =>
         new(
             adapters,
             new DefaultEgressPolicy(),
             logger,
-            Options.Create(options));
+            Options.Create(options),
+            deadlineFactory);
 
     private static ExternalToolRequest Request(params ExternalToolField[] fields) =>
         new("fake-search", "search", "test-purpose", fields);
@@ -365,6 +449,49 @@ public sealed class ControlledExternalToolsGatewayTests
         {
             ExecutionCount++;
             return _execute(payload, cancellationToken);
+        }
+    }
+
+    private sealed class MetadataAdapter : IExternalToolAdapter
+    {
+        public MetadataAdapter(string name, string operation, string? destination = null)
+        {
+            Name = name;
+            Destination = destination ?? "https://search.example.test";
+            SupportedOperations = new HashSet<string>([operation], StringComparer.Ordinal);
+        }
+
+        public string Name { get; }
+
+        public string Destination { get; }
+
+        public IReadOnlySet<string> SupportedOperations { get; }
+
+        public ValueTask<ExternalToolAdapterResult> ExecuteAsync(
+            ExternalToolPayload payload,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class ManualDeadlineFactory : IExternalToolsGatewayDeadlineFactory, IDisposable
+    {
+        private CancellationTokenSource? _currentDeadline;
+
+        public CancellationTokenSource Create(TimeSpan timeout)
+        {
+            _currentDeadline = new CancellationTokenSource();
+            return _currentDeadline;
+        }
+
+        public void CancelCurrentDeadline()
+        {
+            Assert.NotNull(_currentDeadline);
+            _currentDeadline!.Cancel();
+        }
+
+        public void Dispose()
+        {
+            _currentDeadline?.Dispose();
         }
     }
 
