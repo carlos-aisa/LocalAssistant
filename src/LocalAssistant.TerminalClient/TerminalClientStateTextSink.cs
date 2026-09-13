@@ -23,7 +23,8 @@ internal sealed class TerminalClientStateTextSink : ITerminalClientStateSink
                 break;
         }
 
-        var isPlayingVoice = snapshot.Activity == TerminalClientActivity.PlayingVoice;
+        var isPlayingVoice = snapshot.Activity is
+            TerminalClientActivity.PlayingVoice or TerminalClientActivity.BufferingVoice;
         if (_lastSpokenOutput == snapshot.SpokenOutput && _wasPlayingVoice == isPlayingVoice)
         {
             return;
@@ -41,6 +42,11 @@ internal sealed class TerminalClientStateTextSink : ITerminalClientStateSink
             return CreateConfigurationMessage(snapshot, "playing");
         }
 
+        if (snapshot.Activity == TerminalClientActivity.BufferingVoice)
+        {
+            return CreateConfigurationMessage(snapshot, "buffering");
+        }
+
         if (snapshot.SpokenOutput.Availability == SpokenOutputAvailability.Unavailable)
         {
             return CreateConfigurationMessage(snapshot, "unavailable");
@@ -53,5 +59,7 @@ internal sealed class TerminalClientStateTextSink : ITerminalClientStateSink
         TerminalClientStateSnapshot snapshot,
         string status) =>
         $"Spoken output: {status}; voice: {snapshot.SpokenOutput.VoiceId ?? "default"}; " +
+        $"requested provider: {snapshot.SpokenOutput.RequestedProvider}; " +
+        $"effective provider: {snapshot.SpokenOutput.EffectiveProvider?.ToString() ?? "none"}; " +
         $"rate: {snapshot.SpokenOutput.Rate}; volume: {snapshot.SpokenOutput.Volume}.";
 }

@@ -91,6 +91,12 @@ internal sealed record TerminalClientCommandLine(
     /// </summary>
     public static bool RequestsDiagnostics(string[] args) => Contains(args, "--diagnostics");
 
+    internal static bool RequestsKokoroSecretProvision(string[] args) =>
+        Contains(args, "--kokoro-provision-secret");
+
+    internal static bool RequestsKokoroSecretRotation(string[] args) =>
+        Contains(args, "--kokoro-rotate-secret");
+
     private static bool Contains(string[] args, string flag)
     {
         ArgumentNullException.ThrowIfNull(args);

@@ -21,6 +21,7 @@ internal enum TerminalClientActivity
     ResolvingConfirmation,
     CompletingConversation,
     PlayingVoice,
+    BufferingVoice,
 }
 
 internal enum TerminalClientErrorSeverity
@@ -130,6 +131,9 @@ internal sealed class TerminalClientStateCoordinator
         var spokenOutput = snapshot.SpokenOutput;
         if (spokenOutput.Rate is < SpokenOutputPreferences.MinimumRate or > SpokenOutputPreferences.MaximumRate ||
             spokenOutput.Volume is < SpokenOutputPreferences.MinimumVolume or > SpokenOutputPreferences.MaximumVolume ||
+            !Enum.IsDefined(spokenOutput.RequestedProvider) ||
+            (spokenOutput.EffectiveProvider is not null && !Enum.IsDefined(spokenOutput.EffectiveProvider.Value)) ||
+            (spokenOutput.UsedProviderFallback && spokenOutput.EffectiveProvider is null) ||
             (spokenOutput.VoiceId is not null &&
              (string.IsNullOrWhiteSpace(spokenOutput.VoiceId) ||
               !string.Equals(
@@ -148,7 +152,7 @@ internal sealed class TerminalClientStateCoordinator
             return false;
         }
 
-        if (snapshot.Activity == TerminalClientActivity.PlayingVoice &&
+        if (snapshot.Activity is (TerminalClientActivity.PlayingVoice or TerminalClientActivity.BufferingVoice) &&
             (snapshot.Lifecycle != TerminalClientLifecycle.Ready ||
              snapshot.SpokenOutput.Availability != SpokenOutputAvailability.Ready ||
              snapshot.SpokenOutput.IsMuted))
@@ -266,7 +270,8 @@ internal sealed class TerminalClientStateCoordinator
                 TerminalClientActivity.SelectingConversation or
                 TerminalClientActivity.SendingTurn or
                 TerminalClientActivity.CompletingConversation or
-                TerminalClientActivity.PlayingVoice,
+                TerminalClientActivity.PlayingVoice or
+                TerminalClientActivity.BufferingVoice,
             TerminalClientActivity.ResumingConversation => next.Activity == TerminalClientActivity.None,
             TerminalClientActivity.SelectingConversation => next.Activity is
                 TerminalClientActivity.None or TerminalClientActivity.CompletingConversation,
@@ -281,7 +286,10 @@ internal sealed class TerminalClientStateCoordinator
                 TerminalClientActivity.AwaitingConfirmation or
                 TerminalClientActivity.PlayingVoice,
             TerminalClientActivity.CompletingConversation => next.Activity == TerminalClientActivity.None,
-            TerminalClientActivity.PlayingVoice => next.Activity == TerminalClientActivity.None,
+            TerminalClientActivity.PlayingVoice => next.Activity is
+                TerminalClientActivity.None or TerminalClientActivity.BufferingVoice,
+            TerminalClientActivity.BufferingVoice => next.Activity is
+                TerminalClientActivity.None or TerminalClientActivity.PlayingVoice,
             _ => false,
         };
     }

@@ -101,39 +101,61 @@ inalcanzabilidad solo orienta a arrancarla manualmente. El script de smoke test
 ausencia de archivos de audio y de claves sensibles en la parte legible del estado
 local antes de considerarse superado.
 
-### TTS neuronal local (evolución futura, no adoptada)
+### TTS neuronal local (Kokoro CPU, implementado y validado)
 
-Un proveedor neuronal local de TTS —candidato actual Chatterbox Multilingual, decisión
-no tomada— añadiría un servicio o proceso local que carga un modelo y sintetiza voz. No
-sustituye a SAPI, que permanece como implementación real y fallback. Sus condiciones de
-seguridad, aún no implementadas:
+Kokoro 0.9.4 se ejecuta como servicio Python manual y exclusivo de loopback,
+seleccionado tras descartar Chatterbox Multilingual por agotar la VRAM compartida con
+Ollama en la GPU objetivo de 8 GB (ver
+[ADR 0037](adr/0037-select-kokoro-cpu-local-neural-tts.md)). No sustituye a SAPI, que
+permanece como fallback explícito.
 
-- **Contexto mínimo.** El texto a sintetizar puede contener información privada. El
-  servicio recibe solo el texto ya autorizado, el idioma, un identificador lógico de voz
-  y parámetros acotados; nunca credenciales, bearer, memoria, historial, prompts ni
-  contexto del orquestador.
-- **Frontera local.** El endpoint se limita a loopback. No debe exponerse a la LAN por
-  accidente. Se aplican límites de tamaño de texto y de audio, timeouts y límite de
-  concurrencia.
-- **Validación de la respuesta.** El cliente valida tipo, estructura y tamaño del WAV y
-  se protege frente a respuestas malformadas; limpia los búferes de audio y no deja
-  archivos temporales salvo que se solicite explícitamente.
-- **Registro.** El texto y el audio no se registran por defecto ni aparecen en snapshots
-  o salida diagnóstica.
-- **Cadena de suministro.** Los paquetes Python y los modelos descargados son riesgo de
-  cadena de suministro: versiones ancladas y procedencia verificable; los modelos,
-  repositorios, metadatos y documentación importados son contenido no confiable, no
-  instrucciones.
-- **Voces.** Las muestras de referencia y los perfiles de voz se protegen. La clonación
-  exige procedencia, licencia y consentimiento; el cliente no envía rutas, archivos ni
-  audio de referencia arbitrarios; el servicio resuelve perfiles lógicos autorizados. Se
-  valora una marca de agua del motor.
-- **Recursos y degradación.** Se declaran límites de GPU, CPU y memoria y una
-  degradación segura. Un fallo del TTS nunca invalida una respuesta textual ya
-  completada. El servicio de TTS no concede permisos ni decide qué puede decirse en voz
-  alta.
+- **Secreto compartido, distinto del bearer de sesión.** 32 bytes generados
+  criptográficamente, protegidos con DPAPI `CurrentUser` en
+  `%LOCALAPPDATA%\LocalAssistant\Kokoro\shared-secret.v1.dpapi`, cuyo directorio retira
+  el acceso heredado y a `Users`/`Everyone`. Ambos lados exigen exactamente 43 bytes
+  base64url sin relleno y comparan con `hmac.compare_digest`; la respuesta nunca
+  distingue "secreto incorrecto" de "cabecera malformada" (siempre `401` uniforme) ni
+  registra el valor. La rotación exige el servicio parado (mutex compartido por
+  usuario) y nunca sobrescribe el archivo si la operación falla a mitad de camino.
+- **Contexto mínimo.** El servicio recibe solo el texto ya autorizado, idioma, perfil
+  de voz y parámetros acotados (velocidad, volumen); nunca credenciales, bearer,
+  memoria, historial, prompts ni contexto del orquestador.
+- **Frontera local.** Escucha exclusivamente en `127.0.0.1` (IPv6 queda fuera de este
+  incremento), sin CORS y sin confiar en `Host` ni `X-Forwarded-*`. Cuerpo limitado a
+  4 KiB, texto a 320 caracteres, voz e idioma en allowlist, volumen entero 0–100.
+  Timeouts: carga de modelo 60 s, síntesis de un fragmento 15 s, health de cliente 2 s,
+  síntesis HTTP de cliente 18 s. Una síntesis concurrente se rechaza con `503` y
+  `Retry-After: 1` sin mantener cola; `health` sigue respondiendo de inmediato mientras
+  hay una síntesis en curso.
+- **Validación de la respuesta.** El cliente exige `audio/wav`, rechaza un
+  `Content-Length` mayor de 3 MiB antes de leer y valida la estructura RIFF/WAVE
+  completa (PCM, un canal, 24 000 Hz, 16 bits, duración ≤ 45 s) antes de entregar nada a
+  `SoundPlayer`; cualquier incidencia se traduce en `speech_kokoro_invalid_wav` sin
+  reproducir el stream.
+- **Registro.** El texto y el audio no se registran por defecto ni aparecen en
+  snapshots o salida diagnóstica; cada respuesta lleva solo un
+  `X-Kokoro-Correlation-Id` aleatorio, nunca provisto ni reflejado desde el llamante.
+- **Cadena de suministro.** `requirements-prod.lock` y `requirements-test.lock` fijan
+  con hash SHA-256 el cierre transitivo completo para Windows x64/Python 3.11,
+  resueltos únicamente desde `https://pypi.org/simple` y verificados con
+  `--require-hashes` en un entorno limpio antes de aceptarse. eSpeak NG y
+  `phonemizer-fork` son dependencias operativas GPL-3.0-or-later instaladas por el
+  operador; no se empaquetan ni distribuyen con la publicación MIT del cliente.
+- **Voces.** Kokoro expone únicamente perfiles registrados (`jarvis-es`,
+  `jarvis-es-alt`, `jarvis-es-female`), nunca voces o rutas arbitrarias; el cliente no
+  envía archivos de referencia, directorios locales ni URLs.
+- **Recursos y degradación.** Un fallo de Kokoro antes de sonar audio permite
+  fallback a SAPI o a texto; tras empezar a sonar un fragmento no hay fallback
+  automático, para no duplicar contenido. Un fallo del TTS nunca invalida una
+  respuesta textual ya entregada. El servicio de TTS no concede permisos ni decide qué
+  puede decirse en voz alta.
 - **Sin proveedores externos.** La síntesis neuronal es estrictamente local; no se
   contempla ningún proveedor de red.
+
+Verificación operativa —smoke offline con bloqueo de red real por Firewall de Windows,
+convivencia con Ollama, y el recorrido funcional completo (segmentación, `/stop`,
+`/repeat`, mute, cambio a SAPI, servicio detenido y reiniciado)— registrada en
+[docs/runbooks/kokoro-local-tts-validation.md](runbooks/kokoro-local-tts-validation.md).
 
 ## Modelo inicial de herramientas
 

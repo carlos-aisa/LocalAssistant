@@ -323,12 +323,19 @@ anticipada de proveedor, motor o ubicación de síntesis.
 
 ### Evolución del TTS local hacia un proveedor neuronal (posterior al cierre de la Fase 5)
 
-**Estado:** el TTS real implementado es **SAPI** (`System.Speech`, incremento 7). Lo
-que sigue es evolución **opcional y no bloqueante**: no forma parte del cierre de la
-Fase 5 (el incremento 8 la cierra), no bloquea la Fase 6 y no retira SAPI. El motor
-neuronal concreto **está por decidir**; se usa provisionalmente **Chatterbox
-Multilingual** (~500M parámetros) como candidato principal, sujeto a validación técnica
-y operativa antes de cualquier compromiso.
+**Estado:** el TTS real implementado es **SAPI** (`System.Speech`, incremento 7).
+Como evolución **opcional y no bloqueante** —no forma parte del cierre de la Fase 5 (el
+incremento 8 la cierra) y no bloquea la Fase 6— se evaluó primero **Chatterbox
+Multilingual** (~500M parámetros) y se **descartó**: en la GPU objetivo (RTX 3060 Ti,
+8 GB) convivir con Ollama dejaba la VRAM prácticamente al límite (~20–200 MiB libres
+según el turno) y una respuesta larga terminó en un error CUDA irrecuperable que
+tampoco se recuperaba dentro del mismo proceso. Se evaluó a continuación **Kokoro
+0.9.4 en CPU**, que no compite por VRAM, superó la misma prueba de convivencia sin
+degradación y **se implementó** como segundo proveedor: servicio Python local,
+adaptador `.NET`, secreto DPAPI propio, segmentación progresiva y comandos de
+selección. El smoke offline y el runbook manual en Windows se ejecutaron y superaron.
+SAPI no se retira: sigue siendo la implementación de referencia y el fallback
+explícito. Detalle en [ADR 0037](adr/0037-select-kokoro-cpu-local-neural-tts.md).
 
 SAPI seguirá siendo la primera implementación real, un fallback local de bajo coste, la
 opción cuando el proveedor neuronal no esté configurado, no pueda iniciarse o carezca
@@ -337,61 +344,67 @@ concreto.
 
 Se distinguen tres momentos:
 
-1. **Validación experimental fuera del producto.** Instalación manual de Chatterbox;
-   generación de audio en español e inglés; evaluación de calidad; medición de primera
-   carga y de síntesis en caliente; consumo de RAM y VRAM; convivencia con Ollama y
-   `qwen3.5:9b` en una RTX 3060 Ti de 8 GB; comportamiento ante falta de VRAM;
-   cancelación y recuperación. Termina con una decisión informada: continuar, aplazar o
-   descartar. **No bloquea la Fase 6.** No añade código, dependencias, proyectos Python,
-   endpoints ni configuración ejecutable al repositorio.
-2. **Primer proveedor neuronal local** (condicional a que el momento 1 decida
-   continuar). Un servicio o proceso local independiente carga el modelo una sola vez y
-   permanece preparado para varias síntesis, expone una frontera local acotada y
-   devuelve audio en un formato conocido, inicialmente WAV. Un `ChatterboxSpeechSynthesizer`
-   .NET lo consume detrás de `ISpeechSynthesizer`/`ISpeechVoiceCatalog`, sin contener el
-   modelo ni ejecutar Python en el proceso .NET. La selección de proveedor es explícita
-   y diagnosticable (configuración conceptual `SpokenOutput.Provider = Sapi | Chatterbox |
-   None`, `SpokenOutput.FallbackProvider`, endpoint local autorizado), con comprobación
-   de disponibilidad o health y fallback controlado a SAPI o a texto. Reutiliza el
-   coordinador, el reproductor, el estado observable y los comandos existentes. La API
-   conversacional sigue siendo estrictamente textual.
-3. **Evolución hacia voz y dispositivos.** El mismo proveedor, o su contrato de
-   servicio, se reutiliza en el canal de voz de un dispositivo (Fase 10) y más adelante
-   desde satélites (Fases 13–16). El transporte de audio usa una frontera específica,
-   no el contrato textual de conversación. Según recursos y latencia, el TTS podrá
-   ejecutarse centralmente en el equipo con GPU o cerca del dispositivo. El protocolo
-   definitivo no está decidido.
+1. **Validación experimental fuera del producto (completada).** Chatterbox se instaló,
+   sintetizó audio en español e inglés y se midió: carga en frío, síntesis en caliente,
+   RAM/VRAM en solitario y junto a Ollama `qwen3.5:9b`, y comportamiento bajo presión de
+   VRAM. El resultado —VRAM al límite y un error CUDA irrecuperable con una respuesta
+   larga— llevó a descartarlo para este hardware. Kokoro en CPU se evaluó a
+   continuación con el mismo método (convivencia, latencia, estabilidad en varios
+   turnos) y resultó viable. Ninguna de las dos evaluaciones añadió código al
+   repositorio; se ejecutaron fuera del producto.
+2. **Primer proveedor neuronal local (completado: Kokoro CPU).** `services/kokoro-tts`
+   es un servicio Python independiente (Python 3.11, `aiohttp`) que fuerza CPU, carga
+   el modelo Kokoro una sola vez y escucha solo en `127.0.0.1`, con
+   `GET /health`, `GET /v1/voices` y `POST /v1/speech`. `KokoroSpeechClient` y
+   `KokoroSpokenOutput` lo consumen en `.NET` detrás de
+   `ISpeechSynthesizer`/`ISpeechVoiceCatalog`, sin contener el modelo ni ejecutar
+   Python en el proceso `.NET`. La selección de proveedor es explícita y diagnosticable
+   (`/speech-provider sapi|kokoro|none`, `/voice sapi|kokoro <perfil>`), con
+   comprobación de health y fallback controlado a SAPI o a texto. Reutiliza el
+   coordinador, el reproductor, el estado observable (`PlayingVoice`/`BufferingVoice`)
+   y los comandos existentes. La API conversacional sigue siendo estrictamente
+   textual. Autenticación por secreto DPAPI propio, distinto del bearer de sesión.
+3. **Evolución hacia voz y dispositivos (futura, sin empezar).** El mismo proveedor, o
+   su contrato de servicio, se reutilizará en el canal de voz de un dispositivo
+   (Fase 10) y más adelante desde satélites (Fases 13–16). El transporte de audio usará
+   una frontera específica, no el contrato textual de conversación. Según recursos y
+   latencia, el TTS podrá ejecutarse centralmente en el equipo con GPU o cerca del
+   dispositivo. El protocolo definitivo no está decidido.
 
-Decisiones abiertas, sujetas a medición: mantener ambos modelos cargados, descargar uno
-entre operaciones, mantener parte del LLM en CPU, ejecutar el TTS en CPU, incorporar un
-coordinador de recursos, usar otra GPU con más VRAM o seleccionar un modelo TTS más
-pequeño. La instalación individual de ambos motores no demuestra que quepan cargados a
-la vez en 8 GB de VRAM.
+Decisión de recursos, ya medida: **Kokoro corre en CPU y no compite por VRAM con
+Ollama**, que sigue disponiendo de casi toda la GPU (~590 MiB libres de 8192 medidos en
+un ciclo real de 14 turnos, frente a los ~20–200 MiB que dejaba Chatterbox). Esto
+resuelve, para este candidato, el dilema de "mantener ambos modelos cargados a la vez
+en 8 GB de VRAM" que seguía abierto tras la evaluación de Chatterbox.
 
-Ciclo de vida: en el primer incremento el servicio se arranca manualmente. El cliente
-terminal no busca entornos Python, no ejecuta scripts, no instala paquetes, no descarga
-modelos, no gestiona drivers CUDA ni inicia procesos en silencio. Un supervisor local
-de arranque, health, reinicio, límites de recursos, diagnóstico, apagado y actualización
-controlada del motor queda como evolución posterior, separado del orquestador
-conversacional.
+Ciclo de vida: el servicio se arranca manualmente. El cliente terminal no busca
+entornos Python, no ejecuta scripts, no instala paquetes, no descarga modelos, no
+gestiona eSpeak NG ni inicia procesos en silencio; solo provisiona o rota el secreto
+compartido de forma explícita (`--kokoro-provision-secret`, `--kokoro-rotate-secret`,
+este último con el servicio parado). Un supervisor local de arranque, health,
+reinicio, límites de recursos, diagnóstico, apagado y actualización controlada del
+motor queda como evolución posterior, separado del orquestador conversacional.
 
-Idioma: el contrato de síntesis actual no representa el idioma explícitamente. La
-evolución neuronal deberá diferenciar al menos español e inglés; el idioma podrá
-proceder de la configuración de la instalación, del idioma de una conversación, del
-modo activo del tutor de inglés o de metadatos de canal o sesión, y no se inferirá
-siempre del texto.
+Idioma: el contrato de perfil ya representa el idioma explícitamente (no se infiere del
+texto), pero los tres perfiles implementados —`jarvis-es`, `jarvis-es-alt`,
+`jarvis-es-female`— son todos en español; un perfil en inglés queda pendiente de un
+incremento posterior antes de que el tutor de inglés pueda apoyarse en Kokoro.
 
-Voces: para el proveedor neuronal una voz será un perfil previamente registrado y
-autorizado (por ejemplo `jarvis-es`, `jarvis-en`), no una ruta ni un archivo aportado
-por el cliente. El servicio resolverá el perfil hacia recursos autorizados y controlará
-procedencia, licencia y consentimiento para clonación.
+Voces: para Kokoro una voz es un perfil previamente registrado y autorizado
+(`jarvis-es` → `em_alex`, `jarvis-es-alt` → `em_santa`, `jarvis-es-female` → `ef_dora`),
+nunca una ruta ni un archivo aportado por el cliente; el servicio resuelve el perfil
+internamente. La clonación de voz, la procedencia/licencia de nuevas voces y una marca
+de agua del motor quedan fuera de este incremento.
 
 Las decisiones estructurales (conversación textual con transporte de audio separado,
 motor neuronal como proceso aislado tras un adaptador, selección explícita de proveedor
 con capacidades y fallback) están en el
-[ADR 0036](adr/0036-textual-conversation-and-adapted-local-neural-tts.md). Las
-condiciones de seguridad están en [SECURITY.md](SECURITY.md) y la arquitectura del plano
-en [ARCHITECTURE.md](ARCHITECTURE.md).
+[ADR 0036](adr/0036-textual-conversation-and-adapted-local-neural-tts.md); la elección
+del motor concreto (Kokoro CPU sobre Chatterbox) está en el
+[ADR 0037](adr/0037-select-kokoro-cpu-local-neural-tts.md). Las condiciones de
+seguridad están en [SECURITY.md](SECURITY.md), la arquitectura del plano en
+[ARCHITECTURE.md](ARCHITECTURE.md), y la verificación automática y manual en
+[docs/runbooks/kokoro-local-tts-validation.md](runbooks/kokoro-local-tts-validation.md).
 
 ### Fase 6 — Tools Gateway y meteorología
 
@@ -417,7 +430,7 @@ El texto valida inicialmente el núcleo, pero no es un producto "tutor escrito".
 No conoce audio, micrófono, STT, TTS, wake word, habitaciones ni dispositivos.
 Incluye actividad especializada, correcciones, evaluación, informe y perfil temporal.
 El núcleo produce contenido y metadatos de idioma; no depende de un proveedor de TTS
-concreto ni de Chatterbox.
+concreto, ni de SAPI ni de Kokoro.
 
 ### Fase 10 — Canal de voz en un único dispositivo
 
@@ -425,9 +438,9 @@ El mismo núcleo funciona por terminal o voz, con STT, captura, TTS y reproducci
 La voz no autentica al hablante.
 No incluye satélites, multiroom, pronunciación ni micrófono de Nest Hub.
 El canal de voz decide cómo materializar el contenido en audio mediante el proveedor
-de TTS configurado (SAPI o, si se adopta, el proveedor neuronal local), tras la
-frontera de audio separada. Si el proveedor neuronal ya se validó y adaptó, se reutiliza
-aquí; si no, el canal usa el proveedor disponible.
+de TTS configurado (SAPI o Kokoro CPU), tras la frontera de audio separada. Kokoro ya
+está implementado y validado en el cliente terminal; falta decidir su reutilización en
+este canal y añadir un perfil en inglés antes de poder ofrecerlo ahí.
 
 ### Fase 11 — English Coach oral y conversación natural
 

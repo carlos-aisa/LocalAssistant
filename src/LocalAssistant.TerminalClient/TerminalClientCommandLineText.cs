@@ -43,6 +43,8 @@ internal static class TerminalClientCommandLineText
                 $"to {FormatTimeout(TerminalClientConfiguration.MaximumRequestTimeout)} " +
                 $"(default: {FormatTimeout(TerminalClientOptions.DefaultRequestTimeout)}).",
             "  --plain                       Force the plain text presentation instead of the TUI.",
+            "  --kokoro-provision-secret     Create the local Kokoro shared secret and exit.",
+            "  --kokoro-rotate-secret        Rotate the local Kokoro shared secret while the service is stopped.",
             "  --diagnostics                 Print a read-only environment and readiness " +
                 "report and exit.",
             "  --version                     Print the client version and exit.",

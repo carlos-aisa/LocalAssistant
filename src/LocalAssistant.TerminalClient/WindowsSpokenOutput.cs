@@ -7,11 +7,13 @@ namespace LocalAssistant.TerminalClient;
 
 internal static class WindowsSpokenOutputFactory
 {
-    public static ISpokenOutputCoordinator Create(SpokenOutputPreferences preferences)
+    public static ISpokenOutputCoordinator Create(
+        SpokenOutputPreferences preferences,
+        KokoroSpeechClient? kokoroClient = null)
     {
         ArgumentNullException.ThrowIfNull(preferences);
         return OperatingSystem.IsWindows()
-            ? CreateForWindows(preferences)
+            ? CreateForWindows(preferences, kokoroClient)
             : new UnavailableSpokenOutputCoordinator(preferences);
     }
 
@@ -23,7 +25,8 @@ internal static class WindowsSpokenOutputFactory
         SpokenOutputPreferences preferences,
         bool isWindows,
         Func<bool> hasEnabledVoices,
-        Func<ISpokenOutputCoordinator> createReadyCoordinator)
+        Func<ISpokenOutputCoordinator> createReadyCoordinator,
+        bool hasKokoroProvider = false)
     {
         ArgumentNullException.ThrowIfNull(preferences);
         ArgumentNullException.ThrowIfNull(hasEnabledVoices);
@@ -35,7 +38,7 @@ internal static class WindowsSpokenOutputFactory
 
         try
         {
-            return hasEnabledVoices()
+            return hasKokoroProvider || hasEnabledVoices()
                 ? createReadyCoordinator()
                 : new UnavailableSpokenOutputCoordinator(preferences);
         }
@@ -46,16 +49,23 @@ internal static class WindowsSpokenOutputFactory
     }
 
     [SupportedOSPlatform("windows")]
-    private static ISpokenOutputCoordinator CreateForWindows(SpokenOutputPreferences preferences) =>
-        Select(
+    private static ISpokenOutputCoordinator CreateForWindows(
+        SpokenOutputPreferences preferences,
+        KokoroSpeechClient? kokoroClient)
+    {
+        return Select(
             preferences,
             isWindows: true,
             WindowsSpeechSynthesizer.HasEnabledVoices,
             () => new SpokenOutputCoordinator(
-                new WindowsSpeechSynthesizer(),
+                new ProviderSelectingSpeechSynthesizer(
+                    new WindowsSpeechSynthesizer(),
+                    kokoroClient is null ? null : new KokoroSpeechSynthesizer(kokoroClient)),
                 new WindowsSpeechPlayer(),
                 SpokenOutputAvailability.Ready,
-                preferences));
+                preferences),
+            hasKokoroProvider: kokoroClient is not null);
+    }
 }
 
 [SupportedOSPlatform("windows")]
@@ -309,6 +319,15 @@ internal static class SpokenOutputVoiceProjection
 
 internal sealed class SensitiveMemoryStream : MemoryStream
 {
+    public SensitiveMemoryStream()
+    {
+    }
+
+    public SensitiveMemoryStream(byte[] buffer)
+        : base(buffer, writable: true)
+    {
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing && TryGetBuffer(out var buffer))

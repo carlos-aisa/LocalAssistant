@@ -128,7 +128,7 @@ public sealed class DpapiPrivateClientCredentialStoreTests
             Assert.True(await store.SaveAsync(loaded!, CancellationToken.None));
             using var migratedState = JsonDocument.Parse(await File.ReadAllTextAsync(path));
 
-            Assert.Equal(2, migratedState.RootElement.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(3, migratedState.RootElement.GetProperty("schemaVersion").GetInt32());
             Assert.False(migratedState.RootElement.TryGetProperty("protectedCredential", out _));
         }
         finally
@@ -266,7 +266,7 @@ public sealed class DpapiPrivateClientCredentialStoreTests
 
         Assert.Equal(new PrivateClientCredential("client-a", "credential-a", conversationId), migrated);
         Assert.Equal(SpokenOutputPreferences.Default, preferences);
-        Assert.Equal(2, migratedJson.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(3, migratedJson.RootElement.GetProperty("schemaVersion").GetInt32());
         Assert.False(migratedJson.RootElement.TryGetProperty("protectedCredential", out _));
 
         // Idempotent: a second round-trip over the already-migrated file changes nothing.

@@ -60,6 +60,21 @@ public sealed class WindowsSpokenOutputTests
     }
 
     [Fact]
+    public void SelectionWithKokoroDoesNotRequireAnEnabledSapiVoice()
+    {
+        var ready = new UnavailableSpokenOutputCoordinator();
+
+        var output = WindowsSpokenOutputFactory.Select(
+            SpokenOutputPreferences.Default,
+            isWindows: true,
+            hasEnabledVoices: () => false,
+            createReadyCoordinator: () => ready,
+            hasKokoroProvider: true);
+
+        Assert.Same(ready, output);
+    }
+
+    [Fact]
     public void SelectionFallsBackToUnavailableWhenInitializationThrows()
     {
         var output = WindowsSpokenOutputFactory.Select(

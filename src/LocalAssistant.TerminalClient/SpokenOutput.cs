@@ -91,6 +91,13 @@ internal enum SpokenOutputAvailability
     Ready,
 }
 
+internal enum SpokenOutputProvider
+{
+    Sapi,
+    Kokoro,
+    None,
+}
+
 internal sealed record SpokenOutputPreferences
 {
     public const int MinimumRate = -10;
@@ -102,7 +109,12 @@ internal sealed record SpokenOutputPreferences
         string? voiceId = null,
         int rate = 0,
         int volume = 100,
-        bool isMuted = false)
+        bool isMuted = false,
+        SpokenOutputProvider requestedProvider = SpokenOutputProvider.Sapi,
+        string? kokoroProfileId = "jarvis-es",
+        string kokoroLanguage = "es",
+        int kokoroVolume = 100,
+        bool useSapiFallback = true)
     {
         if (voiceId is not null && string.IsNullOrWhiteSpace(voiceId))
         {
@@ -119,10 +131,23 @@ internal sealed record SpokenOutputPreferences
             throw new ArgumentOutOfRangeException(nameof(volume));
         }
 
+        if (!Enum.IsDefined(requestedProvider) ||
+            (kokoroProfileId is not null && string.IsNullOrWhiteSpace(kokoroProfileId)) ||
+            kokoroLanguage is not ("es" or "en") ||
+            kokoroVolume < MinimumVolume || kokoroVolume > MaximumVolume)
+        {
+            throw new ArgumentException("The Kokoro spoken-output preferences are invalid.");
+        }
+
         VoiceId = voiceId;
         Rate = rate;
         Volume = volume;
         IsMuted = isMuted;
+        RequestedProvider = requestedProvider;
+        KokoroProfileId = kokoroProfileId;
+        KokoroLanguage = kokoroLanguage;
+        KokoroVolume = kokoroVolume;
+        UseSapiFallback = useSapiFallback;
     }
 
     public string? VoiceId { get; }
@@ -133,7 +158,94 @@ internal sealed record SpokenOutputPreferences
 
     public bool IsMuted { get; }
 
+    public SpokenOutputProvider RequestedProvider { get; }
+
+    public string? KokoroProfileId { get; }
+
+    public string KokoroLanguage { get; }
+
+    public int KokoroVolume { get; }
+
+    public bool UseSapiFallback { get; }
+
     public static SpokenOutputPreferences Default { get; } = new();
+
+    public SpokenOutputPreferences WithRequestedProvider(SpokenOutputProvider provider) => new(
+        VoiceId,
+        Rate,
+        Volume,
+        IsMuted,
+        provider,
+        KokoroProfileId,
+        KokoroLanguage,
+        KokoroVolume,
+        UseSapiFallback);
+
+    public SpokenOutputPreferences WithSapiVoice(string? voiceId) => new(
+        voiceId,
+        Rate,
+        Volume,
+        IsMuted,
+        RequestedProvider,
+        KokoroProfileId,
+        KokoroLanguage,
+        KokoroVolume,
+        UseSapiFallback);
+
+    public SpokenOutputPreferences WithSapiRate(int rate) => new(
+        VoiceId,
+        rate,
+        Volume,
+        IsMuted,
+        RequestedProvider,
+        KokoroProfileId,
+        KokoroLanguage,
+        KokoroVolume,
+        UseSapiFallback);
+
+    public SpokenOutputPreferences WithSapiVolume(int volume) => new(
+        VoiceId,
+        Rate,
+        volume,
+        IsMuted,
+        RequestedProvider,
+        KokoroProfileId,
+        KokoroLanguage,
+        KokoroVolume,
+        UseSapiFallback);
+
+    public SpokenOutputPreferences WithMute(bool isMuted) => new(
+        VoiceId,
+        Rate,
+        Volume,
+        isMuted,
+        RequestedProvider,
+        KokoroProfileId,
+        KokoroLanguage,
+        KokoroVolume,
+        UseSapiFallback);
+
+    public SpokenOutputPreferences WithKokoroProfile(string profileId, string language) => new(
+        VoiceId,
+        Rate,
+        Volume,
+        IsMuted,
+        RequestedProvider,
+        profileId,
+        language,
+        KokoroVolume,
+        UseSapiFallback);
+
+    public SpokenOutputPreferences WithKokoroVolume(int volume) => new(
+        VoiceId,
+        Rate,
+        Volume,
+        IsMuted,
+        RequestedProvider,
+        KokoroProfileId,
+        KokoroLanguage,
+        volume,
+        UseSapiFallback);
 }
 
 internal sealed record TerminalClientSpokenOutputState(
@@ -142,7 +254,10 @@ internal sealed record TerminalClientSpokenOutputState(
     string? VoiceId = null,
     int Rate = 0,
     int Volume = 100,
-    string? WarningCode = null)
+    string? WarningCode = null,
+    SpokenOutputProvider RequestedProvider = SpokenOutputProvider.Sapi,
+    SpokenOutputProvider? EffectiveProvider = null,
+    bool UsedProviderFallback = false)
 {
     public static TerminalClientSpokenOutputState Unavailable { get; } = new(
         SpokenOutputAvailability.Unavailable,
@@ -152,7 +267,10 @@ internal sealed record TerminalClientSpokenOutputState(
         100);
 }
 
-internal sealed record SpokenOutputVoice(string Id);
+internal sealed record SpokenOutputVoice(
+    string Id,
+    SpokenOutputProvider Provider = SpokenOutputProvider.Sapi,
+    string? Language = null);
 
 internal sealed record SpeechSynthesisRequest(
     string Text,
@@ -166,7 +284,8 @@ internal sealed class SynthesizedSpeech : IAsyncDisposable
         Stream content,
         string mediaType,
         string? effectiveVoiceId = null,
-        bool usedVoiceFallback = false)
+        bool usedVoiceFallback = false,
+        SpokenOutputProvider effectiveProvider = SpokenOutputProvider.Sapi)
     {
         Content = content ?? throw new ArgumentNullException(nameof(content));
         if (string.IsNullOrWhiteSpace(mediaType))
@@ -177,6 +296,7 @@ internal sealed class SynthesizedSpeech : IAsyncDisposable
         MediaType = mediaType;
         EffectiveVoiceId = effectiveVoiceId;
         UsedVoiceFallback = usedVoiceFallback;
+        EffectiveProvider = effectiveProvider;
     }
 
     public Stream Content { get; }
@@ -186,6 +306,8 @@ internal sealed class SynthesizedSpeech : IAsyncDisposable
     public string? EffectiveVoiceId { get; }
 
     public bool UsedVoiceFallback { get; }
+
+    public SpokenOutputProvider EffectiveProvider { get; }
 
     public async ValueTask DisposeAsync()
     {
@@ -225,7 +347,8 @@ internal enum SpokenOutputPreparationKind
 
 internal sealed record SpokenOutputPreparation(
     SpokenOutputPreparationKind Kind,
-    IPreparedSpokenOutput? PreparedOutput)
+    IPreparedSpokenOutput? PreparedOutput,
+    KokoroClientFailureKind? KokoroFailure = null)
 {
     public static SpokenOutputPreparation Unavailable { get; } = new(
         SpokenOutputPreparationKind.Unavailable,
@@ -239,6 +362,11 @@ internal sealed record SpokenOutputPreparation(
         SpokenOutputPreparationKind.SynthesisFailed,
         null);
 
+    public static SpokenOutputPreparation KokoroSynthesisFailed(KokoroClientFailureKind failure) => new(
+        SpokenOutputPreparationKind.SynthesisFailed,
+        null,
+        failure);
+
     public static SpokenOutputPreparation Prepared(IPreparedSpokenOutput preparedOutput) => new(
         SpokenOutputPreparationKind.Prepared,
         preparedOutput ?? throw new ArgumentNullException(nameof(preparedOutput)));
@@ -248,6 +376,7 @@ internal enum SpokenOutputPlaybackKind
 {
     Completed,
     PlaybackFailed,
+    PartialSynthesisFailed,
     Cancelled,
 }
 
@@ -259,12 +388,23 @@ internal sealed record SpokenOutputPlaybackResult(SpokenOutputPlaybackKind Kind)
     public static SpokenOutputPlaybackResult PlaybackFailed { get; } = new(
         SpokenOutputPlaybackKind.PlaybackFailed);
 
+    public static SpokenOutputPlaybackResult PartialSynthesisFailed { get; } = new(
+        SpokenOutputPlaybackKind.PartialSynthesisFailed);
+
     public static SpokenOutputPlaybackResult Cancelled { get; } = new(
         SpokenOutputPlaybackKind.Cancelled);
 }
 
+internal enum SpokenOutputPlaybackStage
+{
+    Playing,
+    Buffering,
+}
+
 internal interface IPreparedSpokenOutput : IAsyncDisposable
 {
+    event Action<SpokenOutputPlaybackStage>? StageChanged;
+
     Task<SpokenOutputPlaybackResult> PlayAsync(CancellationToken cancellationToken);
 }
 
@@ -314,7 +454,8 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
             preferences.IsMuted,
             NormalizeVoiceId(preferences.VoiceId),
             preferences.Rate,
-            preferences.Volume);
+            preferences.Volume,
+            RequestedProvider: preferences.RequestedProvider);
     }
 
     public TerminalClientSpokenOutputState State { get; private set; }
@@ -355,7 +496,10 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
             NormalizeVoiceId(preferences.VoiceId),
             preferences.Rate,
             preferences.Volume,
-            WarningCode: null);
+            WarningCode: null,
+            RequestedProvider: preferences.RequestedProvider,
+            EffectiveProvider: null,
+            UsedProviderFallback: false);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -402,6 +546,38 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
         await _operationGate.WaitAsync(cancellationToken);
         try
         {
+            var selector = _synthesizer as ProviderSelectingSpeechSynthesizer;
+            var kokoroSynthesizer = selector?.KokoroSynthesizer ?? _synthesizer as KokoroSpeechSynthesizer;
+            if (_preferences.RequestedProvider == SpokenOutputProvider.Kokoro &&
+                kokoroSynthesizer is not null)
+            {
+                try
+                {
+                    return await PrepareKokoroSegmentsAsync(
+                        text,
+                        kokoroSynthesizer,
+                        cancellationToken);
+                }
+                catch (KokoroSpeechException) when (_preferences.UseSapiFallback && selector is not null)
+                {
+                    var fallback = await selector.SynthesizeWithSapiAsync(
+                        new SpeechSynthesisRequest(text, _preferences),
+                        cancellationToken);
+                    State = State with
+                    {
+                        VoiceId = NormalizeVoiceId(fallback.EffectiveVoiceId ?? _preferences.VoiceId),
+                        WarningCode = null,
+                        RequestedProvider = _preferences.RequestedProvider,
+                        EffectiveProvider = fallback.EffectiveProvider,
+                        UsedProviderFallback = true,
+                    };
+                    return SpokenOutputPreparation.Prepared(new PreparedSpokenOutput(
+                        fallback,
+                        _operationGate,
+                        PlayAsync));
+                }
+            }
+
             var speech = await _synthesizer.SynthesizeAsync(
                 new SpeechSynthesisRequest(text, _preferences),
                 cancellationToken);
@@ -409,6 +585,9 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
             {
                 VoiceId = NormalizeVoiceId(speech.EffectiveVoiceId ?? _preferences.VoiceId),
                 WarningCode = speech.UsedVoiceFallback ? "speech_voice_unavailable" : null,
+                RequestedProvider = _preferences.RequestedProvider,
+                EffectiveProvider = speech.EffectiveProvider,
+                UsedProviderFallback = speech.UsedVoiceFallback,
             };
             return SpokenOutputPreparation.Prepared(new PreparedSpokenOutput(
                 speech,
@@ -420,6 +599,11 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
             _operationGate.Release();
             throw;
         }
+        catch (KokoroSpeechException exception)
+        {
+            _operationGate.Release();
+            return SpokenOutputPreparation.KokoroSynthesisFailed(exception.Failure);
+        }
         catch (Exception)
         {
             // Any other failure, including an unexpected cancellation whose source is not
@@ -427,6 +611,33 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
             _operationGate.Release();
             return SpokenOutputPreparation.SynthesisFailed;
         }
+    }
+
+    private async Task<SpokenOutputPreparation> PrepareKokoroSegmentsAsync(
+        string text,
+        KokoroSpeechSynthesizer synthesizer,
+        CancellationToken cancellationToken)
+    {
+        var segments = SpokenTextSegmenter.Segment(text).ToArray();
+        var first = await synthesizer.SynthesizeAsync(
+            new SpeechSynthesisRequest(segments[0], _preferences),
+            cancellationToken);
+        State = State with
+        {
+            VoiceId = NormalizeVoiceId(first.EffectiveVoiceId ?? _preferences.KokoroProfileId),
+            WarningCode = null,
+            RequestedProvider = _preferences.RequestedProvider,
+            EffectiveProvider = first.EffectiveProvider,
+            UsedProviderFallback = false,
+        };
+        return SpokenOutputPreparation.Prepared(new SegmentedPreparedSpokenOutput(
+            first,
+            segments,
+            synthesizer,
+            _player,
+            _operationGate,
+            PlayAsync,
+            _preferences));
     }
 
     public ValueTask DisposeAsync()
@@ -510,8 +721,11 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
 
         public async Task<SpokenOutputPlaybackResult> PlayAsync(CancellationToken cancellationToken)
         {
+            StageChanged?.Invoke(SpokenOutputPlaybackStage.Playing);
             return await _play(_speech, cancellationToken);
         }
+
+        public event Action<SpokenOutputPlaybackStage>? StageChanged;
 
         public async ValueTask DisposeAsync()
         {
@@ -523,6 +737,110 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
             try
             {
                 await _speech.DisposeAsync();
+            }
+            finally
+            {
+                _operationGate.Release();
+            }
+        }
+    }
+
+    private sealed class SegmentedPreparedSpokenOutput : IPreparedSpokenOutput
+    {
+        private readonly string[] _segments;
+        private readonly ISpeechSynthesizer _synthesizer;
+        private readonly ISpeechPlayer _player;
+        private readonly SemaphoreSlim _operationGate;
+        private readonly Func<SynthesizedSpeech, CancellationToken, Task<SpokenOutputPlaybackResult>> _play;
+        private readonly SpokenOutputPreferences _preferences;
+        private SynthesizedSpeech? _first;
+        private int _disposed;
+
+        public SegmentedPreparedSpokenOutput(
+            SynthesizedSpeech first,
+            string[] segments,
+            ISpeechSynthesizer synthesizer,
+            ISpeechPlayer player,
+            SemaphoreSlim operationGate,
+            Func<SynthesizedSpeech, CancellationToken, Task<SpokenOutputPlaybackResult>> play,
+            SpokenOutputPreferences preferences)
+        {
+            _first = first;
+            _segments = segments;
+            _synthesizer = synthesizer;
+            _player = player;
+            _operationGate = operationGate;
+            _play = play;
+            _preferences = preferences;
+        }
+
+        public async Task<SpokenOutputPlaybackResult> PlayAsync(CancellationToken cancellationToken)
+        {
+            var current = _first ?? throw new ObjectDisposedException(nameof(SegmentedPreparedSpokenOutput));
+            _first = null;
+            for (var index = 0; index < _segments.Length; index++)
+            {
+                Task<SynthesizedSpeech>? next = index + 1 < _segments.Length
+                    ? _synthesizer.SynthesizeAsync(
+                        new SpeechSynthesisRequest(_segments[index + 1], _preferences),
+                        cancellationToken)
+                    : null;
+                try
+                {
+                    StageChanged?.Invoke(SpokenOutputPlaybackStage.Playing);
+                    var played = await _play(current, cancellationToken);
+                    if (played.Kind != SpokenOutputPlaybackKind.Completed)
+                    {
+                        return played;
+                    }
+                }
+                finally
+                {
+                    await current.DisposeAsync();
+                }
+
+                if (next is null)
+                {
+                    return SpokenOutputPlaybackResult.Completed;
+                }
+
+                try
+                {
+                    if (!next.IsCompleted)
+                    {
+                        StageChanged?.Invoke(SpokenOutputPlaybackStage.Buffering);
+                    }
+
+                    current = await next;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    return SpokenOutputPlaybackResult.PartialSynthesisFailed;
+                }
+            }
+
+            return SpokenOutputPlaybackResult.Completed;
+        }
+
+        public event Action<SpokenOutputPlaybackStage>? StageChanged;
+
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 1)
+            {
+                return;
+            }
+
+            try
+            {
+                if (_first is not null)
+                {
+                    await _first.DisposeAsync();
+                }
             }
             finally
             {
@@ -543,7 +861,8 @@ internal sealed class UnavailableSpokenOutputCoordinator : ISpokenOutputCoordina
             effectivePreferences.IsMuted,
             NormalizeVoiceId(effectivePreferences.VoiceId),
             effectivePreferences.Rate,
-            effectivePreferences.Volume);
+            effectivePreferences.Volume,
+            RequestedProvider: effectivePreferences.RequestedProvider);
     }
 
     public TerminalClientSpokenOutputState State { get; private set; }
@@ -566,7 +885,10 @@ internal sealed class UnavailableSpokenOutputCoordinator : ISpokenOutputCoordina
             NormalizeVoiceId(preferences.VoiceId),
             preferences.Rate,
             preferences.Volume,
-            WarningCode: null);
+            WarningCode: null,
+            RequestedProvider: preferences.RequestedProvider,
+            EffectiveProvider: null,
+            UsedProviderFallback: false);
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
