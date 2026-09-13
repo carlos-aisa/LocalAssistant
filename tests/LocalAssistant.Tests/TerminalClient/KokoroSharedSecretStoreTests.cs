@@ -77,10 +77,10 @@ public sealed class KokoroSharedSecretStoreTests
         var fileSystem = new InMemoryFileSystem();
         var store = CreateStore(fileSystem, new ReversibleProtector());
         Assert.True(store.Provision());
-        fileSystem.ReplaceContent("C:\\temporary\\shared-secret.v1.dpapi", [1, 2, 3]);
+        fileSystem.ReplaceContent("state/shared-secret.v1.dpapi", [1, 2, 3]);
 
         Assert.Null(store.Read());
-        Assert.Equal(new byte[] { 1, 2, 3 }, fileSystem.ReadAllBytes("C:\\temporary\\shared-secret.v1.dpapi"));
+        Assert.Equal(new byte[] { 1, 2, 3 }, fileSystem.ReadAllBytes("state/shared-secret.v1.dpapi"));
     }
 
     public static IEnumerable<object[]> CorruptEnvelopes()
@@ -96,7 +96,7 @@ public sealed class KokoroSharedSecretStoreTests
         InMemoryFileSystem fileSystem,
         IKokoroSharedSecretProtector protector,
         bool lockAcquired = true) => new(
-            "C:\\temporary\\shared-secret.v1.dpapi",
+            "state/shared-secret.v1.dpapi",
             protector,
             fileSystem,
             () => new TestProcessLock(lockAcquired));
@@ -144,7 +144,7 @@ public sealed class KokoroSharedSecretStoreTests
 
         public void WriteAllBytes(string path, byte[] contents) => _files[path] = contents.ToArray();
 
-        public bool EnsurePrivateDirectory(string path) => path == "C:\\temporary";
+        public bool EnsurePrivateDirectory(string path) => path == "state";
 
         public void ReplaceAtomically(string sourcePath, string destinationPath)
         {
