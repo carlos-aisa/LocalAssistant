@@ -129,16 +129,18 @@ internal sealed class KokoroSpeechClient
             return KokoroClientResult<IReadOnlyList<KokoroVoice>>.Failed(KokoroClientFailureKind.NotConfigured);
         }
 
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(_options.HealthTimeout);
         try
         {
-            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            using var response = await _httpClient.SendAsync(request, timeout.Token);
             var failure = MapFailure(response.StatusCode);
             if (failure is not null)
             {
                 return KokoroClientResult<IReadOnlyList<KokoroVoice>>.Failed(failure.Value);
             }
 
-            var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
+            var payloadJson = await response.Content.ReadAsStringAsync(timeout.Token);
             var payload = JsonSerializer.Deserialize<KokoroVoiceResponse>(payloadJson, JsonOptions);
             if (payload?.Voices is null || payload.Voices.Any(voice =>
                 string.IsNullOrWhiteSpace(voice.Id) || voice.Language is not ("es" or "en")))
