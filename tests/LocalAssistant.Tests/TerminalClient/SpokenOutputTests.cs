@@ -26,6 +26,55 @@ public sealed class SpokenOutputTests
         Assert.Equal(SpokenOutputProvider.Kokoro, sapiRate.RequestedProvider);
     }
 
+    [Fact]
+    public async Task SnapshotProjectsKokoroPreferencesNotSapiFieldsWhenKokoroIsSelected()
+    {
+        var preferences = new SpokenOutputPreferences(
+            voiceId: "Sapi voice",
+            rate: 3,
+            volume: 40,
+            requestedProvider: SpokenOutputProvider.Kokoro,
+            kokoroProfileId: "jarvis-es-alt",
+            kokoroLanguage: "es",
+            kokoroVolume: 65);
+        await using var coordinator = CreateCoordinator(new RecordingSynthesizer(), new RecordingPlayer(), preferences);
+
+        Assert.Equal("jarvis-es-alt", coordinator.State.VoiceId);
+        Assert.Equal(65, coordinator.State.Volume);
+        // Kokoro synthesizes at a fixed rate; there is no SAPI-style scale to show.
+        Assert.Equal(0, coordinator.State.Rate);
+    }
+
+    [Fact]
+    public async Task ChangingKokoroVolumeUpdatesTheDisplayedVolumeInsteadOfTheStaleSapiValue()
+    {
+        var preferences = new SpokenOutputPreferences(
+            voiceId: "Sapi voice",
+            volume: 40,
+            requestedProvider: SpokenOutputProvider.Kokoro,
+            kokoroVolume: 65);
+        await using var coordinator = CreateCoordinator(new RecordingSynthesizer(), new RecordingPlayer(), preferences);
+
+        coordinator.UpdatePreferences(preferences.WithKokoroVolume(30));
+
+        Assert.Equal(30, coordinator.State.Volume);
+    }
+
+    [Fact]
+    public async Task NoneProviderProjectsNeutralDisplayValuesInsteadOfAStaleProvidersSettings()
+    {
+        var preferences = new SpokenOutputPreferences(
+            voiceId: "Sapi voice",
+            volume: 40,
+            requestedProvider: SpokenOutputProvider.None,
+            kokoroVolume: 65);
+        await using var coordinator = CreateCoordinator(new RecordingSynthesizer(), new RecordingPlayer(), preferences);
+
+        Assert.Null(coordinator.State.VoiceId);
+        Assert.Equal(0, coordinator.State.Rate);
+        Assert.Equal(SpokenOutputPreferences.Default.Volume, coordinator.State.Volume);
+    }
+
     [Theory]
     [InlineData("Hola 😀 qué tal", "Hola qué tal")]
     [InlineData("Listo ✅ y hecho", "Listo y hecho")]
@@ -122,6 +171,9 @@ public sealed class SpokenOutputTests
         Assert.Equal(requested, coordinator.RequestedPreferences);
         Assert.Equal("Windows default", coordinator.State.VoiceId);
         Assert.Equal("speech_voice_unavailable", coordinator.State.WarningCode);
+        // SAPI substituting a voice it could find is not a provider fallback: the
+        // provider never changed away from the one requested.
+        Assert.False(coordinator.State.UsedProviderFallback);
     }
 
     [Fact]
@@ -207,6 +259,10 @@ public sealed class SpokenOutputTests
 
         Assert.Equal(SpokenOutputPreparationKind.Prepared, preparation.Kind);
         Assert.Equal(1, sapi.CallCount);
+        // The provider genuinely changed (Kokoro requested, SAPI effective), unlike a
+        // mere SAPI voice substitution; this must read as a provider fallback.
+        Assert.True(coordinator.State.UsedProviderFallback);
+        Assert.Equal(SpokenOutputProvider.Sapi, coordinator.State.EffectiveProvider);
         await preparation.PreparedOutput!.DisposeAsync();
     }
 
