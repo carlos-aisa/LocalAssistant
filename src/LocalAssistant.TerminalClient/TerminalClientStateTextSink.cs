@@ -61,5 +61,5 @@ internal sealed class TerminalClientStateTextSink : ITerminalClientStateSink
         $"Spoken output: {status}; voice: {snapshot.SpokenOutput.VoiceId ?? "default"}; " +
         $"requested provider: {snapshot.SpokenOutput.RequestedProvider}; " +
         $"effective provider: {snapshot.SpokenOutput.EffectiveProvider?.ToString() ?? "none"}; " +
-        $"rate: {snapshot.SpokenOutput.Rate}; volume: {snapshot.SpokenOutput.Volume}.";
+        $"rate: {snapshot.SpokenOutput.RateDisplay}; volume: {snapshot.SpokenOutput.Volume}.";
 }

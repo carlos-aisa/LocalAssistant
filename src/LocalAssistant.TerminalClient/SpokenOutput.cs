@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace LocalAssistant.TerminalClient;
@@ -250,9 +251,18 @@ internal sealed record SpokenOutputPreferences
     /// <summary>
     /// Projects the voice/rate/volume that a snapshot should display for whichever
     /// provider is actually requested, instead of always showing the SAPI fields
-    /// regardless of the current selection.
+    /// regardless of the current selection. Used before synthesis, or whenever there is
+    /// no synthesis result to reflect (muted, unavailable, preferences just changed).
     /// </summary>
-    public (string? VoiceId, int Rate, int Volume) ProjectDisplay() => RequestedProvider switch
+    public (string? VoiceId, int Rate, int Volume) ProjectDisplay() => ProjectDisplay(RequestedProvider);
+
+    /// <summary>
+    /// Projects the voice/rate/volume for a specific provider. Used after synthesis to
+    /// reflect the provider that actually produced the result (which, after a fallback,
+    /// differs from <see cref="RequestedProvider"/>) instead of leaving the previously
+    /// requested provider's values on display.
+    /// </summary>
+    public (string? VoiceId, int Rate, int Volume) ProjectDisplay(SpokenOutputProvider provider) => provider switch
     {
         SpokenOutputProvider.Kokoro => (NormalizeVoiceId(KokoroProfileId), 0, KokoroVolume),
         SpokenOutputProvider.None => (null, 0, Default.Volume),
@@ -281,6 +291,18 @@ internal sealed record TerminalClientSpokenOutputState(
         null,
         0,
         100);
+
+    /// <summary>
+    /// Kokoro always synthesizes at a fixed 1.0x rate; the numeric <see cref="Rate"/>
+    /// (0, the SAPI-scale "normal" value) is reused as its projected value but would
+    /// otherwise be indistinguishable from a real SAPI rate of 0. Display code should
+    /// use this instead of the raw number for whichever provider actually produced (or
+    /// will produce) the current preferences: the effective one once known, otherwise
+    /// the requested one.
+    /// </summary>
+    public string RateDisplay => (EffectiveProvider ?? RequestedProvider) == SpokenOutputProvider.Kokoro
+        ? "fixed (1.0)"
+        : Rate.ToString(CultureInfo.InvariantCulture);
 }
 
 internal sealed record SpokenOutputVoice(
@@ -604,9 +626,16 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
                     var fallback = await selector.SynthesizeWithSapiAsync(
                         new SpeechSynthesisRequest(text, _preferences),
                         cancellationToken);
+                    // The result came from fallback.EffectiveProvider, not the
+                    // requested one; reproject rate/volume for it too, or the display
+                    // keeps showing the requested provider's settings (e.g. Kokoro's)
+                    // while SAPI plays with its own.
+                    var fallbackDisplay = _preferences.ProjectDisplay(fallback.EffectiveProvider);
                     State = State with
                     {
-                        VoiceId = NormalizeVoiceId(fallback.EffectiveVoiceId ?? _preferences.VoiceId),
+                        VoiceId = NormalizeVoiceId(fallback.EffectiveVoiceId) ?? fallbackDisplay.VoiceId,
+                        Rate = fallbackDisplay.Rate,
+                        Volume = fallbackDisplay.Volume,
                         WarningCode = null,
                         RequestedProvider = _preferences.RequestedProvider,
                         EffectiveProvider = fallback.EffectiveProvider,
@@ -622,9 +651,16 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
             var speech = await _synthesizer.SynthesizeAsync(
                 new SpeechSynthesisRequest(text, _preferences),
                 cancellationToken);
+            // Reproject rate/volume for speech.EffectiveProvider: after a transparent
+            // fallback inside _synthesizer (e.g. Kokoro not configured, SAPI used
+            // instead) it can differ from RequestedProvider, and the display must not
+            // keep showing the requested provider's settings.
+            var display = _preferences.ProjectDisplay(speech.EffectiveProvider);
             State = State with
             {
-                VoiceId = NormalizeVoiceId(speech.EffectiveVoiceId ?? _preferences.VoiceId),
+                VoiceId = NormalizeVoiceId(speech.EffectiveVoiceId) ?? display.VoiceId,
+                Rate = display.Rate,
+                Volume = display.Volume,
                 WarningCode = speech.UsedVoiceFallback ? "speech_voice_unavailable" : null,
                 RequestedProvider = _preferences.RequestedProvider,
                 EffectiveProvider = speech.EffectiveProvider,
@@ -666,9 +702,12 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
         var first = await synthesizer.SynthesizeAsync(
             new SpeechSynthesisRequest(segments[0], _preferences),
             cancellationToken);
+        var display = _preferences.ProjectDisplay(first.EffectiveProvider);
         State = State with
         {
-            VoiceId = NormalizeVoiceId(first.EffectiveVoiceId ?? _preferences.KokoroProfileId),
+            VoiceId = NormalizeVoiceId(first.EffectiveVoiceId) ?? display.VoiceId,
+            Rate = display.Rate,
+            Volume = display.Volume,
             WarningCode = null,
             RequestedProvider = _preferences.RequestedProvider,
             EffectiveProvider = first.EffectiveProvider,

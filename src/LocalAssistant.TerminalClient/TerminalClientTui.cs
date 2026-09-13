@@ -539,7 +539,7 @@ internal sealed class TerminalClientTuiHost
             ? string.Empty
             : $"; Warning: {TerminalTextSanitizer.NormalizeSingleLine(_snapshot.SpokenOutput.WarningCode)}";
         lines.Add(FitLine(
-            $"Speech: requested {_snapshot.SpokenOutput.RequestedProvider}; effective {_snapshot.SpokenOutput.EffectiveProvider?.ToString() ?? "none"}; voice {voice}; rate {_snapshot.SpokenOutput.Rate}; volume {_snapshot.SpokenOutput.Volume}{warning}",
+            $"Speech: requested {_snapshot.SpokenOutput.RequestedProvider}; effective {_snapshot.SpokenOutput.EffectiveProvider?.ToString() ?? "none"}; voice {voice}; rate {_snapshot.SpokenOutput.RateDisplay}; volume {_snapshot.SpokenOutput.Volume}{warning}",
             width));
     }
 

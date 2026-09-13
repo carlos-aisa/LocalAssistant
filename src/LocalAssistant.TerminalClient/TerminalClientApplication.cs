@@ -655,7 +655,7 @@ public sealed class TerminalClientApplication
         if (parts[0].Equals("/info", StringComparison.OrdinalIgnoreCase))
         {
             var voice = _spokenOutput.State;
-            _console.WriteLine($"Server: {_options.BaseUri}; Provider: {provider}; Scenario: {scenario}; Conversation active: {conversationId.HasValue}; Voice: {voice.VoiceId ?? "default"}; Rate: {voice.Rate}; Volume: {voice.Volume}; Muted: {voice.IsMuted}.");
+            _console.WriteLine($"Server: {_options.BaseUri}; Provider: {provider}; Scenario: {scenario}; Conversation active: {conversationId.HasValue}; Voice: {voice.VoiceId ?? "default"}; Rate: {voice.RateDisplay}; Volume: {voice.Volume}; Muted: {voice.IsMuted}.");
             return new(true, 0, accessToken, provider, conversationId);
         }
 
