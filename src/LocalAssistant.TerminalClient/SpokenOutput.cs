@@ -246,6 +246,22 @@ internal sealed record SpokenOutputPreferences
         KokoroLanguage,
         volume,
         UseSapiFallback);
+
+    /// <summary>
+    /// Projects the voice/rate/volume that a snapshot should display for whichever
+    /// provider is actually requested, instead of always showing the SAPI fields
+    /// regardless of the current selection.
+    /// </summary>
+    public (string? VoiceId, int Rate, int Volume) ProjectDisplay() => RequestedProvider switch
+    {
+        SpokenOutputProvider.Kokoro => (NormalizeVoiceId(KokoroProfileId), 0, KokoroVolume),
+        SpokenOutputProvider.None => (null, 0, Default.Volume),
+        _ => (NormalizeVoiceId(VoiceId), Rate, Volume),
+    };
+
+    private static string? NormalizeVoiceId(string? voiceId) => string.IsNullOrWhiteSpace(voiceId)
+        ? null
+        : TerminalTextSanitizer.NormalizeSingleLine(voiceId);
 }
 
 internal sealed record TerminalClientSpokenOutputState(
@@ -456,12 +472,13 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
         _synthesizer = synthesizer ?? throw new ArgumentNullException(nameof(synthesizer));
         _player = player ?? throw new ArgumentNullException(nameof(player));
         _preferences = preferences ?? throw new ArgumentNullException(nameof(preferences));
+        var display = preferences.ProjectDisplay();
         State = new TerminalClientSpokenOutputState(
             availability,
             preferences.IsMuted,
-            NormalizeVoiceId(preferences.VoiceId),
-            preferences.Rate,
-            preferences.Volume,
+            display.VoiceId,
+            display.Rate,
+            display.Volume,
             RequestedProvider: preferences.RequestedProvider);
     }
 
@@ -497,12 +514,13 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
     {
         ArgumentNullException.ThrowIfNull(preferences);
         _preferences = preferences;
+        var display = preferences.ProjectDisplay();
         State = new TerminalClientSpokenOutputState(
             State.Availability,
             preferences.IsMuted,
-            NormalizeVoiceId(preferences.VoiceId),
-            preferences.Rate,
-            preferences.Volume,
+            display.VoiceId,
+            display.Rate,
+            display.Volume,
             WarningCode: null,
             RequestedProvider: preferences.RequestedProvider,
             EffectiveProvider: null,
@@ -610,7 +628,9 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
                 WarningCode = speech.UsedVoiceFallback ? "speech_voice_unavailable" : null,
                 RequestedProvider = _preferences.RequestedProvider,
                 EffectiveProvider = speech.EffectiveProvider,
-                UsedProviderFallback = speech.UsedVoiceFallback,
+                // A provider fallback (e.g. Kokoro -> SAPI) is a different event from
+                // SAPI substituting a voice it could find; only the former belongs here.
+                UsedProviderFallback = _preferences.RequestedProvider != speech.EffectiveProvider,
             };
             return SpokenOutputPreparation.Prepared(new PreparedSpokenOutput(
                 speech,
@@ -870,7 +890,11 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
                     // Whatever outcome this iteration reached, a prefetch that was started
                     // must always be observed and its artifact released; otherwise a
                     // /stop or a failure elsewhere in the segment leaves a synthesis
-                    // running unobserved and its WAV never disposed.
+                    // running unobserved and its WAV never disposed. Cancelling first
+                    // (harmless if `next` is null or already consumed) means a genuine
+                    // playback failure reports promptly instead of waiting behind the
+                    // full synthesis timeout for a segment nobody will play.
+                    prefetchCancellation.Cancel();
                     await DisposeNextAsync(next);
                 }
             }
@@ -928,12 +952,13 @@ internal sealed class UnavailableSpokenOutputCoordinator : ISpokenOutputCoordina
     {
         var effectivePreferences = preferences ?? SpokenOutputPreferences.Default;
         RequestedPreferences = effectivePreferences;
+        var display = effectivePreferences.ProjectDisplay();
         State = new TerminalClientSpokenOutputState(
             SpokenOutputAvailability.Unavailable,
             effectivePreferences.IsMuted,
-            NormalizeVoiceId(effectivePreferences.VoiceId),
-            effectivePreferences.Rate,
-            effectivePreferences.Volume,
+            display.VoiceId,
+            display.Rate,
+            display.Volume,
             RequestedProvider: effectivePreferences.RequestedProvider);
     }
 
@@ -951,12 +976,13 @@ internal sealed class UnavailableSpokenOutputCoordinator : ISpokenOutputCoordina
     {
         ArgumentNullException.ThrowIfNull(preferences);
         RequestedPreferences = preferences;
+        var display = preferences.ProjectDisplay();
         State = new TerminalClientSpokenOutputState(
             SpokenOutputAvailability.Unavailable,
             preferences.IsMuted,
-            NormalizeVoiceId(preferences.VoiceId),
-            preferences.Rate,
-            preferences.Volume,
+            display.VoiceId,
+            display.Rate,
+            display.Volume,
             WarningCode: null,
             RequestedProvider: preferences.RequestedProvider,
             EffectiveProvider: null,
@@ -977,8 +1003,4 @@ internal sealed class UnavailableSpokenOutputCoordinator : ISpokenOutputCoordina
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-
-    private static string? NormalizeVoiceId(string? voiceId) => string.IsNullOrWhiteSpace(voiceId)
-        ? null
-        : TerminalTextSanitizer.NormalizeSingleLine(voiceId);
 }

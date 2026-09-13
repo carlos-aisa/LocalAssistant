@@ -87,6 +87,45 @@ public sealed class KokoroSegmentedPlaybackTests
         Assert.Equal(2, handler.SpeechCallCount);
     }
 
+    [Fact]
+    public async Task PlaybackFailureCancelsThePendingPrefetchInsteadOfWaitingForItsTimeout()
+    {
+        var handler = new SegmentAwareHandler(blockSecondCall: true);
+        using var httpClient = new HttpClient(handler);
+        var synthesizer = new KokoroSpeechSynthesizer(CreateClient(httpClient));
+        var player = new FailingPlayer();
+        await using var coordinator = new SpokenOutputCoordinator(
+            synthesizer,
+            player,
+            SpokenOutputAvailability.Ready,
+            new SpokenOutputPreferences(requestedProvider: SpokenOutputProvider.Kokoro));
+
+        var text = string.Concat(Enumerable.Repeat("Una frase con contenido suficiente. ", 12));
+        var preparation = await coordinator.PrepareAsync(text, CancellationToken.None);
+        var prepared = Assert.IsAssignableFrom<IPreparedSpokenOutput>(preparation.PreparedOutput);
+
+        await using (prepared)
+        {
+            var playback = prepared.PlayAsync(CancellationToken.None);
+            await player.WaitForCallAsync();
+            await handler.WaitForSecondCallStartedAsync();
+
+            player.ReleaseFailure();
+
+            // Bounded well under the client's 18-second synthesis timeout: a genuine
+            // playback failure must cancel the pending prefetch and report promptly,
+            // not wait behind a synthesis nobody will ever play.
+            var completed = await Task.WhenAny(playback, Task.Delay(TimeSpan.FromSeconds(5)));
+            Assert.Same(playback, completed);
+            Assert.Equal(SpokenOutputPlaybackKind.PlaybackFailed, (await playback).Kind);
+        }
+
+        var cancellationSignal = handler.SecondCallWasCancelledAsync();
+        var raced = await Task.WhenAny(cancellationSignal, Task.Delay(TimeSpan.FromSeconds(5)));
+        Assert.Same(cancellationSignal, raced);
+        Assert.True(await cancellationSignal);
+    }
+
     private static KokoroSpeechClient CreateClient(HttpClient httpClient) => new(
         httpClient,
         static () => Enumerable.Range(0, 32).Select(value => (byte)value).ToArray(),
@@ -122,6 +161,25 @@ public sealed class KokoroSegmentedPlaybackTests
         }
 
         public Task WaitForCallAsync() => _called.Task;
+    }
+
+    private sealed class FailingPlayer : ISpeechPlayer
+    {
+        private readonly TaskCompletionSource _called = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _releaseFailure = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task PlayAsync(SynthesizedSpeech speech, CancellationToken cancellationToken)
+        {
+            _called.TrySetResult();
+            await _releaseFailure.Task;
+            throw new InvalidOperationException("Synthetic playback failure.");
+        }
+
+        public Task WaitForCallAsync() => _called.Task;
+
+        public void ReleaseFailure() => _releaseFailure.TrySetResult();
     }
 
     /// <summary>

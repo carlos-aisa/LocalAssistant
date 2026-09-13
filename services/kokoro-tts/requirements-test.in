@@ -1,4 +1,4 @@
 # Test-only additions. requirements-test.lock resolves this file together with production.
 -r requirements-prod.in
-pytest==9.0.3
+pytest==8.3.5
 pytest-asyncio==0.25.3
