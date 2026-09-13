@@ -584,11 +584,17 @@ salida de `/voice` distingue siempre la voz solicitada de la voz efectiva. Las
 dependencias `System.Speech` 8.0.0 y `System.Windows.Extensions` 8.0.0 son paquetes
 Microsoft bajo licencia MIT; Piper continúa fuera de este incremento.
 
-SAPI permanece como fallback explícito. Kokoro CPU está implementado como proveedor
-neuronal local opcional mediante un proceso Python manual de loopback, con pesos ya
-preparados, eSpeak NG y un secreto DPAPI distinto del bearer del cliente. No modifica
-la API conversacional ni inicia, instala o reinicia procesos automáticamente. Su
-aceptación operativa sigue pendiente del smoke offline y del runbook Windows.
+SAPI permanece como fallback explícito. Kokoro CPU es un proveedor neuronal local
+opcional, seleccionado tras descartar Chatterbox Multilingual (agotaba la VRAM
+compartida con Ollama en la GPU objetivo de 8 GB), implementado como un proceso Python
+manual de loopback con pesos ya preparados, eSpeak NG y un secreto DPAPI distinto del
+bearer del cliente (`--kokoro-provision-secret`/`--kokoro-rotate-secret`). No modifica
+la API conversacional ni inicia, instala o reinicia procesos automáticamente.
+`/speech-provider kokoro` y `/voice kokoro <perfil>` lo seleccionan; sus perfiles
+actuales (`jarvis-es`, `jarvis-es-alt`, `jarvis-es-female`) son en español, con
+segmentación progresiva y fallback a SAPI o texto ante un fallo. El smoke offline y el
+runbook manual en Windows se ejecutaron y superaron; ver
+`docs/runbooks/kokoro-local-tts-validation.md`.
 
 La reproducción de audio real se comprobó manualmente en Windows y quedó registrada en
 `docs/evaluations/2026-09-09-windows-tts-manual-validation.md`. Las pruebas

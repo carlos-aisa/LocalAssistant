@@ -2,7 +2,10 @@
 
 ## Estado
 
-Aceptada.
+Aceptada. [ADR 0037](0037-select-kokoro-cpu-local-neural-tts.md) la sustituye
+únicamente en la elección del motor concreto (Kokoro CPU sobre Chatterbox); las
+decisiones de frontera textual, proceso aislado y selección explícita con fallback de
+este ADR permanecen en vigor.
 
 ## Contexto
 

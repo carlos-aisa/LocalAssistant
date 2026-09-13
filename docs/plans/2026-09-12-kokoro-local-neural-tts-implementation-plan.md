@@ -2,7 +2,7 @@
 
 ## Estado
 
-Propuesto. Implementa docs/specs/2026-09-12-kokoro-local-neural-tts-design.md. No reabre la fase 5, no inicia la fase 6 y no modifica la API, el orquestador ni contratos de conversación.
+Finalizado (2026-09-12). Implementa docs/specs/2026-09-12-kokoro-local-neural-tts-design.md. No reabre la fase 5, no inicia la fase 6 y no modifica la API, el orquestador ni contratos de conversación. Los seis lotes están completos: el hash-locking de requirements-prod.lock/requirements-test.lock (lote 6, punto 7) se verificó instalando ambos con --require-hashes en un entorno limpio, y el smoke offline con firewall real más el runbook manual en Windows (lote 6, punto 6/8) se ejecutaron y superaron.
 
 ## Límites
 

@@ -2,7 +2,7 @@
 
 ## Estado
 
-Propuesto. Este incremento es independiente y posterior al cierre de la fase 5. No renumera ni reabre dicha fase y no inicia la fase 6.
+Implementado y verificado (2026-09-12). Este incremento es independiente y posterior al cierre de la fase 5; no la renumera ni reabre, y no inicia la fase 6. El smoke offline y el runbook manual en Windows se ejecutaron y superaron (`docs/runbooks/kokoro-local-tts-validation.md`).
 
 ## Objetivo
 

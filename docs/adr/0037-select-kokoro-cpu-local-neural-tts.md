@@ -2,8 +2,9 @@
 
 ## Status
 
-Accepted for implementation; operational acceptance remains pending the Windows
-offline smoke test and manual runbook.
+Accepted. The offline smoke test (outbound traffic blocked by a real Windows
+Firewall rule) and the manual Windows runbook
+(`docs/runbooks/kokoro-local-tts-validation.md`) both passed.
 
 ## Decision
 

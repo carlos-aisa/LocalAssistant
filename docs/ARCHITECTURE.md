@@ -1029,64 +1029,71 @@ payload DPAPI. No construye `TerminalClientApplication` ni abre sesión. `--vers
 `--help` completan el cierre operativo. El cliente sigue sin poder arrancar, alojar ni
 supervisar la API.
 
-#### Proveedor neuronal local de TTS (Kokoro CPU, validación operativa pendiente)
+#### Proveedor neuronal local de TTS (Kokoro CPU, implementado y validado)
 
-El plano de salida hablada ya está estructurado para admitir otro sintetizador sin
-cambiar el plano de conversación. `SpokenOutputCoordinator` depende de `ISpeechSynthesizer`,
-`ISpeechVoiceCatalog` e `ISpeechPlayer`; la implementación SAPI es un adaptador más. Un
-proveedor neuronal local —candidato actual Chatterbox Multilingual, decisión no
-tomada— encajaría como un `ChatterboxSpeechSynthesizer` detrás de esos mismos contratos,
-tras una validación experimental fuera del producto (calidad, latencia, VRAM y
-convivencia con Ollama en 8 GB). La hoja de ruta describe los tres momentos y las
-decisiones abiertas.
+El plano de salida hablada admite un segundo sintetizador sin cambiar el plano de
+conversación. `SpokenOutputCoordinator` sigue dependiendo de `ISpeechSynthesizer`,
+`ISpeechVoiceCatalog` e `ISpeechPlayer`; SAPI y Kokoro son dos adaptadores detrás de los
+mismos contratos. Kokoro 0.9.4 en CPU se seleccionó tras una validación experimental
+fuera del producto que descartó primero Chatterbox Multilingual: en la GPU objetivo de
+8 GB, convivir con Ollama dejaba la VRAM prácticamente agotada y una respuesta larga
+terminó en un error CUDA irrecuperable. Kokoro en CPU no compite por VRAM y superó la
+misma prueba de convivencia sin degradación — ver
+[ADR 0037](adr/0037-select-kokoro-cpu-local-neural-tts.md).
 
-El motor neuronal **no** vive en el proceso .NET. Se ejecuta como servicio o proceso
-local independiente que carga el modelo una sola vez, expone una frontera local acotada
-y devuelve audio en un formato conocido (inicialmente WAV completo; streaming aplazado).
-El adaptador .NET solo habla con esa frontera; no contiene el modelo, no ejecuta Python,
-no descarga modelos ni gestiona drivers. En su primer incremento el servicio se arranca
-manualmente; un supervisor local de arranque, health y límites es evolución posterior y
-separada del orquestador.
+El motor **no** vive en el proceso .NET: `services/kokoro-tts` es un paquete Python
+independiente (Python 3.11, `aiohttp`, un único `ThreadPoolExecutor` de un worker) que
+fuerza CPU antes de cargar Kokoro, carga el modelo una sola vez desde una caché de
+Hugging Face ya preparada, y escucha exclusivamente en `127.0.0.1`. El adaptador .NET
+(`KokoroSpeechClient`/`KokoroSpokenOutput`) solo habla HTTP con esa frontera: no
+contiene el modelo, no ejecuta Python, no instala, actualiza, reinicia ni detiene el
+proceso, y no descarga pesos ni gestiona eSpeak NG. El primer incremento arranca el
+servicio a mano; un supervisor local queda como evolución posterior y separada del
+orquestador.
 
-La selección de proveedor es explícita y diagnosticable, nunca un cambio silencioso.
-Conceptualmente `SpokenOutput.Provider = Sapi | Chatterbox | None`,
-`SpokenOutput.FallbackProvider = Sapi | None` y `SpokenOutput.Chatterbox.Endpoint` como
-dirección local autorizada (nombres no definitivos). Al seleccionar el proveedor neuronal:
-se comprueba la configuración, se hace un health check, se usa el adaptador si responde,
-y si no se informa de forma comprensible y se aplica la política de fallback declarada
-(SAPI o degradación a texto). SAPI permanece disponible como implementación real y
-fallback de bajo coste.
+Frontera HTTP real del servicio:
 
-Gaps que la evolución debe cerrar y que hoy el contrato no cubre:
+| Ruta | Respuesta | Semántica |
+| --- | --- | --- |
+| `GET /health` | JSON | `loading`, `ready`, `busy` o `degraded`; responde de inmediato incluso durante una síntesis en curso. |
+| `GET /v1/voices` | JSON | Perfiles registrados `{ id, language }`, nunca voces internas. |
+| `POST /v1/speech` | `audio/wav` | Sintetiza un único fragmento validado (texto ≤ 320 caracteres). |
 
-- **Idioma.** `SpeechSynthesisRequest` no representa el idioma. El proveedor neuronal
-  necesita al menos español e inglés; el idioma procederá de configuración de instalación,
-  idioma de conversación, modo del tutor de inglés o metadatos de canal o sesión, no de
-  inferencia automática sobre el texto.
-- **Capacidades por proveedor.** Un adaptador no debe ignorar en silencio una preferencia
-  que no soporta. Se documentarán capacidades conceptuales por proveedor
-  (`SupportsVoiceSelection`, `SupportsLanguageSelection`, `SupportsRate`, `SupportsVolume`,
-  `SupportsStreaming`, `SupportsReferenceVoice`, `SupportsCancellation`; nombres
-  ilustrativos). La aplicación mostrará las capacidades disponibles, rechazará de forma
-  comprensible una preferencia no soportada y solo aplicará una transformación común
-  cuando esté bien definida; no se mapeará arbitrariamente el rango `-10..10` de SAPI a
-  parámetros neuronales distintos.
-- **Perfiles de voz.** Para el proveedor neuronal una voz es un perfil lógico
-  previamente registrado y autorizado (`jarvis-es`, `jarvis-en`). El cliente usa solo
-  identificadores lógicos; no envía rutas, nombres de archivo, audio de referencia,
-  directorios locales ni URLs. El servicio resuelve el perfil internamente.
+Todos los endpoints exigen `Authorization: Bearer <secreto>`. El secreto son 32 bytes
+generados criptográficamente y compartidos entre .NET y Python mediante un envoltorio
+DPAPI propio en `%LOCALAPPDATA%\LocalAssistant\Kokoro\shared-secret.v1.dpapi`, distinto
+del bearer de sesión del cliente; se provisiona explícitamente con
+`--kokoro-provision-secret` y se rotará con `--kokoro-rotate-secret` mientras el
+servicio esté parado. Una síntesis concurrente se rechaza con `503` y
+`Retry-After: 1` sin mantener cola. Cada respuesta lleva `X-Kokoro-Correlation-Id`
+para diagnóstico, sin texto, rutas ni credenciales.
 
-Frontera local conceptual del servicio (sin rutas ni DTOs fijados): `GET /health`,
-`GET /voices` y `POST /synthesize`. La síntesis recibe únicamente el texto ya
-seleccionado, el idioma, el identificador lógico de voz, parámetros autorizados y
-acotados y un identificador técnico opcional de operación para cancelación. La respuesta
-lleva audio en un tipo permitido, la voz y el idioma efectivos, avisos seguros y
-diagnóstico mínimo. Esta frontera de audio es independiente del contrato textual de
-conversación descrito en «Planos futuros de conversación y multimedia»; el mismo
-proveedor se reutilizará en el canal de voz de un dispositivo (Fase 10) y en satélites
-(Fases 13–16). El detalle de seguridad está en [SECURITY.md](SECURITY.md) y las
-decisiones firmes en el
-[ADR 0036](adr/0036-textual-conversation-and-adapted-local-neural-tts.md).
+La selección de proveedor es explícita y nunca un cambio silencioso: `/speech-provider
+sapi|kokoro|none` y `/voice sapi|kokoro <perfil>` operan siempre sobre el proveedor
+solicitado. Si Kokoro no responde, se informa con un código seguro (`speech_kokoro_*`,
+por ejemplo `speech_kokoro_unavailable` o `speech_kokoro_timeout`) y se aplica el
+fallback configurado a SAPI o a degradación textual; tras haber empezado a sonar un
+fragmento no hay fallback automático, para no duplicar contenido. SAPI permanece
+disponible como implementación real y fallback de bajo coste.
+
+Kokoro expone perfiles estables, no voces internas: `jarvis-es` (`em_alex`),
+`jarvis-es-alt` (`em_santa`) y `jarvis-es-female` (`ef_dora`), los tres en español; el
+idioma queda representado explícitamente en el contrato de perfil, no se infiere del
+texto. Un perfil equivalente en inglés queda pendiente de un incremento posterior. El
+cliente segmenta el texto ya elegible (`SpokenText.ForSpeech()`) en fragmentos de hasta
+320 caracteres respetando límites de frase antes de llamar al servicio, sintetiza uno
+cada vez y hace prefetch del siguiente mientras suena el actual
+(`PlayingVoice`/`BufferingVoice`); un fallo de un fragmento posterior no interrumpe el
+que ya suena, no reintenta y no cambia proveedor ni preferencias.
+
+El detalle de seguridad está en [SECURITY.md](SECURITY.md); las decisiones firmes de
+frontera textual, proceso aislado y selección con fallback controlado están en el
+[ADR 0036](adr/0036-textual-conversation-and-adapted-local-neural-tts.md); la elección
+del motor concreto, en el
+[ADR 0037](adr/0037-select-kokoro-cpu-local-neural-tts.md). La verificación automática
+y manual (smoke offline con firewall real, convivencia con Ollama, recorrido funcional
+completo en Windows) está registrada en
+[docs/runbooks/kokoro-local-tts-validation.md](runbooks/kokoro-local-tts-validation.md).
 
 ## Evaluación de Microsoft.Extensions.AI
 
