@@ -65,10 +65,10 @@ public sealed class SetAssistantNameToolTests
         var policy = new DefaultToolRiskPolicy();
 
         var denied = policy.Evaluate(
-            tool.Definition.Metadata,
+            ToolPolicyTarget.FromRegisteredTool(tool),
             new ToolPolicyContext("authenticated-user", new HashSet<string>(StringComparer.Ordinal)));
         var requiresConfirmation = policy.Evaluate(
-            tool.Definition.Metadata,
+            ToolPolicyTarget.FromRegisteredTool(tool),
             new ToolPolicyContext(
                 "owner",
                 new HashSet<string>(StringComparer.Ordinal) { "installation.owner" }));

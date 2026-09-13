@@ -825,8 +825,19 @@ política del destino lo permita. Las categorías nuevas o desconocidas se deneg
 por defecto. La pasarela actual evalúa descriptores y solo entrega los valores a un
 adaptador registrado cuando la política los permite. Adaptador, destino y operación
 proceden de una allowlist, no de una URL libre propuesta por el modelo. No existe aún
-un adaptador real ni comunicación externa. Una marca de saneado procedente del modelo
-o del cliente no será prueba suficiente cuando se incorpore el sanitizador.
+un adaptador real ni comunicación externa. La composición registra el gateway con
+allowlist vacía. Solo un `GatewayBackedTool` sellado puede llevar una herramienta
+`ControlledExternal` al gateway; una herramienta externa convencional se deniega y una
+herramienta local no puede declararse respaldada por el gateway. La ruta se deriva de
+la instancia registrada y se reevalúa tanto al publicar el catálogo como antes de
+ejecutar o resolver una confirmación. Una marca de saneado procedente del modelo o del
+cliente no será prueba suficiente cuando se incorpore el sanitizador.
+
+El gateway aplica límite total, concurrencia sin cola y límite de resultado
+normalizado. Sus auditorías estructuradas no registran payloads, coordenadas, URLs ni
+mensajes completos de excepción. Los controles HTTP específicos (host fijo,
+redirecciones, Content-Type, tamaño de stream y JSON del proveedor) se incorporarán
+con el primer adaptador de destino fijo, no antes.
 
 La comprobación se aplicará al payload final y no solo a sus fuentes originales.
 Consultas, resúmenes, nombres de proyecto, clases, hosts, URLs privadas,

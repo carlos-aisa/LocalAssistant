@@ -20,10 +20,13 @@ public sealed class ToolRegistry : IToolRegistry
         }
 
         _tools = registrations;
-        Definitions = registrations.Values.Select(static tool => tool.Definition).ToArray();
+        Tools = registrations.Values.ToArray();
+        Definitions = Tools.Select(static tool => tool.Definition).ToArray();
     }
 
     public IReadOnlyList<ToolDefinition> Definitions { get; }
+
+    public IReadOnlyList<ITool> Tools { get; }
 
     public bool TryGet(string name, out ITool? tool) => _tools.TryGetValue(name, out tool);
 }

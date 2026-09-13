@@ -1,8 +1,10 @@
 using System.Text.Json;
 using LocalAssistant.Core.Conversations;
+using LocalAssistant.Core.ExternalTools;
 using LocalAssistant.Core.LanguageModels;
 using LocalAssistant.Core.Orchestration;
 using LocalAssistant.Core.Profiles;
+using LocalAssistant.Core.Security.Egress;
 using LocalAssistant.Core.Security.ToolRisk;
 using LocalAssistant.Core.Tools;
 using LocalAssistant.Tests.TestDoubles;
@@ -731,6 +733,108 @@ public sealed class ConversationOrchestratorTests
     }
 
     [Fact]
+    public async Task IncludesGatewayBackedExternalToolInTheCatalogAndRechecksItsCurrentRouteBeforeExecution()
+    {
+        var operation = new MutableGatewayOperation(
+            ToolExposure.ControlledExternal,
+            ToolCost.None);
+        var gateway = new CountingGateway();
+        var tool = new GatewayBackedTool(operation, gateway);
+        var provider = new ScriptedLanguageProvider(
+        [
+            request =>
+            {
+                Assert.Contains(
+                    request.AvailableTools,
+                    definition => definition.Metadata.Name == operation.Definition.Metadata.Name);
+                operation.Exposure = ToolExposure.Local;
+                return LanguageProviderResponse.RequestTools(
+                    new ToolCall("gateway-1", operation.Definition.Metadata.Name, EmptyArguments()));
+            },
+        ]);
+        var sut = CreateOrchestrator(tools: [tool]);
+
+        var result = await sut.ProcessAsync(
+            new ConversationTurnRequest("Use the external test tool."),
+            provider,
+            CancellationToken.None);
+
+        Assert.Equal("invalid_gateway_tool_configuration", result.Error?.Code);
+        Assert.Equal(0, gateway.CallCount);
+    }
+
+    [Fact]
+    public async Task RechecksGatewayRouteWhenResolvingConfirmation()
+    {
+        var operation = new MutableGatewayOperation(
+            ToolExposure.ControlledExternal,
+            ToolCost.Significant);
+        var gateway = new CountingGateway();
+        var tool = new GatewayBackedTool(operation, gateway);
+        var provider = ProviderRequesting(
+            new ToolCall("gateway-confirmation", operation.Definition.Metadata.Name, EmptyArguments()));
+        var sut = CreateOrchestrator(tools: [tool]);
+
+        var pending = await sut.ProcessAsync(
+            new ConversationTurnRequest("Use the external test tool."),
+            provider,
+            CancellationToken.None);
+
+        Assert.NotNull(pending.Confirmation);
+        operation.Exposure = ToolExposure.Local;
+
+        var result = await sut.ResolveConfirmationAsync(
+            pending.ConversationId,
+            pending.Confirmation!.ConfirmationId,
+            approved: true,
+            provider,
+            CancellationToken.None);
+
+        Assert.Equal("invalid_gateway_tool_configuration", result.Error?.Code);
+        Assert.Equal(0, gateway.CallCount);
+    }
+
+    [Fact]
+    public async Task KeepsAConventionalControlledExternalToolOutOfTheCatalogAndExecution()
+    {
+        var executions = 0;
+        var standardExternalTool = new DelegateTool(
+            "standard-external",
+            new ToolRiskProfile(
+                ToolOperationImpact.ReadOnly,
+                ToolDataSensitivity.Public,
+                ToolExposure.ControlledExternal,
+                ToolCost.None,
+                RequiresConfirmation: false,
+                []),
+            (_, _) =>
+            {
+                executions++;
+                return ValueTask.FromResult(ToolExecutionResult.Success("unreachable"));
+            });
+        var provider = new ScriptedLanguageProvider(
+        [
+            request =>
+            {
+                Assert.DoesNotContain(
+                    request.AvailableTools,
+                    definition => definition.Metadata.Name == "standard-external");
+                return LanguageProviderResponse.RequestTools(
+                    new ToolCall("standard-external-1", "standard-external", EmptyArguments()));
+            },
+        ]);
+        var sut = CreateOrchestrator(tools: [standardExternalTool]);
+
+        var result = await sut.ProcessAsync(
+            new ConversationTurnRequest("Use the external test tool."),
+            provider,
+            CancellationToken.None);
+
+        Assert.Equal("external_gateway_required", result.Error?.Code);
+        Assert.Equal(0, executions);
+    }
+
+    [Fact]
     public async Task RequiresConfirmationForSignificantCostReadOnlyTool()
     {
         var costlyTool = new DelegateTool(
@@ -1327,5 +1431,60 @@ public sealed class ConversationOrchestratorTests
         public ValueTask<ToolExecutionResult> ExecuteAsync(
             JsonElement arguments,
             CancellationToken cancellationToken) => _execute(arguments, cancellationToken);
+    }
+
+    private sealed class MutableGatewayOperation(
+        ToolExposure initialExposure,
+        ToolCost cost) : IGatewayToolOperation
+    {
+        public ToolExposure Exposure { get; set; } = initialExposure;
+
+        public ToolDefinition Definition => new(
+            new ToolMetadata(
+                "gateway-test",
+                "Gateway integration test tool",
+                new ToolRiskProfile(
+                    ToolOperationImpact.ReadOnly,
+                    ToolDataSensitivity.Public,
+                    Exposure,
+                    cost,
+                    RequiresConfirmation: false,
+                    [])),
+            JsonSerializer.SerializeToElement(new { type = "object" }));
+
+        public ValueTask<ExternalToolRequest?> CreateRequestAsync(
+            JsonElement arguments,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<ExternalToolRequest?>(new ExternalToolRequest(
+                "gateway-test-adapter",
+                "search",
+                "test-purpose",
+                [new ExternalToolField(
+                    new EgressPayloadField("query", [DataCategory.PublicData], true, true),
+                    JsonSerializer.SerializeToElement("test"))]));
+
+        public ToolExecutionResult CreateResult(ExternalToolGatewayResult gatewayResult) =>
+            gatewayResult.IsSuccess
+                ? ToolExecutionResult.Success("ok")
+                : ToolExecutionResult.Failure(
+                    gatewayResult.ErrorCode ?? "external_adapter_failed",
+                    "The external tool operation failed.");
+    }
+
+    private sealed class CountingGateway : IExternalToolsGateway
+    {
+        public int CallCount { get; private set; }
+
+        public ValueTask<ExternalToolGatewayResult> ExecuteAsync(
+            ExternalToolRequest request,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return ValueTask.FromResult(new ExternalToolGatewayResult(
+                true,
+                JsonSerializer.SerializeToElement(new { ok = true }),
+                null,
+                null));
+        }
     }
 }

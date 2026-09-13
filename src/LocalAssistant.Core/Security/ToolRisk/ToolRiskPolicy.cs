@@ -1,3 +1,4 @@
+using LocalAssistant.Core.ExternalTools;
 using LocalAssistant.Core.Tools;
 
 namespace LocalAssistant.Core.Security.ToolRisk;
@@ -17,9 +18,39 @@ public enum ToolPolicyDecisionKind { Allowed, RequiresConfirmation, Denied }
 
 public sealed record ToolPolicyDecision(ToolPolicyDecisionKind Kind, string? Code = null);
 
+public enum ToolExecutionRoute
+{
+    Standard,
+    GatewayBacked,
+}
+
+public sealed record ToolPolicyTarget
+{
+    private ToolPolicyTarget(ToolMetadata metadata, ToolExecutionRoute route)
+    {
+        Metadata = metadata;
+        Route = route;
+    }
+
+    public ToolMetadata Metadata { get; }
+
+    public ToolExecutionRoute Route { get; }
+
+    public static ToolPolicyTarget FromRegisteredTool(ITool tool)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+
+        return new ToolPolicyTarget(
+            tool.Definition.Metadata,
+            tool is GatewayBackedTool
+                ? ToolExecutionRoute.GatewayBacked
+                : ToolExecutionRoute.Standard);
+    }
+}
+
 public interface IToolRiskPolicy
 {
-    ToolPolicyDecision Evaluate(ToolMetadata metadata, ToolPolicyContext context);
+    ToolPolicyDecision Evaluate(ToolPolicyTarget target, ToolPolicyContext context);
 }
 
 public interface IToolPolicyContextAccessor
@@ -34,10 +65,28 @@ public sealed class AnonymousToolPolicyContextAccessor : IToolPolicyContextAcces
 
 public sealed class DefaultToolRiskPolicy : IToolRiskPolicy
 {
-    public ToolPolicyDecision Evaluate(ToolMetadata metadata, ToolPolicyContext context)
+    public ToolPolicyDecision Evaluate(ToolPolicyTarget target, ToolPolicyContext context)
     {
-        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(context);
+
+        var metadata = target.Metadata;
+
+        if (metadata.Risk.Exposure == ToolExposure.Local &&
+            target.Route == ToolExecutionRoute.GatewayBacked)
+        {
+            return new ToolPolicyDecision(
+                ToolPolicyDecisionKind.Denied,
+                "invalid_gateway_tool_configuration");
+        }
+
+        if (metadata.Risk.Exposure == ToolExposure.ControlledExternal &&
+            target.Route == ToolExecutionRoute.Standard)
+        {
+            return new ToolPolicyDecision(
+                ToolPolicyDecisionKind.Denied,
+                "external_gateway_required");
+        }
 
         if ((metadata.Risk.Sensitivity is ToolDataSensitivity.Private or ToolDataSensitivity.Sensitive) &&
             !context.IsAuthenticated)
@@ -53,11 +102,6 @@ public sealed class DefaultToolRiskPolicy : IToolRiskPolicy
         if (metadata.Risk.RequiredScopes.Any(scope => !context.GrantedScopes.Contains(scope)))
         {
             return new ToolPolicyDecision(ToolPolicyDecisionKind.Denied, "scope_not_granted");
-        }
-
-        if (metadata.Risk.Exposure == ToolExposure.ControlledExternal)
-        {
-            return new ToolPolicyDecision(ToolPolicyDecisionKind.Denied, "external_gateway_required");
         }
 
         if (metadata.Risk.RequiresConfirmation ||

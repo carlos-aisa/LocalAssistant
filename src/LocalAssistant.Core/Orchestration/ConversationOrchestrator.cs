@@ -479,7 +479,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
             return (new("tool_not_found", "The requested tool is not registered.", call.Name), null);
         }
 
-        var policyDecision = _toolRiskPolicy.Evaluate(tool.Definition.Metadata, policyContext);
+        var policyDecision = EvaluateToolPolicy(tool, policyContext);
         if (policyDecision.Kind == ToolPolicyDecisionKind.Denied)
         {
             await WriteAuditAsync(CreateAuditEvent(ToolAuditEventType.PolicyDenied, id, policyContext.PrincipalId, providerName, call, policyDecision.Code ?? "tool_policy_denied"), ct);
@@ -521,7 +521,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
             traces.Add(Failed(call, "tool_not_found"));
             return new("tool_not_found", "The requested tool is not registered.", call.Name);
         }
-        var policyDecision = _toolRiskPolicy.Evaluate(tool.Definition.Metadata, policyContext);
+        var policyDecision = EvaluateToolPolicy(tool, policyContext);
         if (policyDecision.Kind == ToolPolicyDecisionKind.Denied)
         {
             await WriteAuditAsync(CreateAuditEvent(ToolAuditEventType.PolicyDenied, id, policyContext.PrincipalId, providerName, call, policyDecision.Code ?? "tool_policy_denied"), ct);
@@ -617,8 +617,13 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         metadata.OwnerPrincipalId is null ||
         StringComparer.Ordinal.Equals(metadata.OwnerPrincipalId, principalId);
     private ToolDefinition[] GetAvailableDefinitions(ToolPolicyContext context) =>
-        _tools.Definitions.Where(definition =>
-            _toolRiskPolicy.Evaluate(definition.Metadata, context).Kind != ToolPolicyDecisionKind.Denied).ToArray();
+        _tools.Tools
+            .Where(tool => EvaluateToolPolicy(tool, context).Kind != ToolPolicyDecisionKind.Denied)
+            .Select(static tool => tool.Definition)
+            .ToArray();
+
+    private ToolPolicyDecision EvaluateToolPolicy(ITool tool, ToolPolicyContext context) =>
+        _toolRiskPolicy.Evaluate(ToolPolicyTarget.FromRegisteredTool(tool), context);
     private ConversationTurnResult Result(Guid id, string? content, IReadOnlyList<ToolExecutionTrace> traces, int iterations, TimeSpan providerTime, TimeSpan toolsTime, OrchestrationError? error, ToolConfirmationRequest? confirmation = null)
     {
         var now = _clock.GetUtcNow();
