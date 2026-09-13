@@ -352,9 +352,12 @@ confirmación usan la misma evaluación: `ControlledExternal + Standard` se deni
 en runtime antes de construir el payload; el schema no sustituye esa comprobación.
 
 El gateway limita su tiempo total, concurrencia sin cola y tamaño del resultado JSON
-normalizado. Si un adaptador ignora la cancelación, conserva su permiso hasta que
+normalizado. Su timeout es estrictamente menor que el de herramienta del orquestador,
+para que el vencimiento externo mantenga el código `external_gateway_timeout`. Distingue
+la cancelación del solicitante, que se propaga, de la cancelación autónoma del adaptador,
+que es un fallo seguro. Si un adaptador ignora la cancelación, conserva su permiso hasta que
 termine, aunque el solicitante ya haya recibido el timeout. Traduce excepciones y
-códigos no seguros a errores estables. Sus logs
+códigos no seguros, incluida una respuesta de éxito no normalizable, a errores estables. Sus logs
 contienen solo adaptador, operación, decisión, resultado seguro y duración; nunca
 valores del payload ni mensajes de excepción. Los controles de transporte HTTP,
 credenciales, rate limits, respuesta de proveedor y auditoría durable llegarán con el

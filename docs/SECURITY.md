@@ -833,8 +833,11 @@ la instancia registrada y se reevalúa tanto al publicar el catálogo como antes
 ejecutar o resolver una confirmación. Una marca de saneado procedente del modelo o del
 cliente no será prueba suficiente cuando se incorpore el sanitizador.
 
-El gateway aplica límite total, concurrencia sin cola y límite de resultado
-normalizado. Sus auditorías estructuradas no registran payloads, coordenadas, URLs ni
+El gateway aplica límite total —estrictamente menor que el timeout exterior de la
+herramienta—, concurrencia sin cola y límite de resultado normalizado. Solo su deadline
+propio se traduce a `external_gateway_timeout`; la cancelación del solicitante se propaga
+y la cancelación autónoma del adaptador se convierte en `external_adapter_failed`. Sus
+auditorías estructuradas no registran payloads, coordenadas, URLs ni
 mensajes completos de excepción. Los controles HTTP específicos (host fijo,
 redirecciones, Content-Type, tamaño de stream y JSON del proveedor) se incorporarán
 con el primer adaptador de destino fijo, no antes.
