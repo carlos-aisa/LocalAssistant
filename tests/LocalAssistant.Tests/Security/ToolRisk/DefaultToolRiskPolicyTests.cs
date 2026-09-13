@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LocalAssistant.Core.Security.ToolRisk;
 using LocalAssistant.Core.Tools;
 
@@ -10,7 +11,7 @@ public sealed class DefaultToolRiskPolicyTests
     [Fact]
     public void AllowsPublicLocalRead()
     {
-        var result = _sut.Evaluate(Metadata(ToolRiskProfile.PublicLocalRead), ToolPolicyContext.Anonymous);
+        var result = _sut.Evaluate(Target(ToolRiskProfile.PublicLocalRead), ToolPolicyContext.Anonymous);
 
         Assert.Equal(ToolPolicyDecisionKind.Allowed, result.Kind);
     }
@@ -19,7 +20,7 @@ public sealed class DefaultToolRiskPolicyTests
     public void DeniesSensitiveToolForAnonymousContext()
     {
         var result = _sut.Evaluate(
-            Metadata(Profile(sensitivity: ToolDataSensitivity.Sensitive)),
+            Target(Profile(sensitivity: ToolDataSensitivity.Sensitive)),
             ToolPolicyContext.Anonymous);
 
         Assert.Equal(ToolPolicyDecisionKind.Denied, result.Kind);
@@ -30,7 +31,7 @@ public sealed class DefaultToolRiskPolicyTests
     public void DeniesMissingScope()
     {
         var result = _sut.Evaluate(
-            Metadata(Profile(requiredScopes: ["documents.read"])),
+            Target(Profile(requiredScopes: ["documents.read"])),
             new ToolPolicyContext("test-principal", new HashSet<string>(StringComparer.Ordinal)));
 
         Assert.Equal(ToolPolicyDecisionKind.Denied, result.Kind);
@@ -41,7 +42,7 @@ public sealed class DefaultToolRiskPolicyTests
     public void RequiresAuthenticationForScopedTool()
     {
         var result = _sut.Evaluate(
-            Metadata(Profile(requiredScopes: ["documents.read"])),
+            Target(Profile(requiredScopes: ["documents.read"])),
             ToolPolicyContext.Anonymous);
 
         Assert.Equal(ToolPolicyDecisionKind.Denied, result.Kind);
@@ -52,7 +53,7 @@ public sealed class DefaultToolRiskPolicyTests
     public void RequiresConfirmationForSignificantCost()
     {
         var result = _sut.Evaluate(
-            Metadata(Profile(cost: ToolCost.Significant)),
+            Target(Profile(cost: ToolCost.Significant)),
             ToolPolicyContext.Anonymous);
 
         Assert.Equal(ToolPolicyDecisionKind.RequiresConfirmation, result.Kind);
@@ -62,14 +63,15 @@ public sealed class DefaultToolRiskPolicyTests
     public void DeniesControlledExternalToolUntilItUsesGateway()
     {
         var result = _sut.Evaluate(
-            Metadata(Profile(exposure: ToolExposure.ControlledExternal)),
+            Target(Profile(exposure: ToolExposure.ControlledExternal)),
             ToolPolicyContext.Anonymous);
 
         Assert.Equal(ToolPolicyDecisionKind.Denied, result.Kind);
         Assert.Equal("external_gateway_required", result.Code);
     }
 
-    private static ToolMetadata Metadata(ToolRiskProfile risk) => new("test", "Test tool", risk);
+    private static ToolPolicyTarget Target(ToolRiskProfile risk) =>
+        ToolPolicyTarget.FromRegisteredTool(new TestTool(risk));
 
     private static ToolRiskProfile Profile(
         ToolDataSensitivity sensitivity = ToolDataSensitivity.Public,
@@ -83,4 +85,16 @@ public sealed class DefaultToolRiskPolicyTests
             cost,
             RequiresConfirmation: false,
             requiredScopes ?? []);
+
+    private sealed class TestTool(ToolRiskProfile risk) : ITool
+    {
+        public ToolDefinition Definition { get; } = new(
+            new ToolMetadata("test", "Test tool", risk),
+            JsonSerializer.SerializeToElement(new { type = "object" }));
+
+        public ValueTask<ToolExecutionResult> ExecuteAsync(
+            JsonElement arguments,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(ToolExecutionResult.Success("ok"));
+    }
 }

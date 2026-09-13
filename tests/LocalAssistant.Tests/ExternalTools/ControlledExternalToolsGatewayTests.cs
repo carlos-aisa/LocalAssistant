@@ -2,7 +2,9 @@ using System.Text.Json;
 using LocalAssistant.Core.ExternalTools;
 using LocalAssistant.Core.Security.Egress;
 using LocalAssistant.Infrastructure.ExternalTools;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace LocalAssistant.Tests.ExternalTools;
 
@@ -116,7 +118,8 @@ public sealed class ControlledExternalToolsGatewayTests
     {
         var adapter = new DelegateAdapter(static (_, _) =>
             throw new InvalidOperationException("Sensitive provider detail"));
-        var sut = CreateGateway(adapter);
+        var logger = new CapturingLogger<ControlledExternalToolsGateway>();
+        var sut = CreateGateway(logger, new ExternalToolsGatewayOptions(), adapter);
 
         var result = await sut.ExecuteAsync(
             Request(Field("query", "weather", [DataCategory.PublicData])),
@@ -124,6 +127,9 @@ public sealed class ControlledExternalToolsGatewayTests
 
         Assert.Equal("external_adapter_failed", result.ErrorCode);
         Assert.Equal(1, adapter.ExecutionCount);
+        Assert.DoesNotContain(
+            logger.Entries,
+            entry => entry.Contains("Sensitive provider detail", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -141,8 +147,189 @@ public sealed class ControlledExternalToolsGatewayTests
         Assert.Equal(0, adapter.ExecutionCount);
     }
 
+    [Fact]
+    public async Task AppliesTheGatewayTotalTimeoutToAnAdapter()
+    {
+        var adapter = new DelegateAdapter(async (_, cancellationToken) =>
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return ExternalToolAdapterResult.Failure("unreachable");
+        });
+        var sut = CreateGateway(
+            NullLogger<ControlledExternalToolsGateway>.Instance,
+            new ExternalToolsGatewayOptions { TotalTimeout = TimeSpan.FromMilliseconds(50) },
+            adapter);
+
+        var result = await sut.ExecuteAsync(
+            Request(Field("query", "weather", [DataCategory.PublicData])),
+            CancellationToken.None);
+
+        Assert.Equal("external_gateway_timeout", result.ErrorCode);
+        Assert.Equal(1, adapter.ExecutionCount);
+    }
+
+    [Fact]
+    public async Task RetainsConcurrencyWhenATimedOutAdapterIgnoresCancellation()
+    {
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var adapter = new DelegateAdapter(async (_, _) =>
+        {
+            started.TrySetResult();
+            await release.Task;
+            return ExternalToolAdapterResult.Success(JsonSerializer.SerializeToElement(new { ok = true }));
+        });
+        var sut = CreateGateway(
+            NullLogger<ControlledExternalToolsGateway>.Instance,
+            new ExternalToolsGatewayOptions { TotalTimeout = TimeSpan.FromMilliseconds(50) },
+            adapter);
+
+        var first = sut.ExecuteAsync(
+            Request(Field("query", "first", [DataCategory.PublicData])),
+            CancellationToken.None).AsTask();
+        await started.Task;
+
+        var timedOut = await first;
+        var rejected = await sut.ExecuteAsync(
+            Request(Field("query", "second", [DataCategory.PublicData])),
+            CancellationToken.None);
+
+        Assert.Equal("external_gateway_timeout", timedOut.ErrorCode);
+        Assert.Equal("external_gateway_busy", rejected.ErrorCode);
+        Assert.Equal(1, adapter.ExecutionCount);
+
+        release.TrySetResult();
+    }
+
+    [Fact]
+    public async Task PropagatesCancellationAfterTheAdapterStarts()
+    {
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var adapter = new DelegateAdapter(async (_, cancellationToken) =>
+        {
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return ExternalToolAdapterResult.Failure("unreachable");
+        });
+        var sut = CreateGateway(adapter);
+        using var cancellation = new CancellationTokenSource();
+
+        var execution = sut.ExecuteAsync(
+            Request(Field("query", "weather", [DataCategory.PublicData])),
+            cancellation.Token).AsTask();
+        await started.Task;
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => execution);
+        Assert.Equal(1, adapter.ExecutionCount);
+    }
+
+    [Fact]
+    public async Task RejectsConcurrentWorkWithoutQueuingIt()
+    {
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var adapter = new DelegateAdapter(async (_, cancellationToken) =>
+        {
+            started.TrySetResult();
+            await release.Task.WaitAsync(cancellationToken);
+            return ExternalToolAdapterResult.Success(JsonSerializer.SerializeToElement(new { ok = true }));
+        });
+        var sut = CreateGateway(
+            NullLogger<ControlledExternalToolsGateway>.Instance,
+            new ExternalToolsGatewayOptions { MaximumConcurrentOperations = 1 },
+            adapter);
+
+        var first = sut.ExecuteAsync(
+            Request(Field("query", "first", [DataCategory.PublicData])),
+            CancellationToken.None).AsTask();
+        await started.Task;
+
+        var second = await sut.ExecuteAsync(
+            Request(Field("query", "second", [DataCategory.PublicData])),
+            CancellationToken.None);
+
+        Assert.Equal("external_gateway_busy", second.ErrorCode);
+        Assert.Equal(1, adapter.ExecutionCount);
+
+        release.TrySetResult();
+        Assert.True((await first).IsSuccess);
+    }
+
+    [Fact]
+    public async Task RejectsAResultWhoseNormalizedRepresentationExceedsTheLimit()
+    {
+        var adapter = new DelegateAdapter(static (_, _) => ValueTask.FromResult(
+            ExternalToolAdapterResult.Success(JsonSerializer.SerializeToElement(new
+            {
+                content = new string('x', 100),
+            }))));
+        var sut = CreateGateway(
+            NullLogger<ControlledExternalToolsGateway>.Instance,
+            new ExternalToolsGatewayOptions { MaximumNormalizedResultBytes = 32 },
+            adapter);
+
+        var result = await sut.ExecuteAsync(
+            Request(Field("query", "weather", [DataCategory.PublicData])),
+            CancellationToken.None);
+
+        Assert.Equal("external_result_too_large", result.ErrorCode);
+        Assert.Equal(1, adapter.ExecutionCount);
+    }
+
+    [Fact]
+    public async Task AuditsSafeAdapterAndOperationOutcomeWithoutPayloadOrExceptionMessage()
+    {
+        var logger = new CapturingLogger<ControlledExternalToolsGateway>();
+        var adapter = new DelegateAdapter(static (_, _) =>
+            throw new InvalidOperationException("https://sensitive.example.test/?coordinates=40.4"));
+        var sut = CreateGateway(logger, new ExternalToolsGatewayOptions(), adapter);
+
+        await sut.ExecuteAsync(
+            Request(Field("query", "private value", [DataCategory.PublicData])),
+            CancellationToken.None);
+
+        var audit = Assert.Single(logger.Entries, entry => entry.Contains("completed with", StringComparison.Ordinal));
+        Assert.Contains(adapter.Name, audit, StringComparison.Ordinal);
+        Assert.Contains("search", audit, StringComparison.Ordinal);
+        Assert.Contains("external_adapter_failed", audit, StringComparison.Ordinal);
+        Assert.DoesNotContain("private value", audit, StringComparison.Ordinal);
+        Assert.DoesNotContain("sensitive.example.test", audit, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NormalizesAnUnsafeAdapterErrorCodeBeforeReturningOrAuditingIt()
+    {
+        var logger = new CapturingLogger<ControlledExternalToolsGateway>();
+        var adapter = new DelegateAdapter(static (_, _) => ValueTask.FromResult(
+            ExternalToolAdapterResult.Failure("provider error: https://sensitive.example.test")));
+        var sut = CreateGateway(logger, new ExternalToolsGatewayOptions(), adapter);
+
+        var result = await sut.ExecuteAsync(
+            Request(Field("query", "weather", [DataCategory.PublicData])),
+            CancellationToken.None);
+
+        Assert.Equal("external_adapter_failed", result.ErrorCode);
+        Assert.DoesNotContain(
+            logger.Entries,
+            entry => entry.Contains("sensitive.example.test", StringComparison.Ordinal));
+    }
+
     private static ControlledExternalToolsGateway CreateGateway(params IExternalToolAdapter[] adapters) =>
-        new(adapters, new DefaultEgressPolicy(), NullLogger<ControlledExternalToolsGateway>.Instance);
+        CreateGateway(
+            NullLogger<ControlledExternalToolsGateway>.Instance,
+            new ExternalToolsGatewayOptions(),
+            adapters);
+
+    private static ControlledExternalToolsGateway CreateGateway(
+        ILogger<ControlledExternalToolsGateway> logger,
+        ExternalToolsGatewayOptions options,
+        params IExternalToolAdapter[] adapters) =>
+        new(
+            adapters,
+            new DefaultEgressPolicy(),
+            logger,
+            Options.Create(options));
 
     private static ExternalToolRequest Request(params ExternalToolField[] fields) =>
         new("fake-search", "search", "test-purpose", fields);
@@ -178,6 +365,26 @@ public sealed class ControlledExternalToolsGatewayTests
         {
             ExecutionCount++;
             return _execute(payload, cancellationToken);
+        }
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<string> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add(formatter(state, exception));
         }
     }
 }

@@ -77,5 +77,7 @@ public interface IToolRegistry
 {
     IReadOnlyList<ToolDefinition> Definitions { get; }
 
+    IReadOnlyList<ITool> Tools { get; }
+
     bool TryGet(string name, out ITool? tool);
 }

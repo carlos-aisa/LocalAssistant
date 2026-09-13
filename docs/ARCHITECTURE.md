@@ -339,11 +339,26 @@ adaptador. Autorizar un campo `LOCATION` no autorizará otros campos del mismo t
 
 Los contratos de `LocalAssistant.Core.ExternalTools` no dependen de SDKs. Cada
 adaptador fija su nombre, destino y operaciones; el solicitante no aporta una URL
-libre. `ControlledExternalToolsGateway` traduce excepciones a errores seguros y sus
-logs contienen adaptador, operación y decisión, nunca valores del payload. Los
-adaptadores actuales son dobles de prueba: credenciales, HTTP, rate limits, timeout,
-respuesta no confiable y auditoría durable se incorporarán con el primer proveedor
-real.
+libre. La composición ya registra `DefaultEgressPolicy` y
+`ControlledExternalToolsGateway`, pero su allowlist de producción está vacía: todavía
+no existe adaptador ni egreso real.
+
+Una herramienta con exposición `ControlledExternal` solo puede ser un
+`GatewayBackedTool` sellado, creado por composición alrededor de una operación que no
+implementa `ITool` ni recibe el gateway. `ToolPolicyTarget` une metadata y ruta
+estructural derivada de la instancia registrada. Catálogo, ejecución y resolución de
+confirmación usan la misma evaluación: `ControlledExternal + Standard` se deniega y
+`Local + GatewayBacked` es configuración inválida. La operación valida los argumentos
+en runtime antes de construir el payload; el schema no sustituye esa comprobación.
+
+El gateway limita su tiempo total, concurrencia sin cola y tamaño del resultado JSON
+normalizado. Si un adaptador ignora la cancelación, conserva su permiso hasta que
+termine, aunque el solicitante ya haya recibido el timeout. Traduce excepciones y
+códigos no seguros a errores estables. Sus logs
+contienen solo adaptador, operación, decisión, resultado seguro y duración; nunca
+valores del payload ni mensajes de excepción. Los controles de transporte HTTP,
+credenciales, rate limits, respuesta de proveedor y auditoría durable llegarán con el
+primer adaptador real de la fase 6.2.
 
 La validación se realizará sobre el payload final. Una transformación local no
 cambia automáticamente la categoría: nombres de clases, repositorios, hosts, URLs,

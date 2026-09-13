@@ -412,6 +412,12 @@ Primer vertical slice externo: tiempo actual y previsión acotada, con ubicació
 Incluye procedencia, caché, límites y degradación honesta.
 No habilita Internet libre, web general, Maps ni Calendar.
 
+**Incremento 6.1 implementado:** el gateway y la política de egreso se componen con
+allowlist vacía; solo el wrapper sellado `GatewayBackedTool` admite una herramienta
+externa y las pruebas de integración demuestran ambas barreras estructurales. No hay
+adaptador ni tráfico externo de producción. El incremento 6.2 introducirá el primer
+adaptador HTTP de geocodificación y sus controles de transporte.
+
 ### Fase 7 — Plataforma mínima de módulos y migración de BatchCooking
 
 Registro, capacidades, activación, persistencia aislada y tests de contrato.

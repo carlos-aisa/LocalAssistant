@@ -6,15 +6,18 @@ using LocalAssistant.Api.Profiles;
 using LocalAssistant.Api.Security;
 using LocalAssistant.Core.Conversations;
 using LocalAssistant.Core.Documents;
+using LocalAssistant.Core.ExternalTools;
 using LocalAssistant.Core.Memory;
 using LocalAssistant.Core.Orchestration;
 using LocalAssistant.Core.Profiles;
 using LocalAssistant.Core.Reminders;
+using LocalAssistant.Core.Security.Egress;
 using LocalAssistant.Core.Security.PrivateClients;
 using LocalAssistant.Core.Security.ToolRisk;
 using LocalAssistant.Core.Tools;
 using LocalAssistant.Infrastructure.Conversations;
 using LocalAssistant.Infrastructure.Documents;
+using LocalAssistant.Infrastructure.ExternalTools;
 using LocalAssistant.Infrastructure.LanguageModels.Ollama;
 using LocalAssistant.Infrastructure.Memory;
 using LocalAssistant.Infrastructure.Security.PrivateClients;
@@ -107,6 +110,8 @@ builder.Services.AddSingleton<IConversationExecutionLock, InMemoryConversationEx
 builder.Services.AddSingleton<IToolAuditSink, InMemoryToolAuditSink>();
 builder.Services.AddSingleton<IReminderStore, InMemoryReminderStore>();
 builder.Services.AddSingleton<IToolRiskPolicy, DefaultToolRiskPolicy>();
+builder.Services.AddSingleton<IEgressPolicy, DefaultEgressPolicy>();
+builder.Services.AddSingleton<IExternalToolsGateway, ControlledExternalToolsGateway>();
 builder.Services.AddSingleton<IInstallationIdentityStore, FileInstallationIdentityStore>();
 builder.Services.AddSingleton<IPrivateClientAuthenticationStore>(services =>
 {
@@ -162,6 +167,15 @@ builder.Services.AddOptions<OrchestrationOptions>()
     .Validate(
         options => options.ProviderTimeout > TimeSpan.Zero && options.ToolTimeout > TimeSpan.Zero && options.ConfirmationTimeout > TimeSpan.Zero,
         "Timeouts must be greater than zero.")
+    .ValidateOnStart();
+builder.Services.AddOptions<ExternalToolsGatewayOptions>()
+    .Bind(builder.Configuration.GetSection(ExternalToolsGatewayOptions.SectionName))
+    .Validate(
+        options => options.TotalTimeout >= TimeSpan.FromMilliseconds(100) &&
+                   options.TotalTimeout <= TimeSpan.FromSeconds(30) &&
+                   options.MaximumConcurrentOperations is > 0 and <= 4 &&
+                   options.MaximumNormalizedResultBytes is >= 1_024 and <= 128 * 1_024,
+        "External tools gateway limits must be within their supported ranges.")
     .ValidateOnStart();
 builder.Services.AddOptions<OllamaOptions>()
     .Bind(builder.Configuration.GetSection("LocalAssistant:Ollama"))
