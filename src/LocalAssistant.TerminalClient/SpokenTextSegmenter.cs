@@ -10,6 +10,13 @@ internal static class SpokenTextSegmenter
     public const int LaterTargetLength = 220;
     public const int MaximumLength = 320;
 
+    /// <summary>
+    /// Below this trailing length, a further split is not worth a whole extra
+    /// synthesis call; the remainder is kept whole instead when it still fits under
+    /// <see cref="MaximumLength"/>.
+    /// </summary>
+    private const int MinimumTailLength = 40;
+
     public static IEnumerable<string> Segment(string text)
     {
         ArgumentException.ThrowIfNullOrEmpty(text);
@@ -18,14 +25,23 @@ internal static class SpokenTextSegmenter
         while (offset < text.Length)
         {
             var remaining = text.Length - offset;
-            if (remaining <= MaximumLength)
+            var target = first ? FirstTargetLength : LaterTargetLength;
+            if (remaining <= target)
             {
                 yield return text[offset..];
                 yield break;
             }
 
-            var target = Math.Min(first ? FirstTargetLength : LaterTargetLength, MaximumLength);
             var boundary = FindBoundary(text, offset, target, remaining);
+            var tail = remaining - boundary;
+            if (tail > 0 && tail < MinimumTailLength && remaining <= MaximumLength)
+            {
+                // Splitting here would leave a too-small trailing fragment even though
+                // the whole remainder still fits in one segment; keep it whole instead.
+                yield return text[offset..];
+                yield break;
+            }
+
             yield return text.Substring(offset, boundary);
             offset += boundary;
             first = false;

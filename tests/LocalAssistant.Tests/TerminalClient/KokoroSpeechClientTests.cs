@@ -84,17 +84,53 @@ public sealed class KokoroSpeechClientTests
         Assert.Equal(0, handler.CallCount);
     }
 
+    [Fact]
+    public async Task VoicesTimesOutInsteadOfHangingWhenTheServiceAcceptsButNeverResponds()
+    {
+        var handler = new HangingHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            // Mirrors production: the Kokoro HttpClient itself never times out, so a
+            // hung response depends entirely on the client's own per-call bound.
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        var options = new KokoroServiceOptions(
+            new Uri("http://127.0.0.1:57321/"),
+            HealthTimeout: TimeSpan.FromMilliseconds(50),
+            SynthesisTimeout: TimeSpan.FromSeconds(18));
+        var client = CreateClient(httpClient, options);
+
+        var resultTask = client.GetVoicesAsync(CancellationToken.None);
+        var completed = await Task.WhenAny(resultTask, Task.Delay(TimeSpan.FromSeconds(5)));
+
+        Assert.Same(resultTask, completed);
+        Assert.Equal(KokoroClientFailureKind.Timeout, (await resultTask).Failure);
+    }
+
     private static KokoroSpeechRequest Request { get; } = new("Hola", "jarvis-es", "es", 1.0, 100);
 
     private static KokoroServiceOptions Options { get; } = KokoroServiceOptions.Create(new Uri("http://127.0.0.1:57321/"));
 
-    private static KokoroSpeechClient CreateClient(HttpClient httpClient) =>
-        new(httpClient, static () => Enumerable.Range(0, 32).Select(value => (byte)value).ToArray(), Options);
+    private static KokoroSpeechClient CreateClient(HttpClient httpClient) => CreateClient(httpClient, Options);
+
+    private static KokoroSpeechClient CreateClient(HttpClient httpClient, KokoroServiceOptions options) =>
+        new(httpClient, static () => Enumerable.Range(0, 32).Select(value => (byte)value).ToArray(), options);
 
     private static HttpResponseMessage Json(HttpStatusCode status, string json) => new(status)
     {
         Content = new StringContent(json, Encoding.UTF8, "application/json"),
     };
+
+    private sealed class HangingHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("Unreachable: the delay above never completes.");
+        }
+    }
 
     private sealed class RecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
     {

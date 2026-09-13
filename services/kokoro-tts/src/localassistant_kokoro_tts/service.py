@@ -148,6 +148,8 @@ class KokoroTtsService:
         if self._state != "ready":
             return self._error(request, 503, "service_unavailable")
         if self._synthesis_lock.locked():
+            # Cheap early rejection before spending time reading and validating the
+            # body; the authoritative check is the one immediately before acquire().
             return self._error(request, 503, "service_busy", retry_after="1")
 
         if request.content_type != "application/json":
@@ -171,6 +173,10 @@ class KokoroTtsService:
         assert speed is not None
         assert volume is not None
 
+        if self._synthesis_lock.locked():
+            # Authoritative check: nothing awaits between it and acquire(), so no other
+            # request can interleave and turn this into a hidden queue behind the lock.
+            return self._error(request, 503, "service_busy", retry_after="1")
         await self._synthesis_lock.acquire()
         try:
             loop = asyncio.get_running_loop()

@@ -156,6 +156,61 @@ public sealed class SpokenOutputTests
     }
 
     [Fact]
+    public async Task NoneProviderDoesNotInvokeSynthesisOrPlaybackAndNeverFails()
+    {
+        var synthesizer = new RecordingSynthesizer();
+        var player = new RecordingPlayer();
+        await using var coordinator = CreateCoordinator(
+            synthesizer,
+            player,
+            new SpokenOutputPreferences(requestedProvider: SpokenOutputProvider.None));
+
+        var preparation = await coordinator.PrepareAsync("Final response.", CancellationToken.None);
+
+        Assert.Equal(SpokenOutputPreparationKind.Muted, preparation.Kind);
+        Assert.Equal(0, synthesizer.CallCount);
+        Assert.Equal(0, player.CallCount);
+    }
+
+    [Fact]
+    public async Task KokoroNotConfiguredWithFallbackDisabledDegradesToTextInsteadOfSilentlyUsingSapi()
+    {
+        var sapi = new RecordingSynthesizer();
+        var selector = new ProviderSelectingSpeechSynthesizer(sapi, kokoro: null);
+        await using var coordinator = CreateCoordinator(
+            selector,
+            new RecordingPlayer(),
+            new SpokenOutputPreferences(
+                requestedProvider: SpokenOutputProvider.Kokoro,
+                useSapiFallback: false));
+
+        var preparation = await coordinator.PrepareAsync("Final response.", CancellationToken.None);
+
+        Assert.Equal(SpokenOutputPreparationKind.SynthesisFailed, preparation.Kind);
+        Assert.Equal(KokoroClientFailureKind.NotConfigured, preparation.KokoroFailure);
+        Assert.Equal(0, sapi.CallCount);
+    }
+
+    [Fact]
+    public async Task KokoroNotConfiguredWithFallbackEnabledStillUsesSapi()
+    {
+        var sapi = new RecordingSynthesizer();
+        var selector = new ProviderSelectingSpeechSynthesizer(sapi, kokoro: null);
+        await using var coordinator = CreateCoordinator(
+            selector,
+            new RecordingPlayer(),
+            new SpokenOutputPreferences(
+                requestedProvider: SpokenOutputProvider.Kokoro,
+                useSapiFallback: true));
+
+        var preparation = await coordinator.PrepareAsync("Final response.", CancellationToken.None);
+
+        Assert.Equal(SpokenOutputPreparationKind.Prepared, preparation.Kind);
+        Assert.Equal(1, sapi.CallCount);
+        await preparation.PreparedOutput!.DisposeAsync();
+    }
+
+    [Fact]
     public async Task PreparedOutputSynthesizesPlaysAndDisposesItsArtifact()
     {
         var stream = new TrackingStream();

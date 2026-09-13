@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 from pathlib import Path
 import subprocess
@@ -128,6 +129,61 @@ async def test_health_remains_responsive_and_second_speech_is_busy() -> None:
         assert first.status == 200
         assert first.headers["Content-Type"].startswith("audio/wav")
     finally:
+        engine.allow_load.set()
+        engine.allow_synthesis.set()
+        await _close(session, server)
+
+
+async def test_speech_rejects_a_concurrent_request_instead_of_queuing_it_behind_the_lock() -> None:
+    """A request that arrives while another is already mid-flight must be rejected with
+    503 the moment the lock is actually held, not silently queued behind it. Request A's
+    body is withheld mid-read so it is still inside `await request.read()` -- the
+    original race window between the early busy check and `acquire()` -- when request B
+    reaches the engine first."""
+    session, server, engine = await _start()
+    release_a_body = asyncio.Event()
+    try:
+        await _wait_ready(session, server, engine)
+
+        payload = json.dumps(_speech(text="Request A")).encode("utf-8")
+
+        async def slow_body():
+            yield payload[:1]
+            await release_a_body.wait()
+            yield payload[1:]
+
+        request_a = asyncio.create_task(
+            session.post(
+                server.make_url("/v1/speech"),
+                headers={"Authorization": AUTHORIZATION, "Content-Type": "application/json"},
+                data=slow_body(),
+            )
+        )
+        # Give the event loop a chance to accept request A's connection and reach its
+        # `await request.read()`, so it is genuinely parked there, not merely queued.
+        await asyncio.sleep(0.05)
+
+        request_b = asyncio.create_task(
+            session.post(
+                server.make_url("/v1/speech"),
+                headers={"Authorization": AUTHORIZATION},
+                json=_speech(text="Request B"),
+            )
+        )
+        assert await asyncio.to_thread(engine.synthesis_started.wait, 1)
+
+        release_a_body.set()
+        response_a = await request_a
+        assert response_a.status == 503
+        assert response_a.headers["Retry-After"] == "1"
+        assert (await response_a.json())["code"] == "service_busy"
+
+        engine.allow_synthesis.set()
+        response_b = await request_b
+        assert response_b.status == 200
+        assert engine.calls == [("Request B", "em_alex", "es", 1.0, 50)]
+    finally:
+        release_a_body.set()
         engine.allow_load.set()
         engine.allow_synthesis.set()
         await _close(session, server)

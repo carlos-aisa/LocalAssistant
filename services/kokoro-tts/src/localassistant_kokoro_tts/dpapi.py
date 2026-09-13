@@ -14,7 +14,27 @@ _MAGIC = b"LASKOK01"
 _VERSION = 1
 _CURRENT_USER_SCOPE = 1
 _CRYPTPROTECT_UI_FORBIDDEN = 0x1
-_LOCAL_FREE = ctypes.windll.kernel32.LocalFree if os.name == "nt" else None
+
+# Loaded with use_last_error=True so that ctypes.get_last_error() reflects the true
+# GetLastError() value of the call just made instead of an unrelated internal one, and
+# with explicit argtypes/restype so a HANDLE is never truncated to the platform's
+# 32-bit c_int default on 64-bit Windows.
+_KERNEL32 = ctypes.WinDLL("kernel32", use_last_error=True) if os.name == "nt" else None
+_CRYPT32 = ctypes.WinDLL("crypt32", use_last_error=True) if os.name == "nt" else None
+
+if _KERNEL32 is not None:
+    _KERNEL32.LocalFree.argtypes = [wintypes.HLOCAL]
+    _KERNEL32.LocalFree.restype = wintypes.HLOCAL
+    _KERNEL32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+    _KERNEL32.CreateMutexW.restype = wintypes.HANDLE
+    _KERNEL32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    _KERNEL32.WaitForSingleObject.restype = wintypes.DWORD
+    _KERNEL32.ReleaseMutex.argtypes = [wintypes.HANDLE]
+    _KERNEL32.ReleaseMutex.restype = wintypes.BOOL
+    _KERNEL32.CloseHandle.argtypes = [wintypes.HANDLE]
+    _KERNEL32.CloseHandle.restype = wintypes.BOOL
+
+_LOCAL_FREE = _KERNEL32.LocalFree if _KERNEL32 is not None else None
 
 
 class DpapiSharedSecretProvider(SharedSecretProvider):
@@ -68,7 +88,7 @@ def _unprotect_current_user(protected: bytes) -> bytes:
     class DataBlob(ctypes.Structure):
         _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_byte))]
 
-    crypt_unprotect_data = ctypes.windll.crypt32.CryptUnprotectData
+    crypt_unprotect_data = _CRYPT32.CryptUnprotectData
     crypt_unprotect_data.argtypes = [
         ctypes.POINTER(DataBlob),
         ctypes.c_void_p,
@@ -109,7 +129,7 @@ def protect_current_user(secret: bytes) -> bytes:
     class DataBlob(ctypes.Structure):
         _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_byte))]
 
-    crypt_protect_data = ctypes.windll.crypt32.CryptProtectData
+    crypt_protect_data = _CRYPT32.CryptProtectData
     crypt_protect_data.argtypes = [
         ctypes.POINTER(DataBlob),
         wintypes.LPCWSTR,
@@ -156,12 +176,13 @@ class WindowsKokoroProcessLock:
     def acquire(self) -> bool:
         if os.name != "nt":
             raise RuntimeError("The Kokoro service is available only on Windows.")
-        handle = ctypes.windll.kernel32.CreateMutexW(None, False, self._NAME)
+        assert _KERNEL32 is not None
+        handle = _KERNEL32.CreateMutexW(None, False, self._NAME)
         if not handle:
             raise OSError(ctypes.get_last_error(), "CreateMutexW failed.")
-        result = ctypes.windll.kernel32.WaitForSingleObject(handle, 0)
+        result = _KERNEL32.WaitForSingleObject(handle, 0)
         if result not in {self._WAIT_OBJECT_0, self._WAIT_ABANDONED}:
-            ctypes.windll.kernel32.CloseHandle(handle)
+            _KERNEL32.CloseHandle(handle)
             return False
         self._handle = handle
         return True
@@ -169,6 +190,7 @@ class WindowsKokoroProcessLock:
     def close(self) -> None:
         if self._handle is None:
             return
-        ctypes.windll.kernel32.ReleaseMutex(self._handle)
-        ctypes.windll.kernel32.CloseHandle(self._handle)
+        assert _KERNEL32 is not None
+        _KERNEL32.ReleaseMutex(self._handle)
+        _KERNEL32.CloseHandle(self._handle)
         self._handle = None

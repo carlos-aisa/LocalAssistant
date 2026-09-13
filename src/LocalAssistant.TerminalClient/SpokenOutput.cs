@@ -438,6 +438,13 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
     private readonly object _playbackSync = new();
     private CancellationTokenSource? _playbackCancellation;
     private Task? _activePlayback;
+
+    /// <summary>
+    /// Signals every operation belonging to the current prepared output, including a
+    /// segmented pipeline's prefetch synthesis, so that <see cref="StopAsync"/> reaches
+    /// work that is not the single clip currently playing.
+    /// </summary>
+    private CancellationTokenSource? _stopSignal;
     private int _disposed;
 
     public SpokenOutputCoordinator(
@@ -508,6 +515,7 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
         Task? playback;
         lock (_playbackSync)
         {
+            _stopSignal?.Cancel();
             _playbackCancellation?.Cancel();
             playback = _activePlayback;
         }
@@ -543,7 +551,21 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
             return SpokenOutputPreparation.Muted;
         }
 
+        if (_preferences.RequestedProvider == SpokenOutputProvider.None)
+        {
+            // The user explicitly disabled spoken output; this is not a synthesis
+            // failure and must never surface an error.
+            return SpokenOutputPreparation.Muted;
+        }
+
         await _operationGate.WaitAsync(cancellationToken);
+        var stopSignal = new CancellationTokenSource();
+        lock (_playbackSync)
+        {
+            _stopSignal?.Dispose();
+            _stopSignal = stopSignal;
+        }
+
         try
         {
             var selector = _synthesizer as ProviderSelectingSpeechSynthesizer;
@@ -556,6 +578,7 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
                     return await PrepareKokoroSegmentsAsync(
                         text,
                         kokoroSynthesizer,
+                        stopSignal.Token,
                         cancellationToken);
                 }
                 catch (KokoroSpeechException) when (_preferences.UseSapiFallback && selector is not null)
@@ -616,6 +639,7 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
     private async Task<SpokenOutputPreparation> PrepareKokoroSegmentsAsync(
         string text,
         KokoroSpeechSynthesizer synthesizer,
+        CancellationToken stopToken,
         CancellationToken cancellationToken)
     {
         var segments = SpokenTextSegmenter.Segment(text).ToArray();
@@ -637,7 +661,8 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
             _player,
             _operationGate,
             PlayAsync,
-            _preferences));
+            _preferences,
+            stopToken));
     }
 
     public ValueTask DisposeAsync()
@@ -647,6 +672,8 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
             lock (_playbackSync)
             {
                 _playbackCancellation?.Cancel();
+                _stopSignal?.Cancel();
+                _stopSignal?.Dispose();
             }
 
             _operationGate.Dispose();
@@ -753,6 +780,7 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
         private readonly SemaphoreSlim _operationGate;
         private readonly Func<SynthesizedSpeech, CancellationToken, Task<SpokenOutputPlaybackResult>> _play;
         private readonly SpokenOutputPreferences _preferences;
+        private readonly CancellationToken _stopToken;
         private SynthesizedSpeech? _first;
         private int _disposed;
 
@@ -763,7 +791,8 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
             ISpeechPlayer player,
             SemaphoreSlim operationGate,
             Func<SynthesizedSpeech, CancellationToken, Task<SpokenOutputPlaybackResult>> play,
-            SpokenOutputPreferences preferences)
+            SpokenOutputPreferences preferences,
+            CancellationToken stopToken)
         {
             _first = first;
             _segments = segments;
@@ -772,6 +801,7 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
             _operationGate = operationGate;
             _play = play;
             _preferences = preferences;
+            _stopToken = stopToken;
         }
 
         public async Task<SpokenOutputPlaybackResult> PlayAsync(CancellationToken cancellationToken)
@@ -780,46 +810,68 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
             _first = null;
             for (var index = 0; index < _segments.Length; index++)
             {
+                // Prefetch shares the stop signal so /stop reaches it even though the
+                // outer cancellationToken (an application-level token) does not.
+                using var prefetchCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    _stopToken);
                 Task<SynthesizedSpeech>? next = index + 1 < _segments.Length
                     ? _synthesizer.SynthesizeAsync(
                         new SpeechSynthesisRequest(_segments[index + 1], _preferences),
-                        cancellationToken)
+                        prefetchCancellation.Token)
                     : null;
                 try
                 {
-                    StageChanged?.Invoke(SpokenOutputPlaybackStage.Playing);
-                    var played = await _play(current, cancellationToken);
+                    SpokenOutputPlaybackResult played;
+                    try
+                    {
+                        StageChanged?.Invoke(SpokenOutputPlaybackStage.Playing);
+                        played = await _play(current, cancellationToken);
+                    }
+                    finally
+                    {
+                        await current.DisposeAsync();
+                    }
+
                     if (played.Kind != SpokenOutputPlaybackKind.Completed)
                     {
                         return played;
                     }
-                }
-                finally
-                {
-                    await current.DisposeAsync();
-                }
 
-                if (next is null)
-                {
-                    return SpokenOutputPlaybackResult.Completed;
-                }
+                    if (next is null)
+                    {
+                        return SpokenOutputPlaybackResult.Completed;
+                    }
 
-                try
-                {
                     if (!next.IsCompleted)
                     {
                         StageChanged?.Invoke(SpokenOutputPlaybackStage.Buffering);
                     }
 
                     current = await next;
+                    next = null;
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                     throw;
                 }
+                catch (OperationCanceledException)
+                {
+                    // The pipeline's own stop signal, not the caller's token: a graceful
+                    // stop, not a failure.
+                    return SpokenOutputPlaybackResult.Cancelled;
+                }
                 catch (Exception)
                 {
                     return SpokenOutputPlaybackResult.PartialSynthesisFailed;
+                }
+                finally
+                {
+                    // Whatever outcome this iteration reached, a prefetch that was started
+                    // must always be observed and its artifact released; otherwise a
+                    // /stop or a failure elsewhere in the segment leaves a synthesis
+                    // running unobserved and its WAV never disposed.
+                    await DisposeNextAsync(next);
                 }
             }
 
@@ -845,6 +897,26 @@ internal sealed class SpokenOutputCoordinator : ISpokenOutputCoordinator
             finally
             {
                 _operationGate.Release();
+            }
+        }
+
+        private static async Task DisposeNextAsync(Task<SynthesizedSpeech>? pending)
+        {
+            if (pending is null)
+            {
+                return;
+            }
+
+            try
+            {
+                var speech = await pending.ConfigureAwait(false);
+                await speech.DisposeAsync();
+            }
+            catch
+            {
+                // The turn already has a terminal result; a cancelled or failed prefetch
+                // has nothing further to report and must never surface as an unobserved
+                // task exception.
             }
         }
     }

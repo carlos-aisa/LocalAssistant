@@ -73,8 +73,20 @@ internal sealed class ProviderSelectingSpeechSynthesizer : ISpeechSynthesizer, I
             throw new InvalidOperationException("Spoken output is disabled.");
         }
 
-        if (request.Preferences.RequestedProvider != SpokenOutputProvider.Kokoro || _kokoro is null)
+        if (request.Preferences.RequestedProvider != SpokenOutputProvider.Kokoro)
         {
+            return await _sapi.SynthesizeAsync(request, cancellationToken);
+        }
+
+        if (_kokoro is null)
+        {
+            // Kokoro was requested but is not configured at all; only an authorized
+            // fallback may substitute SAPI for it.
+            if (!request.Preferences.UseSapiFallback)
+            {
+                throw new KokoroSpeechException(KokoroClientFailureKind.NotConfigured);
+            }
+
             return await _sapi.SynthesizeAsync(request, cancellationToken);
         }
 
