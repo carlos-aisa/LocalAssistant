@@ -131,6 +131,9 @@ internal sealed class TerminalClientStateCoordinator
         var spokenOutput = snapshot.SpokenOutput;
         if (spokenOutput.Rate is < SpokenOutputPreferences.MinimumRate or > SpokenOutputPreferences.MaximumRate ||
             spokenOutput.Volume is < SpokenOutputPreferences.MinimumVolume or > SpokenOutputPreferences.MaximumVolume ||
+            !Enum.IsDefined(spokenOutput.RequestedProvider) ||
+            (spokenOutput.EffectiveProvider is not null && !Enum.IsDefined(spokenOutput.EffectiveProvider.Value)) ||
+            (spokenOutput.UsedProviderFallback && spokenOutput.EffectiveProvider is null) ||
             (spokenOutput.VoiceId is not null &&
              (string.IsNullOrWhiteSpace(spokenOutput.VoiceId) ||
               !string.Equals(

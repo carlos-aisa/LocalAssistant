@@ -516,6 +516,8 @@ internal sealed class TerminalClientTuiHost
 
     private string SpokenOutputStatus() => _snapshot.Activity == TerminalClientActivity.PlayingVoice
         ? "playing"
+        : _snapshot.Activity == TerminalClientActivity.BufferingVoice
+            ? "buffering"
         : _snapshot.SpokenOutput.Availability == SpokenOutputAvailability.Unavailable
             ? "unavailable"
             : _snapshot.SpokenOutput.IsMuted
@@ -537,7 +539,7 @@ internal sealed class TerminalClientTuiHost
             ? string.Empty
             : $"; Warning: {TerminalTextSanitizer.NormalizeSingleLine(_snapshot.SpokenOutput.WarningCode)}";
         lines.Add(FitLine(
-            $"Speech: voice {voice}; rate {_snapshot.SpokenOutput.Rate}; volume {_snapshot.SpokenOutput.Volume}{warning}",
+            $"Speech: requested {_snapshot.SpokenOutput.RequestedProvider}; effective {_snapshot.SpokenOutput.EffectiveProvider?.ToString() ?? "none"}; voice {voice}; rate {_snapshot.SpokenOutput.Rate}; volume {_snapshot.SpokenOutput.Volume}{warning}",
             width));
     }
 

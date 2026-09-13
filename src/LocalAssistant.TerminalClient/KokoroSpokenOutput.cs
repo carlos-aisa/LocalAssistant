@@ -13,7 +13,9 @@ internal sealed class KokoroSpeechSynthesizer : ISpeechSynthesizer, ISpeechVoice
     {
         var result = await _client.GetVoicesAsync(cancellationToken);
         return result.IsSuccess
-            ? result.Value!.Select(voice => new SpokenOutputVoice(voice.Id)).ToArray()
+            ? result.Value!
+                .Select(voice => new SpokenOutputVoice(voice.Id, SpokenOutputProvider.Kokoro, voice.Language))
+                .ToArray()
             : [];
     }
 
@@ -55,6 +57,12 @@ internal sealed class ProviderSelectingSpeechSynthesizer : ISpeechSynthesizer, I
         _sapi = sapi ?? throw new ArgumentNullException(nameof(sapi));
         _kokoro = kokoro;
     }
+
+    public KokoroSpeechSynthesizer? KokoroSynthesizer => _kokoro;
+
+    public Task<SynthesizedSpeech> SynthesizeWithSapiAsync(
+        SpeechSynthesisRequest request,
+        CancellationToken cancellationToken) => _sapi.SynthesizeAsync(request, cancellationToken);
 
     public async Task<SynthesizedSpeech> SynthesizeAsync(
         SpeechSynthesisRequest request,

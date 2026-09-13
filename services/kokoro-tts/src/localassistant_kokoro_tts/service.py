@@ -79,7 +79,8 @@ class KokoroTtsService:
 
         self._load_started = True
         try:
-            if len(self._secret_provider.get_secret()) != 32:
+            secret = self._secret_provider.get_secret()
+            if not isinstance(secret, bytes) or len(secret) != 32:
                 raise ValueError("The shared secret has an invalid length.")
         except Exception:
             self._state = "degraded"
@@ -171,16 +172,22 @@ class KokoroTtsService:
         assert volume is not None
 
         await self._synthesis_lock.acquire()
-        loop = asyncio.get_running_loop()
-        synthesis_future = loop.run_in_executor(
-            self._executor,
-            self._engine.synthesize,
-            text,
-            profile.voice,
-            profile.language,
-            speed,
-            volume,
-        )
+        try:
+            loop = asyncio.get_running_loop()
+            synthesis_future = loop.run_in_executor(
+                self._executor,
+                self._engine.synthesize,
+                text,
+                profile.voice,
+                profile.language,
+                speed,
+                volume,
+            )
+        except Exception:
+            self._synthesis_lock.release()
+            self._logger.warning("Kokoro synthesis could not be scheduled.")
+            return self._error(request, 502, "synthesis_failed")
+
         synthesis_future.add_done_callback(self._release_synthesis_lock)
 
         try:
@@ -207,7 +214,7 @@ class KokoroTtsService:
             expected_secret = self._secret_provider.get_secret()
         except Exception:
             return self._error(request, 503, "service_unavailable")
-        if len(expected_secret) != 32:
+        if not isinstance(expected_secret, bytes) or len(expected_secret) != 32:
             self._logger.error("The shared-secret provider returned an invalid secret length.")
             return self._error(request, 503, "service_unavailable")
 

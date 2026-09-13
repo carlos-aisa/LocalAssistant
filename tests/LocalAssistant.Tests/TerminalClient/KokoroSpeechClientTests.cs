@@ -48,7 +48,7 @@ public sealed class KokoroSpeechClientTests
 
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized, "Unauthorized")]
-    [InlineData(HttpStatusCode.ServiceUnavailable, "Busy")]
+    [InlineData(HttpStatusCode.ServiceUnavailable, "Unavailable")]
     [InlineData(HttpStatusCode.GatewayTimeout, "Timeout")]
     public async Task SynthesisMapsSafeHttpFailures(HttpStatusCode status, string expected)
     {
@@ -57,6 +57,18 @@ public sealed class KokoroSpeechClientTests
         var result = await CreateClient(httpClient).SynthesizeAsync(Request, CancellationToken.None);
 
         Assert.Equal(Enum.Parse<KokoroClientFailureKind>(expected), result.Failure);
+    }
+
+    [Fact]
+    public async Task SynthesisMapsTheDocumentedBusyContractSeparatelyFromServiceUnavailability()
+    {
+        using var httpClient = new HttpClient(new RecordingHandler(_ => Json(
+            HttpStatusCode.ServiceUnavailable,
+            """{ "code": "service_busy" }""")));
+
+        var result = await CreateClient(httpClient).SynthesizeAsync(Request, CancellationToken.None);
+
+        Assert.Equal(KokoroClientFailureKind.Busy, result.Failure);
     }
 
     [Fact]

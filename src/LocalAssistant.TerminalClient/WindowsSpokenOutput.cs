@@ -25,7 +25,8 @@ internal static class WindowsSpokenOutputFactory
         SpokenOutputPreferences preferences,
         bool isWindows,
         Func<bool> hasEnabledVoices,
-        Func<ISpokenOutputCoordinator> createReadyCoordinator)
+        Func<ISpokenOutputCoordinator> createReadyCoordinator,
+        bool hasKokoroProvider = false)
     {
         ArgumentNullException.ThrowIfNull(preferences);
         ArgumentNullException.ThrowIfNull(hasEnabledVoices);
@@ -37,7 +38,7 @@ internal static class WindowsSpokenOutputFactory
 
         try
         {
-            return hasEnabledVoices()
+            return hasKokoroProvider || hasEnabledVoices()
                 ? createReadyCoordinator()
                 : new UnavailableSpokenOutputCoordinator(preferences);
         }
@@ -50,8 +51,9 @@ internal static class WindowsSpokenOutputFactory
     [SupportedOSPlatform("windows")]
     private static ISpokenOutputCoordinator CreateForWindows(
         SpokenOutputPreferences preferences,
-        KokoroSpeechClient? kokoroClient) =>
-        Select(
+        KokoroSpeechClient? kokoroClient)
+    {
+        return Select(
             preferences,
             isWindows: true,
             WindowsSpeechSynthesizer.HasEnabledVoices,
@@ -61,7 +63,9 @@ internal static class WindowsSpokenOutputFactory
                     kokoroClient is null ? null : new KokoroSpeechSynthesizer(kokoroClient)),
                 new WindowsSpeechPlayer(),
                 SpokenOutputAvailability.Ready,
-                preferences));
+                preferences),
+            hasKokoroProvider: kokoroClient is not null);
+    }
 }
 
 [SupportedOSPlatform("windows")]

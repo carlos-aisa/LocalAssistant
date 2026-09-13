@@ -186,7 +186,7 @@ internal sealed class KokoroSpeechClient
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
                 timeout.Token);
-            var failure = MapFailure(response.StatusCode);
+            var failure = await MapSynthesisFailureAsync(response, timeout.Token);
             if (failure is not null)
             {
                 return KokoroClientResult<SynthesizedSpeech>.Failed(failure.Value);
@@ -201,13 +201,19 @@ internal sealed class KokoroSpeechClient
             var wav = await CopyBoundedAsync(source, timeout.Token);
             if (wav is null || !KokoroWaveValidator.IsValid(wav, out _))
             {
+                if (wav is not null)
+                {
+                    CryptographicOperations.ZeroMemory(wav);
+                }
+
                 return KokoroClientResult<SynthesizedSpeech>.Failed(KokoroClientFailureKind.InvalidResponse);
             }
 
             return KokoroClientResult<SynthesizedSpeech>.Success(new SynthesizedSpeech(
                 new SensitiveMemoryStream(wav),
                 "audio/wav",
-                speechRequest.Voice));
+                speechRequest.Voice,
+                effectiveProvider: SpokenOutputProvider.Kokoro));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -244,14 +250,37 @@ internal sealed class KokoroSpeechClient
     {
         HttpStatusCode.OK => null,
         HttpStatusCode.Unauthorized => KokoroClientFailureKind.Unauthorized,
-        HttpStatusCode.ServiceUnavailable => KokoroClientFailureKind.Busy,
+        HttpStatusCode.ServiceUnavailable => KokoroClientFailureKind.Unavailable,
         HttpStatusCode.GatewayTimeout => KokoroClientFailureKind.Timeout,
         _ => KokoroClientFailureKind.SynthesisFailed,
     };
 
+    private static async Task<KokoroClientFailureKind?> MapSynthesisFailureAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        if (response.StatusCode != HttpStatusCode.ServiceUnavailable)
+        {
+            return MapFailure(response.StatusCode);
+        }
+
+        try
+        {
+            var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
+            var payload = JsonSerializer.Deserialize<KokoroErrorResponse>(payloadJson, JsonOptions);
+            return string.Equals(payload?.Code, "service_busy", StringComparison.Ordinal)
+                ? KokoroClientFailureKind.Busy
+                : KokoroClientFailureKind.Unavailable;
+        }
+        catch (JsonException)
+        {
+            return KokoroClientFailureKind.Unavailable;
+        }
+    }
+
     private static async Task<byte[]?> CopyBoundedAsync(Stream source, CancellationToken cancellationToken)
     {
-        await using var destination = new MemoryStream();
+        await using var destination = new SensitiveMemoryStream();
         var buffer = new byte[81920];
         try
         {
@@ -281,6 +310,8 @@ internal sealed class KokoroSpeechClient
     private sealed record KokoroVoiceResponseItem(string? Id, string? Language);
 
     private sealed record KokoroHealthResponse(string? Status, string? ApiVersion, string? Code);
+
+    private sealed record KokoroErrorResponse(string? Code);
 }
 
 internal static class KokoroWaveValidator

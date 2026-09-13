@@ -648,7 +648,7 @@ public sealed class TerminalClientApplication
         var parts = input.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts[0].Equals("/help", StringComparison.OrdinalIgnoreCase))
         {
-            _console.WriteLine("Commands: /new, /conversations, /info, /provider fake|ollama, /speech-provider sapi|kokoro|none, /voice, /rate, /volume, /mute, /unmute, /stop, /repeat, /admin rotate, /admin revoke, /exit");
+            _console.WriteLine("Commands: /new, /conversations, /info, /provider fake|ollama, /speech-provider sapi|kokoro|none, /speech-info, /voice, /rate, /volume, /mute, /unmute, /stop, /repeat, /admin rotate, /admin revoke, /exit");
             return new(true, 0, accessToken, provider, conversationId);
         }
 
@@ -659,6 +659,19 @@ public sealed class TerminalClientApplication
             return new(true, 0, accessToken, provider, conversationId);
         }
 
+        if (parts[0].Equals("/speech-info", StringComparison.OrdinalIgnoreCase))
+        {
+            var preferences = _spokenOutput.RequestedPreferences;
+            var state = _spokenOutput.State;
+            _console.WriteLine(
+                $"Speech provider requested: {preferences.RequestedProvider}; " +
+                $"voice requested: {(preferences.RequestedProvider == SpokenOutputProvider.Kokoro ? preferences.KokoroProfileId : preferences.VoiceId) ?? "default"}; " +
+                $"effective provider: {state.EffectiveProvider?.ToString() ?? "none"}; " +
+                $"effective voice: {state.VoiceId ?? "default"}; fallback: {state.UsedProviderFallback}; muted: {state.IsMuted}; " +
+                $"warning: {state.WarningCode ?? "none"}.");
+            return new(true, 0, accessToken, provider, conversationId);
+        }
+
         if (parts[0].Equals("/voice", StringComparison.OrdinalIgnoreCase))
         {
             return await HandleVoiceCommandAsync(input, credential, accessToken, provider, conversationId, cancellationToken);
@@ -666,7 +679,7 @@ public sealed class TerminalClientApplication
 
         if (parts[0].Equals("/speech-provider", StringComparison.OrdinalIgnoreCase))
         {
-            if (parts.Length != 2 || !Enum.TryParse<SpokenOutputProvider>(parts[1], true, out var requestedProvider))
+            if (parts.Length != 2 || !TryParseSpokenOutputProvider(parts[1], out var requestedProvider))
             {
                 _console.WriteLine("Usage: /speech-provider sapi|kokoro|none");
                 return new(true, 0, accessToken, provider, conversationId);
@@ -674,16 +687,7 @@ public sealed class TerminalClientApplication
 
             var current = _spokenOutput.RequestedPreferences;
             return await ApplySpokenOutputPreferencesAsync(
-                new SpokenOutputPreferences(
-                    current.VoiceId,
-                    current.Rate,
-                    current.Volume,
-                    current.IsMuted,
-                    requestedProvider,
-                    current.KokoroProfileId,
-                    current.KokoroLanguage,
-                    current.KokoroVolume,
-                    current.UseSapiFallback),
+                current.WithRequestedProvider(requestedProvider),
                 credential,
                 accessToken,
                 provider,
@@ -713,7 +717,7 @@ public sealed class TerminalClientApplication
                 return new(true, 0, accessToken, provider, conversationId);
             }
 
-            if (_stateCoordinator.Current.Activity != TerminalClientActivity.PlayingVoice)
+            if (_stateCoordinator.Current.Activity is not (TerminalClientActivity.PlayingVoice or TerminalClientActivity.BufferingVoice))
             {
                 _console.WriteLine("There is no spoken output to stop.");
                 return new(true, 0, accessToken, provider, conversationId);
@@ -839,16 +843,37 @@ public sealed class TerminalClientApplication
         Guid? conversationId,
         CancellationToken cancellationToken)
     {
-        var voiceId = input.Length == "/voice".Length
-            ? null
-            : input["/voice".Length..].Trim();
+        var parts = input.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var current = _spokenOutput.RequestedPreferences;
+        var selectedProvider = current.RequestedProvider;
+        var voiceId = string.Empty;
+        if (parts.Length > 1 && TryParseSpokenOutputProvider(parts[1], out var specifiedProvider))
+        {
+            selectedProvider = specifiedProvider;
+            voiceId = parts.Length == 3 ? parts[2] : string.Empty;
+        }
+        else if (parts.Length > 1)
+        {
+            voiceId = input["/voice".Length..].Trim();
+        }
+
+        if (selectedProvider == SpokenOutputProvider.None)
+        {
+            _console.WriteLine("Select SAPI or Kokoro before choosing a voice.");
+            return new(true, 0, accessToken, provider, conversationId);
+        }
+
+        var voices = (await _spokenOutput.GetVoicesAsync(cancellationToken))
+            .Where(voice => voice.Provider == selectedProvider)
+            .ToArray();
         if (string.IsNullOrEmpty(voiceId))
         {
-            var voices = await _spokenOutput.GetVoicesAsync(cancellationToken);
-            var requestedVoice = _spokenOutput.RequestedPreferences.VoiceId ?? "default";
+            var requestedVoice = selectedProvider == SpokenOutputProvider.Kokoro
+                ? current.KokoroProfileId ?? "default"
+                : current.VoiceId ?? "default";
             var effectiveVoice = _spokenOutput.State.VoiceId ?? "default";
-            _console.WriteLine($"Requested voice: {requestedVoice}; effective voice: {effectiveVoice}.");
-            if (voices.Count == 0)
+            _console.WriteLine($"Requested {selectedProvider} voice: {requestedVoice}; effective voice: {effectiveVoice}.");
+            if (voices.Length == 0)
             {
                 _console.WriteLine("Spoken output is unavailable.");
             }
@@ -863,16 +888,19 @@ public sealed class TerminalClientApplication
             return new(true, 0, accessToken, provider, conversationId);
         }
 
-        var availableVoices = await _spokenOutput.GetVoicesAsync(cancellationToken);
-        if (!availableVoices.Any(voice => string.Equals(voice.Id, voiceId, StringComparison.Ordinal)))
+        var selectedVoice = voices.FirstOrDefault(voice =>
+            string.Equals(voice.Id, voiceId, StringComparison.Ordinal));
+        if (selectedVoice is null)
         {
             _console.WriteLine("The requested voice is not available.");
             return new(true, 0, accessToken, provider, conversationId);
         }
 
-        var current = _spokenOutput.RequestedPreferences;
+        var preferences = selectedProvider == SpokenOutputProvider.Kokoro
+            ? current.WithKokoroProfile(selectedVoice.Id, selectedVoice.Language ?? current.KokoroLanguage)
+            : current.WithSapiVoice(selectedVoice.Id);
         return await ApplySpokenOutputPreferencesAsync(
-            new SpokenOutputPreferences(voiceId, current.Rate, current.Volume, current.IsMuted),
+            preferences,
             credential,
             accessToken,
             provider,
@@ -899,10 +927,7 @@ public sealed class TerminalClientApplication
                 return new(true, 0, accessToken, provider, conversationId);
             }
 
-            preferences = new SpokenOutputPreferences(
-                current.VoiceId,
-                current.Rate,
-                current.Volume,
+            preferences = current.WithMute(
                 parts[0].Equals("/mute", StringComparison.OrdinalIgnoreCase));
         }
         else
@@ -915,9 +940,18 @@ public sealed class TerminalClientApplication
 
             try
             {
+                if (parts[0].Equals("/rate", StringComparison.OrdinalIgnoreCase) &&
+                    current.RequestedProvider == SpokenOutputProvider.Kokoro)
+                {
+                    _console.WriteLine("Kokoro rate is fixed at 1.0 in this increment.");
+                    return new(true, 0, accessToken, provider, conversationId);
+                }
+
                 preferences = parts[0].Equals("/rate", StringComparison.OrdinalIgnoreCase)
-                    ? new SpokenOutputPreferences(current.VoiceId, value, current.Volume, current.IsMuted)
-                    : new SpokenOutputPreferences(current.VoiceId, current.Rate, value, current.IsMuted);
+                    ? current.WithSapiRate(value)
+                    : current.RequestedProvider == SpokenOutputProvider.Kokoro
+                        ? current.WithKokoroVolume(value)
+                        : current.WithSapiVolume(value);
             }
             catch (ArgumentOutOfRangeException)
             {
@@ -1327,9 +1361,11 @@ public sealed class TerminalClientApplication
             ReportSpokenOutputWarning();
             if (preparation.Kind == SpokenOutputPreparationKind.SynthesisFailed)
             {
-                return new ClientError(
-                    "speech_synthesis_failed",
-                    "The response was shown, but spoken output could not be prepared.");
+                return preparation.KokoroFailure is { } failure
+                    ? CreateKokoroSynthesisError(failure)
+                    : new ClientError(
+                        "speech_synthesis_failed",
+                        "The response was shown, but spoken output could not be prepared.");
             }
 
             if (preparation.Kind != SpokenOutputPreparationKind.Prepared ||
@@ -1342,6 +1378,7 @@ public sealed class TerminalClientApplication
             await using var preparedOutput = preparation.PreparedOutput;
             playbackStarted = true;
             BeginActivity(TerminalClientActivity.PlayingVoice);
+            preparedOutput.StageChanged += OnSpokenOutputPlaybackStageChanged;
             var playbackTask = preparedOutput.PlayAsync(cancellationToken);
             _pendingMessageInput ??= StartMessageInputAsync(cancellationToken);
             var completed = await Task.WhenAny(playbackTask, _pendingMessageInput);
@@ -1360,21 +1397,38 @@ public sealed class TerminalClientApplication
                     // loop's next ReadMessageLineAsync returns null and closes cleanly.
                     await _spokenOutput.StopAsync(cancellationToken);
                 }
+                else
+                {
+                    // The line remains prefetched for the normal parser, but its arrival
+                    // makes the current output obsolete. This prevents a provider, mute,
+                    // conversation or next-turn command from waiting behind stale audio.
+                    await _spokenOutput.StopAsync(cancellationToken);
+                }
 
-                // Any other line stays as the single prefetched entry and is handled once
-                // by the loop after playback returns.
+                // The input stays as the single prefetched entry and is handled once by
+                // the loop after playback returns.
             }
 
-            var playback = await playbackTask;
-            return playback.Kind switch
+            try
             {
-                SpokenOutputPlaybackKind.Completed => null,
-                SpokenOutputPlaybackKind.PlaybackFailed => new ClientError(
-                    "speech_playback_failed",
-                    "The response was shown, but spoken output could not be played."),
-                SpokenOutputPlaybackKind.Cancelled => null,
-                _ => throw new InvalidOperationException("The spoken-output playback result was not recognized."),
-            };
+                var playback = await playbackTask;
+                return playback.Kind switch
+                {
+                    SpokenOutputPlaybackKind.Completed => null,
+                    SpokenOutputPlaybackKind.PlaybackFailed => new ClientError(
+                        "speech_playback_failed",
+                        "The response was shown, but spoken output could not be played."),
+                    SpokenOutputPlaybackKind.PartialSynthesisFailed => new ClientError(
+                        "speech_kokoro_partial_failure",
+                        "The response was shown, but the remaining spoken output could not be prepared."),
+                    SpokenOutputPlaybackKind.Cancelled => null,
+                    _ => throw new InvalidOperationException("The spoken-output playback result was not recognized."),
+                };
+            }
+            finally
+            {
+                preparedOutput.StageChanged -= OnSpokenOutputPlaybackStageChanged;
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -1402,6 +1456,69 @@ public sealed class TerminalClientApplication
                     "speech_synthesis_failed",
                     "The response was shown, but spoken output could not be prepared.");
         }
+    }
+
+    private void OnSpokenOutputPlaybackStageChanged(SpokenOutputPlaybackStage stage)
+    {
+        var current = _stateCoordinator.Current;
+        if (current.Lifecycle != TerminalClientLifecycle.Ready ||
+            current.Activity is not (TerminalClientActivity.PlayingVoice or TerminalClientActivity.BufferingVoice))
+        {
+            return;
+        }
+
+        BeginActivity(stage == SpokenOutputPlaybackStage.Playing
+            ? TerminalClientActivity.PlayingVoice
+            : TerminalClientActivity.BufferingVoice);
+    }
+
+    private static ClientError CreateKokoroSynthesisError(KokoroClientFailureKind failure) => failure switch
+    {
+        KokoroClientFailureKind.Busy => new ClientError(
+            "speech_kokoro_busy",
+            "The response was shown, but Kokoro is busy."),
+        KokoroClientFailureKind.Timeout => new ClientError(
+            "speech_kokoro_timeout",
+            "The response was shown, but Kokoro did not respond in time.",
+            IsUncertain: true),
+        KokoroClientFailureKind.InvalidResponse => new ClientError(
+            "speech_kokoro_invalid_wav",
+            "The response was shown, but Kokoro returned invalid audio.",
+            IsUncertain: true),
+        KokoroClientFailureKind.Unavailable or KokoroClientFailureKind.NotConfigured => new ClientError(
+            "speech_kokoro_unavailable",
+            "The response was shown, but Kokoro is unavailable."),
+        KokoroClientFailureKind.Unauthorized => new ClientError(
+            "speech_kokoro_unauthorized",
+            "The response was shown, but Kokoro could not be authorized."),
+        _ => new ClientError(
+            "speech_kokoro_synthesis_failed",
+            "The response was shown, but Kokoro could not prepare spoken output.",
+            IsUncertain: true),
+    };
+
+    private static bool TryParseSpokenOutputProvider(string value, out SpokenOutputProvider provider)
+    {
+        if (value.Equals("sapi", StringComparison.OrdinalIgnoreCase))
+        {
+            provider = SpokenOutputProvider.Sapi;
+            return true;
+        }
+
+        if (value.Equals("kokoro", StringComparison.OrdinalIgnoreCase))
+        {
+            provider = SpokenOutputProvider.Kokoro;
+            return true;
+        }
+
+        if (value.Equals("none", StringComparison.OrdinalIgnoreCase))
+        {
+            provider = SpokenOutputProvider.None;
+            return true;
+        }
+
+        provider = default;
+        return false;
     }
 
     private static bool IsSpokenOutputEligible(ConversationResponse response) =>

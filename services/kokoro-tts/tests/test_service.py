@@ -162,6 +162,18 @@ async def test_invalid_authorization_is_indistinguishable(authorization: str | N
         await _close(session, server)
 
 
+async def test_non_byte_shared_secret_degrades_without_exposing_an_internal_error() -> None:
+    session, server, engine = await _start(secret="x" * 32)  # type: ignore[arg-type]
+    try:
+        response = await session.get(server.make_url("/health"), headers={"Authorization": AUTHORIZATION})
+
+        assert response.status == 503
+        assert (await response.json())["code"] == "service_unavailable"
+    finally:
+        engine.allow_load.set()
+        await _close(session, server)
+
+
 @pytest.mark.parametrize(
     "payload",
     [

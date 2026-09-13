@@ -4,6 +4,28 @@ namespace LocalAssistant.Tests.TerminalClient;
 
 public sealed class SpokenOutputTests
 {
+    [Fact]
+    public void ProviderSpecificPreferenceUpdatesPreserveTheOtherProvider()
+    {
+        var preferences = new SpokenOutputPreferences(
+            voiceId: "Sapi voice",
+            rate: 3,
+            volume: 40,
+            requestedProvider: SpokenOutputProvider.Kokoro,
+            kokoroProfileId: "jarvis-es-alt",
+            kokoroLanguage: "es",
+            kokoroVolume: 65);
+
+        var kokoroVolume = preferences.WithKokoroVolume(20);
+        var sapiRate = kokoroVolume.WithSapiRate(-2);
+
+        Assert.Equal("jarvis-es-alt", sapiRate.KokoroProfileId);
+        Assert.Equal(20, sapiRate.KokoroVolume);
+        Assert.Equal("Sapi voice", sapiRate.VoiceId);
+        Assert.Equal(-2, sapiRate.Rate);
+        Assert.Equal(SpokenOutputProvider.Kokoro, sapiRate.RequestedProvider);
+    }
+
     [Theory]
     [InlineData("Hola 😀 qué tal", "Hola qué tal")]
     [InlineData("Listo ✅ y hecho", "Listo y hecho")]

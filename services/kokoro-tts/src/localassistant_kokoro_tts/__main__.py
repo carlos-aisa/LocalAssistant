@@ -13,7 +13,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="LocalAssistant Kokoro TTS service")
     parser.add_argument("--config", required=True, type=Path)
     arguments = parser.parse_args()
-    ServiceConfig.load(arguments.config)
     config = ServiceConfig.load(arguments.config)
     process_lock = WindowsKokoroProcessLock()
     if not process_lock.acquire():

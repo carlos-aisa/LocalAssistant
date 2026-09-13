@@ -158,6 +158,33 @@ public sealed class TerminalClientApplicationTests
     }
 
     [Fact]
+    public async Task BufferedSpokenOutputPublishesTheObservableBufferingState()
+    {
+        var conversationId = Guid.Parse("56666666-6666-4666-8666-666666666666");
+        var spokenOutput = new RecordingSpokenOutputCoordinator { EmitsBufferingStage = true };
+        var sink = new RecordingTerminalClientStateSink();
+        var handler = new RecordingHttpMessageHandler(
+        [
+            _ => JsonResponse(HttpStatusCode.OK, """{ "status": "healthy" }"""),
+            _ => SessionResponse("session-token"),
+            _ => JsonResponse(HttpStatusCode.OK, ConversationResponseJson(conversationId, "Buffered response")),
+        ]);
+        using var httpClient = CreateHttpClient(handler);
+        using var console = new ScriptedTerminalConsole(["client-a", "Hello", null], "credential-a");
+        var application = CreateApplication(
+            httpClient,
+            console,
+            stateSink: sink,
+            spokenOutput: spokenOutput);
+
+        var exitCode = await application.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains(sink.Snapshots, snapshot =>
+            snapshot.Activity == TerminalClientActivity.BufferingVoice);
+    }
+
+    [Fact]
     public async Task RateCommandPersistsAndAppliesPreferencesBeforeTheNextResponse()
     {
         var conversationId = Guid.Parse("5341758d-0f47-44a3-a93a-dc9d224be5dc");
@@ -261,7 +288,7 @@ public sealed class TerminalClientApplicationTests
     }
 
     [Fact]
-    public async Task ALineTypedDuringPlaybackIsDeferredAndHandledExactlyOnceAfterwards()
+    public async Task ALineTypedDuringPlaybackStopsObsoleteAudioAndIsHandledExactlyOnceAfterwards()
     {
         var conversationId = Guid.Parse("22222222-2222-4222-8222-222222222222");
         var spokenOutput = new RecordingSpokenOutputCoordinator { BlockPlaybackUntilCancellation = true };
@@ -279,14 +306,12 @@ public sealed class TerminalClientApplicationTests
         console.Provide("Hello");
         console.Provide("/mute");
         console.Provide(null);
-        var runTask = application.RunAsync(CancellationToken.None);
-        await spokenOutput.WaitForPlaybackAsync().WaitAsync(TimeSpan.FromSeconds(5));
-        spokenOutput.CompletePlayback();
-        var exitCode = await runTask.WaitAsync(TimeSpan.FromSeconds(5));
+        var exitCode = await application.RunAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.Equal(0, exitCode);
         Assert.True(store.Preferences.IsMuted);
         Assert.True(spokenOutput.RequestedPreferences.IsMuted);
+        Assert.Equal(1, spokenOutput.StopCount);
         Assert.Single(spokenOutput.PreparedTexts);
         Assert.Single(store.SavedPreferences);
         Assert.Equal(3, handler.Requests.Count);
@@ -402,7 +427,7 @@ public sealed class TerminalClientApplicationTests
         Assert.Contains(sink.Snapshots, snapshot =>
             snapshot.SpokenOutput.VoiceId == "Microsoft Elvira" && snapshot.SpokenOutput.Volume == 55);
         Assert.Contains("Aria", console.Output, StringComparison.Ordinal);
-        Assert.Contains("Requested voice: Microsoft Elvira", console.Output, StringComparison.Ordinal);
+        Assert.Contains("Requested Sapi voice: Microsoft Elvira", console.Output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2332,6 +2357,8 @@ internal sealed class RecordingSpokenOutputCoordinator : ISpokenOutputCoordinato
 
     public bool UsedVoiceFallback { get; set; }
 
+    public bool EmitsBufferingStage { get; set; }
+
     private readonly CancellationTokenSource _localStop = new();
     private readonly TaskCompletionSource _playbackRelease = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
@@ -2429,9 +2456,16 @@ internal sealed class RecordingSpokenOutputCoordinator : ISpokenOutputCoordinato
             _owner = owner;
         }
 
+        public event Action<SpokenOutputPlaybackStage>? StageChanged;
+
         public async Task<SpokenOutputPlaybackResult> PlayAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            StageChanged?.Invoke(SpokenOutputPlaybackStage.Playing);
+            if (_owner.EmitsBufferingStage)
+            {
+                StageChanged?.Invoke(SpokenOutputPlaybackStage.Buffering);
+            }
             _owner.PlayCount++;
             _owner.PlaybackStarted.TrySetResult(true);
             if (_owner.BlockPlaybackUntilCancellation)

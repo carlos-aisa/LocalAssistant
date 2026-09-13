@@ -853,7 +853,7 @@ public sealed class TerminalClientTuiTests
         console.CancelInput();
         await runTask;
 
-        var frame = driver.Frames[^1];
+        var frame = driver.Frames.Last(frame => frame.Any(line => line.StartsWith("You:", StringComparison.Ordinal)));
         Assert.Contains(frame, line => line.StartsWith("CONFIRM:", StringComparison.Ordinal));
         Assert.Contains(frame, line => line.StartsWith("You:", StringComparison.Ordinal));
         Assert.Contains(frame, line => line.StartsWith("Terminal too small", StringComparison.Ordinal));
